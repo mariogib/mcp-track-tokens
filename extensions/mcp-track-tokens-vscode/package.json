@@ -1,0 +1,148 @@
+{
+  "name": "mcp-track-tokens",
+  "displayName": "MCP Track Tokens",
+  "description": "Track AI prompt activity, sessions, and repository context for MCP Track Tokens.",
+  "version": "0.1.0",
+  "publisher": "mabatar",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onChatParticipant:mabatar.mcp-track-tokens.track"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mcpTrackTokens.registerProject",
+        "title": "MCP Track Tokens: Register Current Project"
+      },
+      {
+        "command": "mcpTrackTokens.startSession",
+        "title": "MCP Track Tokens: Start Project Session"
+      },
+      {
+        "command": "mcpTrackTokens.stopSession",
+        "title": "MCP Track Tokens: Stop Project Session"
+      },
+      {
+        "command": "mcpTrackTokens.showStatus",
+        "title": "MCP Track Tokens: Show Current Tracking Status"
+      },
+      {
+        "command": "mcpTrackTokens.openDashboard",
+        "title": "MCP Track Tokens: Open Dashboard"
+      },
+      {
+        "command": "mcpTrackTokens.assignUnallocated",
+        "title": "MCP Track Tokens: Assign Unallocated Activity"
+      },
+      {
+        "command": "mcpTrackTokens.testConnection",
+        "title": "MCP Track Tokens: Test Server Connection"
+      },
+      {
+        "command": "mcpTrackTokens.copyRepoInfo",
+        "title": "MCP Track Tokens: Copy Repository Information"
+      }
+    ],
+    "configuration": {
+      "title": "MCP Track Tokens",
+      "properties": {
+        "mcpTrackTokens.serverUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:5187",
+          "description": "Base URL of the MCP Track Tokens server."
+        },
+        "mcpTrackTokens.autoStartSession": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start a tracking session when a supported prompt is submitted."
+        },
+        "mcpTrackTokens.inactivityThresholdMinutes": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "Minutes of inactivity before a session is paused."
+        },
+        "mcpTrackTokens.enableHeartbeat": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send session heartbeats while tracking is active."
+        },
+        "mcpTrackTokens.heartbeatIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Interval between heartbeats in minutes."
+        },
+        "mcpTrackTokens.enablePromptHashing": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send a salted SHA-256 hash of prompt content (never the content itself by default)."
+        },
+        "mcpTrackTokens.storePromptContent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send prompt content to the server. Disabled by default for privacy."
+        },
+        "mcpTrackTokens.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the tracking status bar item."
+        },
+        "mcpTrackTokens.defaultProject": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default project ID (GUID) when registration is not needed."
+        },
+        "mcpTrackTokens.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Extension log verbosity."
+        }
+      }
+    },
+    "chatParticipants": [
+      {
+        "id": "mabatar.mcp-track-tokens.track",
+        "name": "track",
+        "fullName": "MCP Track Tokens",
+        "description": "Ask @track to run a language-model request while recording prompt activity (length/hash only by default).",
+        "isSticky": true
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "build": "npm run compile",
+    "compile": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^20.17.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.20.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.2.6"
+  }
+}

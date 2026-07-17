@@ -1,0 +1,107 @@
+# Build outputs
+bin/
+obj/
+out/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]rtifacts/
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+*.tmp
+*.temp
+
+# .NET / Visual Studio
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+project.lock.json
+project.fragment.lock.json
+artifacts/
+TestResults/
+*.nupkg
+*.snupkg
+*.DotSettings.user
+
+# User secrets
+**/secrets.json
+**/appsettings.*.local.json
+**/Properties/launchSettings.user.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.yarn/
+*.tsbuildinfo
+
+# Frontend / extension / hooks build output
+dist/
+**/wwwroot/
+!src/McpTrackTokens.Server/wwwroot/.gitkeep
+*.vsix
+.vite/
+coverage/
+.nyc_output/
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.local
+
+# MCP Track Tokens runtime data
+.mcp-track-tokens/
+**/.mcp-track-tokens/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+encryption.key
+
+# IDE / editors
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# OS
+ehthumbs.db
+[Dd]esktop.ini
+
+# Logs and exports
+logs/
+**/logs/
+exports/
+**/exports/
+*.log
+
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+lcov.info
+
+# Docker
+.dockerignore.local
+
+# Claude / agent scratch
+.claude/
+.cursor/plans/
+agent-transcripts/

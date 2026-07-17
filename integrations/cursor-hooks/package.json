@@ -1,0 +1,33 @@
+{
+  "name": "@mcp-track-tokens/cursor-hooks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cursor hook scripts that forward agent/prompt activity to MCP Track Tokens.",
+  "type": "commonjs",
+  "bin": {
+    "mtt-prompt-submitted": "./dist/prompt-submitted.js",
+    "mtt-agent-started": "./dist/agent-started.js",
+    "mtt-agent-completed": "./dist/agent-completed.js",
+    "mtt-agent-failed": "./dist/agent-failed.js",
+    "mtt-agent-cancelled": "./dist/agent-cancelled.js",
+    "mtt-session-started": "./dist/session-started.js",
+    "mtt-session-ended": "./dist/session-ended.js",
+    "mtt-diagnostics": "./dist/diagnostics.js"
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "lint": "eslint src tests",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tests.json"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^20.17.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.20.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.2.6"
+  }
+}

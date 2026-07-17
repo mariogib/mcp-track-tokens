@@ -1,0 +1,631 @@
+import { useMemo, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import {
+  useDeleteProjectMutation,
+  useExportMutation,
+  useProjectActivityQuery,
+  useProjectCostQuery,
+  useProjectPromptsQuery,
+  useProjectQuery,
+  useProjectSessionsQuery,
+  useProjectUsageQuery,
+  useUpdateProjectMutation,
+} from '../api/hooks';
+import {
+  ChartCard,
+  DailyLineChart,
+  NamedBarChart,
+  NamedPieChart,
+} from '../components/Charts';
+import { MetricCard } from '../components/MetricCard';
+import { ErrorState, EmptyState, LoadingState } from '../components/States';
+import { StatusBadge } from '../components/StatusBadge';
+import { Page } from '../layout/AppLayout';
+import {
+  formatCurrency,
+  formatDateTime,
+  formatDay,
+  formatDurationMs,
+  formatDurationSeconds,
+  formatNumber,
+  lastDaysRange,
+} from '../utils/format';
+
+const TABS = [
+  'Overview',
+  'Activity',
+  'Prompts',
+  'Sessions',
+  'Usage',
+  'Cost',
+  'Repositories',
+  'Exports',
+  'Settings',
+] as const;
+
+type Tab = (typeof TABS)[number];
+
+export function ProjectDetailsPage() {
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<Tab>('Overview');
+  const range = useMemo(() => lastDaysRange(30), []);
+
+  const project = useProjectQuery(projectId);
+  const activity = useProjectActivityQuery(projectId, range.fromUtc, range.toUtc);
+  const usage = useProjectUsageQuery(projectId, range.fromUtc, range.toUtc);
+  const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
+  const prompts = useProjectPromptsQuery(projectId, range.fromUtc, range.toUtc);
+  const sessions = useProjectSessionsQuery(projectId, range.fromUtc, range.toUtc);
+  const exportMutation = useExportMutation();
+  const updateMutation = useUpdateProjectMutation();
+  const deleteMutation = useDeleteProjectMutation();
+  const [settingsDraft, setSettingsDraft] = useState({
+    name: '',
+    slug: '',
+    clientName: '',
+    billingCode: '',
+    currency: 'USD',
+    isActive: true,
+  });
+  const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+
+  if (project.isLoading) return <LoadingState label="Loading project…" />;
+  if (project.error || !project.data) {
+    return (
+      <ErrorState
+        message={
+          project.error instanceof Error ? project.error.message : 'Project not found'
+        }
+      />
+    );
+  }
+
+  const detail = project.data;
+  const byDay = activity.data?.byDay ?? [];
+  const daySeries = byDay.map((row) => ({
+    day: formatDay(row.day),
+    prompts: row.promptCount,
+    activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
+    agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
+  }));
+
+  const costByDay = byDay.map((row) => {
+    const modelShare = (cost.data?.totalAiCost ?? 0) / Math.max(byDay.length, 1);
+    return {
+      day: formatDay(row.day),
+      cost: Number(modelShare.toFixed(2)),
+    };
+  });
+
+  const modelSeries = (cost.data?.byModel ?? []).map((m) => ({
+    name: m.name || 'Unknown',
+    cost: m.usageBasedCost + m.subscriptionAllocation,
+  }));
+
+  const branchSeries = (activity.data?.byBranch ?? []).map((b) => ({
+    name: b.name || '(none)',
+    prompts: b.promptCount,
+  }));
+
+  const editorSeries = (activity.data?.byEditor ?? []).map((e) => ({
+    name: e.name || 'Unknown',
+    prompts: e.promptCount,
+  }));
+
+  return (
+    <Page>
+      <section className="page-section">
+        <div className="section-header">
+          <div>
+            <p>
+              <Link to="/projects">Projects</Link> / {detail.name}
+            </p>
+            <h2>{detail.name}</h2>
+            <p>
+              {detail.clientName ?? 'No client'} · {detail.slug}
+            </p>
+          </div>
+          <StatusBadge
+            label={detail.isActive ? 'Active' : 'Inactive'}
+            tone={detail.isActive ? 'success' : 'neutral'}
+          />
+        </div>
+
+        <div className="tabs" role="tablist" aria-label="Project sections">
+          {TABS.map((name) => (
+            <button
+              key={name}
+              type="button"
+              role="tab"
+              aria-selected={tab === name}
+              className={`tab${tab === name ? ' active' : ''}`}
+              onClick={() => {
+                setTab(name);
+                if (name === 'Settings') {
+                  setSettingsDraft({
+                    name: detail.name,
+                    slug: detail.slug,
+                    clientName: detail.clientName ?? '',
+                    billingCode: detail.billingCode ?? '',
+                    currency: detail.currency || 'USD',
+                    isActive: detail.isActive,
+                  });
+                }
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {tab === 'Overview' && (
+        <section className="page-section">
+          <div className="metric-grid">
+            <MetricCard label="Prompts" value={formatNumber(activity.data?.promptCount ?? detail.activity?.promptCount)} />
+            <MetricCard
+              label="Agent time"
+              value={formatDurationMs(
+                activity.data?.agentDurationMilliseconds ?? detail.activity?.agentDurationMilliseconds,
+              )}
+            />
+            <MetricCard
+              label="Active time"
+              value={formatDurationSeconds(
+                activity.data?.activeProjectTimeSeconds ?? detail.activity?.activeProjectTimeSeconds,
+              )}
+            />
+            <MetricCard
+              label="Total AI cost"
+              value={formatCurrency(
+                cost.data?.totalAiCost ?? detail.cost?.totalAiCost,
+                cost.data?.currency ?? detail.currency,
+              )}
+            />
+          </div>
+          <div className="chart-grid">
+            <ChartCard title="Prompts / day">
+              <DailyLineChart data={daySeries} xKey="day" yKey="prompts" yLabel="Prompts" />
+            </ChartCard>
+            <ChartCard title="Active time / day (minutes)">
+              <DailyLineChart data={daySeries} xKey="day" yKey="activeMinutes" yLabel="Minutes" />
+            </ChartCard>
+            <ChartCard title="Agent duration / day (minutes)">
+              <DailyLineChart data={daySeries} xKey="day" yKey="agentMinutes" yLabel="Minutes" />
+            </ChartCard>
+            <ChartCard title="Cost / day">
+              <DailyLineChart data={costByDay} xKey="day" yKey="cost" yLabel="Cost" />
+            </ChartCard>
+            <ChartCard title="Cost by model">
+              {modelSeries.length ? (
+                <NamedPieChart data={modelSeries} valueKey="cost" />
+              ) : (
+                <EmptyState message="No model cost data in range." />
+              )}
+            </ChartCard>
+            <ChartCard title="Activity by branch">
+              {branchSeries.length ? (
+                <NamedBarChart data={branchSeries} valueKey="prompts" valueLabel="Prompts" />
+              ) : (
+                <EmptyState message="No branch activity in range." />
+              )}
+            </ChartCard>
+            <ChartCard title="Activity by editor">
+              {editorSeries.length ? (
+                <NamedBarChart data={editorSeries} valueKey="prompts" valueLabel="Prompts" />
+              ) : (
+                <EmptyState message="No editor activity in range." />
+              )}
+            </ChartCard>
+          </div>
+        </section>
+      )}
+
+      {tab === 'Activity' && (
+        <section className="page-section">
+          {activity.isLoading ? (
+            <LoadingState />
+          ) : activity.error ? (
+            <ErrorState message={activity.error instanceof Error ? activity.error.message : 'Failed'} />
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Prompts</th>
+                    <th>Agent runs</th>
+                    <th>Agent duration</th>
+                    <th>Active time</th>
+                    <th>Sessions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(activity.data?.byDay ?? []).map((row) => (
+                    <tr key={row.day}>
+                      <td>{formatDay(row.day)}</td>
+                      <td>{formatNumber(row.promptCount)}</td>
+                      <td>{formatNumber(row.agentRuns)}</td>
+                      <td>{formatDurationMs(row.agentDurationMilliseconds)}</td>
+                      <td>{formatDurationSeconds(row.activeProjectTimeSeconds)}</td>
+                      <td>{formatNumber(row.sessionCount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Prompts' && (
+        <section className="page-section">
+          {prompts.isLoading ? (
+            <LoadingState />
+          ) : prompts.error ? (
+            <ErrorState message={prompts.error instanceof Error ? prompts.error.message : 'Failed'} />
+          ) : !Array.isArray(prompts.data) || prompts.data.length === 0 ? (
+            <EmptyState message="No prompts in the selected range." />
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Editor</th>
+                    <th>Model</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {prompts.data.map((p) => (
+                    <tr key={p.id}>
+                      <td>{formatDateTime(p.timestampUtc)}</td>
+                      <td>{p.eventType}</td>
+                      <td>{p.editor ?? '—'}</td>
+                      <td>{p.model ?? '—'}</td>
+                      <td>{p.branch ?? '—'}</td>
+                      <td>{p.status ?? '—'}</td>
+                      <td>{formatDurationMs(p.durationMilliseconds)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Sessions' && (
+        <section className="page-section">
+          {sessions.isLoading ? (
+            <LoadingState />
+          ) : sessions.error ? (
+            <ErrorState message={sessions.error instanceof Error ? sessions.error.message : 'Failed'} />
+          ) : !Array.isArray(sessions.data) || sessions.data.length === 0 ? (
+            <EmptyState message="No sessions in the selected range." />
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Editor</th>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions.data.map((s) => (
+                    <tr key={s.id}>
+                      <td className="mono">{s.id.slice(0, 8)}</td>
+                      <td>{s.editor ?? '—'}</td>
+                      <td>{formatDateTime(s.startedAtUtc)}</td>
+                      <td>{formatDateTime(s.endedAtUtc)}</td>
+                      <td>{s.branch ?? '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={s.isActive ? 'Active' : 'Closed'}
+                          tone={s.isActive ? 'success' : 'neutral'}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Usage' && (
+        <section className="page-section">
+          {usage.isLoading ? (
+            <LoadingState />
+          ) : usage.error ? (
+            <ErrorState message={usage.error instanceof Error ? usage.error.message : 'Failed'} />
+          ) : (
+            <div className="metric-grid">
+              <MetricCard label="Total tokens" value={formatNumber(usage.data?.totalTokens)} />
+              <MetricCard label="Input tokens" value={formatNumber(usage.data?.inputTokens)} />
+              <MetricCard label="Output tokens" value={formatNumber(usage.data?.outputTokens)} />
+              <MetricCard label="Cached input" value={formatNumber(usage.data?.cachedInputTokens)} />
+              <MetricCard label="Reasoning" value={formatNumber(usage.data?.reasoningTokens)} />
+              <MetricCard
+                label="Reported cost"
+                value={formatCurrency(usage.data?.reportedCost, usage.data?.currency)}
+              />
+              <MetricCard label="Requests" value={formatNumber(usage.data?.requestCount)} />
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Cost' && (
+        <section className="page-section">
+          {cost.isLoading ? (
+            <LoadingState />
+          ) : cost.error ? (
+            <ErrorState message={cost.error instanceof Error ? cost.error.message : 'Failed'} />
+          ) : (
+            <>
+              <div className="metric-grid">
+                <MetricCard
+                  label="Usage-based"
+                  value={formatCurrency(cost.data?.usageBasedCursorCost, cost.data?.currency)}
+                />
+                <MetricCard
+                  label="Subscription allocation"
+                  value={formatCurrency(cost.data?.subscriptionAllocation, cost.data?.currency)}
+                />
+                <MetricCard
+                  label="Other providers"
+                  value={formatCurrency(cost.data?.otherProviderCost, cost.data?.currency)}
+                />
+                <MetricCard
+                  label="Unallocated"
+                  value={formatCurrency(cost.data?.unallocatedCost, cost.data?.currency)}
+                />
+                <MetricCard
+                  label="Total AI cost"
+                  value={formatCurrency(cost.data?.totalAiCost, cost.data?.currency)}
+                />
+              </div>
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Model</th>
+                      <th>Usage cost</th>
+                      <th>Subscription</th>
+                      <th>Prompts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(cost.data?.byModel ?? []).map((m) => (
+                      <tr key={m.name}>
+                        <td>{m.name}</td>
+                        <td>{formatCurrency(m.usageBasedCost, cost.data?.currency)}</td>
+                        <td>{formatCurrency(m.subscriptionAllocation, cost.data?.currency)}</td>
+                        <td>{formatNumber(m.promptCount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === 'Repositories' && (
+        <section className="page-section">
+          {!(detail.repositories?.length) ? (
+            <EmptyState message="No repositories mapped to this project." />
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Local path</th>
+                    <th>Remote</th>
+                    <th>Default branch</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.repositories.map((repo) => (
+                    <tr key={repo.id}>
+                      <td className="mono">{repo.localPath}</td>
+                      <td className="mono">{repo.remoteUrl ?? '—'}</td>
+                      <td>{repo.defaultBranch ?? '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={repo.isActive ? 'Active' : 'Inactive'}
+                          tone={repo.isActive ? 'success' : 'neutral'}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Exports' && (
+        <section className="page-section">
+          <div className="panel stack">
+            <p>Export a project report to the configured export directory on the server.</p>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={exportMutation.isPending}
+                onClick={() =>
+                  exportMutation.mutate({
+                    reportType: 'project',
+                    format: 'Json',
+                    projectId: detail.id,
+                    fromUtc: range.fromUtc,
+                    toUtc: range.toUtc,
+                    includeActivity: true,
+                    includeUsage: true,
+                    includeCosts: true,
+                  })
+                }
+              >
+                Export JSON
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={exportMutation.isPending}
+                onClick={() =>
+                  exportMutation.mutate({
+                    reportType: 'project',
+                    format: 'Csv',
+                    projectId: detail.id,
+                    fromUtc: range.fromUtc,
+                    toUtc: range.toUtc,
+                  })
+                }
+              >
+                Export CSV
+              </button>
+            </div>
+            {exportMutation.isSuccess ? (
+              <p className="mono">
+                Wrote {exportMutation.data.filePath} ({formatNumber(exportMutation.data.byteCount)} bytes)
+              </p>
+            ) : null}
+            {exportMutation.isError ? (
+              <ErrorState
+                message={
+                  exportMutation.error instanceof Error
+                    ? exportMutation.error.message
+                    : 'Export failed'
+                }
+              />
+            ) : null}
+          </div>
+        </section>
+      )}
+
+      {tab === 'Settings' && (
+        <section className="page-section">
+          <form
+            className="panel stack"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSettingsMessage(null);
+              try {
+                await updateMutation.mutateAsync({
+                  id: detail.id,
+                  body: {
+                    name: settingsDraft.name.trim(),
+                    slug: settingsDraft.slug.trim() || null,
+                    clientName: settingsDraft.clientName || null,
+                    billingCode: settingsDraft.billingCode || null,
+                    currency: settingsDraft.currency,
+                    isActive: settingsDraft.isActive,
+                  },
+                });
+                setSettingsMessage('Project settings saved.');
+                await project.refetch();
+              } catch (err) {
+                setSettingsMessage(err instanceof Error ? err.message : 'Save failed');
+              }
+            }}
+          >
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="name">Name</label>
+                <input
+                  id="name"
+                  required
+                  value={settingsDraft.name}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, name: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="slug">Slug</label>
+                <input
+                  id="slug"
+                  value={settingsDraft.slug}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, slug: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="clientName">Client</label>
+                <input
+                  id="clientName"
+                  value={settingsDraft.clientName}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, clientName: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="billingCode">Billing code</label>
+                <input
+                  id="billingCode"
+                  value={settingsDraft.billingCode}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, billingCode: e.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="currency">Currency</label>
+                <input
+                  id="currency"
+                  value={settingsDraft.currency}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, currency: e.target.value }))}
+                />
+              </div>
+            </div>
+            <label className="row">
+              <input
+                type="checkbox"
+                checked={settingsDraft.isActive}
+                onChange={(e) => setSettingsDraft((s) => ({ ...s, isActive: e.target.checked }))}
+              />
+              Project is active
+            </label>
+            <div className="row-actions">
+              <button type="submit" className="btn" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? 'Saving…' : 'Save project settings'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={deleteMutation.isPending}
+                onClick={() => {
+                  const ok = window.confirm(
+                    `Delete project “${detail.name}”? It will be deactivated and removed from the active list.`,
+                  );
+                  if (!ok) {
+                    return;
+                  }
+                  void deleteMutation
+                    .mutateAsync(detail.id)
+                    .then(() => navigate('/projects'))
+                    .catch((err: unknown) => {
+                      setSettingsMessage(err instanceof Error ? err.message : 'Delete failed');
+                    });
+                }}
+              >
+                Delete project
+              </button>
+              {settingsMessage ? <span>{settingsMessage}</span> : null}
+            </div>
+          </form>
+        </section>
+      )}
+    </Page>
+  );
+}

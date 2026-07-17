@@ -1,0 +1,4 @@
+Date,Model,Input Tokens,Output Tokens,Cached Input Tokens,Total Tokens,Cost,Currency,Request ID,Session ID
+2024-07-01T10:00:00Z,gpt-4.1,1000,250,100,1350,0.42,USD,req-sample-001,sess-sample-001
+2024-07-01T11:30:00Z,claude-4-sonnet,800,400,50,1250,0.31,USD,req-sample-002,sess-sample-002
+2024-07-02T09:15:00Z,gpt-4.1,500,100,0,600,0.18,USD,req-sample-003,sess-sample-001

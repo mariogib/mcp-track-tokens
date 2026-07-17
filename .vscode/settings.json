@@ -1,0 +1,35 @@
+{
+  "files.exclude": {
+    "**/*.vsix": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/bin/**": true,
+    "**/obj/**": true,
+    "**/dist/**": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/bin": true,
+    "**/obj": true,
+    "**/dist": true,
+    "**/*.vsix": true
+  },
+  "dotnet.defaultSolution": "McpTrackTokens.sln",
+  "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "eslint.workingDirectories": [
+    {
+      "directory": "src/McpTrackTokens.Dashboard",
+      "changeProcessCWD": true
+    },
+    {
+      "directory": "extensions/mcp-track-tokens-vscode",
+      "changeProcessCWD": true
+    },
+    {
+      "directory": "integrations/cursor-hooks",
+      "changeProcessCWD": true
+    }
+  ]
+}

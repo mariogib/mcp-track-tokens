@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "mcp-track-tokens": {
+      "url": "http://127.0.0.1:5187/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}

@@ -1,0 +1,96 @@
+:root,
+[data-theme='light'] {
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --bg-base: #f3f1eb;
+  --bg-elevated: #fffcf7;
+  --bg-muted: #e8e4db;
+  --bg-sidebar: #1d2a24;
+  --bg-sidebar-hover: #274036;
+  --bg-overlay: rgba(20, 28, 24, 0.45);
+
+  --text-primary: #1a2420;
+  --text-secondary: #4d5a53;
+  --text-inverse: #f5f2ea;
+  --text-muted: #6e7a72;
+
+  --border: #d5d0c5;
+  --border-strong: #b8b2a4;
+
+  --accent: #1f6f5b;
+  --accent-hover: #185749;
+  --accent-soft: rgba(31, 111, 91, 0.12);
+  --accent-contrast: #ffffff;
+
+  --success: #2f7d4a;
+  --success-soft: rgba(47, 125, 74, 0.14);
+  --warning: #9a6b12;
+  --warning-soft: rgba(154, 107, 18, 0.16);
+  --danger: #a33b2d;
+  --danger-soft: rgba(163, 59, 45, 0.14);
+  --info: #2a5f7a;
+  --info-soft: rgba(42, 95, 122, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(26, 36, 32, 0.06);
+  --shadow-md: 0 8px 24px rgba(26, 36, 32, 0.08);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --chart-1: #1f6f5b;
+  --chart-2: #2a5f7a;
+  --chart-3: #9a6b12;
+  --chart-4: #a33b2d;
+  --chart-5: #5b6b4a;
+
+  --atmosphere:
+    radial-gradient(1200px 600px at 10% -10%, rgba(31, 111, 91, 0.14), transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, rgba(42, 95, 122, 0.12), transparent 50%),
+    linear-gradient(180deg, #f7f4ee 0%, #efebe3 100%);
+}
+
+[data-theme='dark'] {
+  --bg-base: #121816;
+  --bg-elevated: #1a221e;
+  --bg-muted: #24302a;
+  --bg-sidebar: #0d1210;
+  --bg-sidebar-hover: #17201c;
+  --bg-overlay: rgba(0, 0, 0, 0.55);
+
+  --text-primary: #eef2ef;
+  --text-secondary: #b4bfb8;
+  --text-inverse: #eef2ef;
+  --text-muted: #85928b;
+
+  --border: #2d3a34;
+  --border-strong: #405049;
+
+  --accent: #3fb89a;
+  --accent-hover: #56c9ac;
+  --accent-soft: rgba(63, 184, 154, 0.16);
+  --accent-contrast: #0d1210;
+
+  --success: #4fbf74;
+  --success-soft: rgba(79, 191, 116, 0.16);
+  --warning: #d4a84b;
+  --warning-soft: rgba(212, 168, 75, 0.16);
+  --danger: #e07263;
+  --danger-soft: rgba(224, 114, 99, 0.16);
+  --info: #6aa8c8;
+  --info-soft: rgba(106, 168, 200, 0.16);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.35);
+
+  --chart-1: #3fb89a;
+  --chart-2: #6aa8c8;
+  --chart-3: #d4a84b;
+  --chart-4: #e07263;
+  --chart-5: #9bb07f;
+
+  --atmosphere:
+    radial-gradient(1000px 560px at 0% 0%, rgba(63, 184, 154, 0.12), transparent 55%),
+    radial-gradient(800px 480px at 100% 10%, rgba(106, 168, 200, 0.1), transparent 50%),
+    linear-gradient(180deg, #141b18 0%, #101512 100%);
+}

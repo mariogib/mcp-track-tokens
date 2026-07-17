@@ -1,0 +1,34 @@
+services:
+  mcp-track-tokens:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcp-track-tokens:1.0.0
+    container_name: mcp-track-tokens
+    ports:
+      - "5187:5187"
+    volumes:
+      - mcp-track-tokens-data:/data
+    environment:
+      MCP_TRACK_TOKENS_BIND_ADDRESS: http://0.0.0.0:5187
+      MCP_TRACK_TOKENS_SERVER_URL: http://127.0.0.1:5187
+      MCP_TRACK_TOKENS_DATABASE_PATH: /data/mcp-track-tokens.db
+      MCP_TRACK_TOKENS_EXPORT_PATH: /data/exports/
+      MCP_TRACK_TOKENS_LOG_PATH: /data/logs/
+      MCP_TRACK_TOKENS_QUEUE_PATH: /data/queue/
+      MCP_TRACK_TOKENS_ENCRYPTION_KEY_PATH: /data/encryption.key
+      MCP_TRACK_TOKENS_MIGRATE_ON_STARTUP: "true"
+      # One process owns SQLite; Cursor MCP should use HTTP (see samples/cursor-config/mcp.http.json).
+      MCP_TRACK_TOKENS_ENABLE_HTTP_MCP: "true"
+      MCP_TRACK_TOKENS_API_KEY: ${MCP_TRACK_TOKENS_API_KEY:-OverTheMoon}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5187/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  mcp-track-tokens-data:
+    name: mcp-track-tokens-data

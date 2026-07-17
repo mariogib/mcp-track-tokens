@@ -1,0 +1,20 @@
+# Docker build context exclusions
+**/.git
+**/.vs
+**/bin
+**/obj
+**/node_modules
+**/TestResults
+**/coverage
+**/*.vsix
+**/.mcp-track-tokens
+**/*.db
+**/.env
+**/agent-transcripts
+tests/
+docs/
+samples/
+scripts/
+extensions/mcp-track-tokens-vscode/node_modules
+extensions/mcp-track-tokens-vscode/dist
+integrations/cursor-hooks/node_modules

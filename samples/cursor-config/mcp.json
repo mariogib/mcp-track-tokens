@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "mcp-track-tokens": {
+      "command": "C:\\Users\\USERNAME\\.mcp-track-tokens\\bin\\mcp-track-tokens.exe",
+      "args": ["serve", "--stdio"],
+      "env": {
+        "MCP_TRACK_TOKENS_API_KEY": "YOUR_API_KEY",
+        "MCP_TRACK_TOKENS_DATABASE_PATH": "C:\\Users\\USERNAME\\.mcp-track-tokens\\mcp-track-tokens.db",
+        "MCP_TRACK_TOKENS_EXPORT_PATH": "C:\\Users\\USERNAME\\.mcp-track-tokens\\exports",
+        "MCP_TRACK_TOKENS_LOG_PATH": "C:\\Users\\USERNAME\\.mcp-track-tokens\\logs"
+      }
+    }
+  }
+}

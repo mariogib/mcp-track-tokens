@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "serverUrl": "http://127.0.0.1:5187",
+  "apiKeyEnv": "MCP_TRACK_TOKENS_API_KEY",
+  "hooks": {
+    "promptSubmitted": "./dist/prompt-submitted.js",
+    "agentStarted": "./dist/agent-started.js",
+    "agentCompleted": "./dist/agent-completed.js",
+    "agentFailed": "./dist/agent-failed.js",
+    "agentCancelled": "./dist/agent-cancelled.js",
+    "sessionStarted": "./dist/session-started.js",
+    "sessionEnded": "./dist/session-ended.js"
+  }
+}

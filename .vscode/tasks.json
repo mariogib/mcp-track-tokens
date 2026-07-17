@@ -1,0 +1,127 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/McpTrackTokens.sln",
+        "-c",
+        "Debug",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build-server",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/src/McpTrackTokens.Server/McpTrackTokens.Server.csproj",
+        "-c",
+        "Debug",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "build-cli",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/src/McpTrackTokens.Cli/McpTrackTokens.Cli.csproj",
+        "-c",
+        "Debug",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "test",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "test",
+        "${workspaceFolder}/McpTrackTokens.sln",
+        "-c",
+        "Debug",
+        "--verbosity",
+        "minimal"
+      ],
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "dashboard: build",
+      "type": "npm",
+      "script": "build",
+      "path": "src/McpTrackTokens.Dashboard",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "dashboard: copy wwwroot",
+      "dependsOn": ["dashboard: build"],
+      "type": "shell",
+      "command": "Remove-Item -Recurse -Force \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\" -ErrorAction SilentlyContinue; Copy-Item -Recurse \"${workspaceFolder}/src/McpTrackTokens.Dashboard/dist\" \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\"",
+      "windows": {
+        "command": "Remove-Item -Recurse -Force \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\" -ErrorAction SilentlyContinue; Copy-Item -Recurse \"${workspaceFolder}/src/McpTrackTokens.Dashboard/dist\" \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\""
+      },
+      "linux": {
+        "command": "rm -rf \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\" && cp -R \"${workspaceFolder}/src/McpTrackTokens.Dashboard/dist\" \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\""
+      },
+      "osx": {
+        "command": "rm -rf \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\" && cp -R \"${workspaceFolder}/src/McpTrackTokens.Dashboard/dist\" \"${workspaceFolder}/src/McpTrackTokens.Server/wwwroot\""
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dashboard: dev",
+      "type": "npm",
+      "script": "dev",
+      "path": "src/McpTrackTokens.Dashboard",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Local:"
+        }
+      }
+    },
+    {
+      "label": "build-all",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build-all.ps1 -SkipTests",
+      "windows": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}/scripts/build-all.ps1\" -SkipTests"
+      },
+      "linux": {
+        "command": "bash \"${workspaceFolder}/scripts/build-all.sh\" --skip-tests"
+      },
+      "osx": {
+        "command": "bash \"${workspaceFolder}/scripts/build-all.sh\" --skip-tests"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

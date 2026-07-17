@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>McpTrackTokens.Domain</RootNamespace>
+    <AssemblyName>McpTrackTokens.Domain</AssemblyName>
+    <Description>Pure domain model for MCP Track Tokens (entities, value objects, enums, and domain services).</Description>
+  </PropertyGroup>
+
+</Project>

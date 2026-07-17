@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>McpTrackTokens.Cli</RootNamespace>
+    <AssemblyName>mcp-track-tokens</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\McpTrackTokens.Infrastructure\McpTrackTokens.Infrastructure.csproj" />
+    <ProjectReference Include="..\McpTrackTokens.Application\McpTrackTokens.Application.csproj" />
+    <ProjectReference Include="..\McpTrackTokens.Server\McpTrackTokens.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\integrations\cursor-hooks\**\*" Link="integrations\cursor-hooks\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\integrations\cursor-hooks')" />
+  </ItemGroup>
+
+</Project>

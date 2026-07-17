@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "mcp-track-tokens": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "D:\\Dev\\LunarQ\\mcp-track-tokens\\src\\McpTrackTokens.Cli\\McpTrackTokens.Cli.csproj",
+        "--no-build",
+        "--",
+        "serve",
+        "--stdio"
+      ],
+      "env": {
+        "MCP_TRACK_TOKENS_API_KEY": "YOUR_API_KEY",
+        "MCP_TRACK_TOKENS_DATABASE_PATH": "C:\\Users\\USERNAME\\.mcp-track-tokens\\mcp-track-tokens.db"
+      }
+    }
+  }
+}

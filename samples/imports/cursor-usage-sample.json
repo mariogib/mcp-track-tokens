@@ -1,0 +1,12 @@
+{
+  "Date": "2024-07-01T10:00:00Z",
+  "Model": "gpt-4.1",
+  "Input Tokens": "1000",
+  "Output Tokens": "250",
+  "Cached Input Tokens": "100",
+  "Total Tokens": "1350",
+  "Cost": "0.42",
+  "Currency": "USD",
+  "Request ID": "req-sample-001",
+  "Session ID": "sess-sample-001"
+}

@@ -1,0 +1,247 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from './client';
+import type {
+  AllocationRequestDto,
+  CreateApiKeyRequestDto,
+  ExportRequestDto,
+  ReconciliationRequestDto,
+  UpdateSettingsRequest,
+  UpdateProjectRequest,
+} from './types';
+
+export const queryKeys = {
+  health: ['health'] as const,
+  ready: ['ready'] as const,
+  status: ['status'] as const,
+  summary: (year: number, month: number) => ['reports', 'summary', year, month] as const,
+  projects: ['projects'] as const,
+  project: (id: string) => ['projects', id] as const,
+  projectActivity: (id: string, from: string, to: string) =>
+    ['projects', id, 'activity', from, to] as const,
+  projectUsage: (id: string, from: string, to: string) =>
+    ['projects', id, 'usage', from, to] as const,
+  projectCost: (id: string, from: string, to: string) =>
+    ['projects', id, 'cost', from, to] as const,
+  projectPrompts: (id: string, from: string, to: string) =>
+    ['projects', id, 'prompts', from, to] as const,
+  projectSessions: (id: string, from?: string, to?: string) =>
+    ['projects', id, 'sessions', from, to] as const,
+  activeSession: ['sessions', 'active'] as const,
+  unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
+  settings: ['settings'] as const,
+  apiKeys: ['api-keys'] as const,
+  integrations: ['integrations'] as const,
+};
+
+export function useHealthQuery() {
+  return useQuery({
+    queryKey: queryKeys.health,
+    queryFn: ({ signal }) => api.health(signal),
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+}
+
+export function useStatusQuery() {
+  return useQuery({
+    queryKey: queryKeys.status,
+    queryFn: ({ signal }) => api.status(signal),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useReportsSummaryQuery(year: number, month: number) {
+  return useQuery({
+    queryKey: queryKeys.summary(year, month),
+    queryFn: ({ signal }) => api.reportsSummary(year, month, signal),
+  });
+}
+
+export function useProjectsQuery() {
+  return useQuery({
+    queryKey: queryKeys.projects,
+    queryFn: ({ signal }) => api.listProjects(signal),
+  });
+}
+
+export function useUpdateProjectMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateProjectRequest }) =>
+      api.updateProject(id, body),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: queryKeys.project(variables.id) });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useDeleteProjectMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteProject(id),
+    onSuccess: (_data, id) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: queryKeys.project(id) });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useProjectQuery(id: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.project(id ?? ''),
+    queryFn: ({ signal }) => api.getProject(id!, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useProjectActivityQuery(id: string | undefined, fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.projectActivity(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectActivity(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useProjectUsageQuery(id: string | undefined, fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.projectUsage(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectUsage(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useProjectCostQuery(id: string | undefined, fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.projectCost(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectCost(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useProjectPromptsQuery(id: string | undefined, fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.projectPrompts(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectPrompts(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useProjectSessionsQuery(id: string | undefined, fromUtc?: string, toUtc?: string) {
+  return useQuery({
+    queryKey: queryKeys.projectSessions(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectSessions(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useActiveSessionQuery() {
+  return useQuery({
+    queryKey: queryKeys.activeSession,
+    queryFn: ({ signal }) => api.activeSession(signal),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useUnallocatedQuery(fromUtc?: string, toUtc?: string) {
+  return useQuery({
+    queryKey: queryKeys.unallocated(fromUtc, toUtc),
+    queryFn: ({ signal }) => api.unallocated(fromUtc, toUtc, signal),
+  });
+}
+
+export function useSettingsQuery() {
+  return useQuery({
+    queryKey: queryKeys.settings,
+    queryFn: ({ signal }) => api.getSettings(signal),
+  });
+}
+
+export function useApiKeysQuery() {
+  return useQuery({
+    queryKey: queryKeys.apiKeys,
+    queryFn: ({ signal }) => api.listApiKeys(signal),
+  });
+}
+
+export function useIntegrationsQuery() {
+  return useQuery({
+    queryKey: queryKeys.integrations,
+    queryFn: ({ signal }) => api.integrationStatus(signal),
+  });
+}
+
+export function useUpdateSettingsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateSettingsRequest) => api.updateSettings(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.settings });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
+export function useCreateApiKeyMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateApiKeyRequestDto) => api.createApiKey(body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.apiKeys }),
+  });
+}
+
+export function useRevokeApiKeyMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.revokeApiKey(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.apiKeys }),
+  });
+}
+
+export function useReconciliationMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: ReconciliationRequestDto) => api.runReconciliation(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
+export function useAllocateUsageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AllocationRequestDto) => api.allocateUsage(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
+export function useExportMutation() {
+  return useMutation({
+    mutationFn: (body: ExportRequestDto) => api.exportReport(body),
+  });
+}
+
+export function useImportUploadMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      file: File;
+      dryRun?: boolean;
+      force?: boolean;
+      columnMappings?: Record<string, string>;
+      timezone?: string;
+    }) => api.importCursorUpload(args.file, args),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
