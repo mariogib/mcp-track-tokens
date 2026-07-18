@@ -51,6 +51,15 @@ public interface ISessionRepository
 
     Task<IReadOnlyList<EditorSession>> GetActiveAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the most recently active session for the editor + workspace, if any.
+    /// Workspace paths are compared after <c>NormalizedPath</c> normalization.
+    /// </summary>
+    Task<EditorSession?> GetActiveForWorkspaceAsync(
+        EditorType editor,
+        string? workspacePath,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<EditorSession>> GetActiveAtAsync(
         DateTimeOffset timestampUtc,
         CancellationToken cancellationToken = default);
@@ -99,6 +108,13 @@ public interface IActivityEventRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PromptActivityEvent>> ListBySessionAsync(
+        Guid editorSessionId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Latest <see cref="ActivityEventType.PromptSubmitted"/> timestamp for a session, if any.
+    /// </summary>
+    Task<DateTimeOffset?> GetLatestPromptTimestampAsync(
         Guid editorSessionId,
         CancellationToken cancellationToken = default);
 

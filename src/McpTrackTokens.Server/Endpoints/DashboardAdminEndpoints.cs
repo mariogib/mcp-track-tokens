@@ -57,6 +57,11 @@ public static class DashboardAdminEndpoints
             options.InactivityThresholdMinutes = minutes;
         }
 
+        if (request.SessionInactivityCloseMinutes is int sessionMinutes && sessionMinutes > 0)
+        {
+            options.SessionInactivityCloseMinutes = sessionMinutes;
+        }
+
         if (!string.IsNullOrWhiteSpace(request.DefaultCurrency))
         {
             options.DefaultCurrency = request.DefaultCurrency.Trim().ToUpperInvariant();
@@ -203,6 +208,7 @@ public static class DashboardAdminEndpoints
 
     private static async Task<IResult> GetIntegrationsAsync(
         IReportService reports,
+        IActivityEventRepository events,
         CancellationToken cancellationToken)
     {
         var status = await reports.GetTrackingStatusAsync(cancellationToken).ConfigureAwait(false);
@@ -212,25 +218,55 @@ public static class DashboardAdminEndpoints
             ".cursor",
             "mcp-track-tokens-hooks");
 
+        var hooksOnDisk = Directory.Exists(hooksPath);
+        var now = DateTimeOffset.UtcNow;
+        var recentEvents = await events
+            .ListAsync(now.AddDays(-14), now, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        var recentCursorIngest = recentEvents.Any(e => e.Editor == EditorType.Cursor);
+        var cursorHooksConfigured = hooksOnDisk || recentCursorIngest;
+
+        var notes = new List<string>
+        {
+            status.QueuedEventCount > 0
+                ? $"{status.QueuedEventCount} queued offline event(s) under {queuePath}."
+                : "No queued offline events detected.",
+            "VS Code extension presence is not auto-detected from the server process."
+        };
+
+        if (hooksOnDisk)
+        {
+            notes.Add($"Cursor hooks directory found at {hooksPath}.");
+        }
+        else if (recentCursorIngest)
+        {
+            notes.Add(
+                "Cursor hooks directory is not visible to this process (common when the API runs in Docker). " +
+                "Marked configured because recent Cursor events were ingested.");
+        }
+        else
+        {
+            notes.Add(
+                $"Cursor hooks directory not found at {hooksPath}. " +
+                "Install with: mcp-track-tokens install-cursor-hooks");
+        }
+
         return Results.Ok(new
         {
-            cursorHooksConfigured = Directory.Exists(hooksPath),
+            cursorHooksConfigured,
+            cursorHooksOnDisk = hooksOnDisk,
+            cursorHooksInferredFromActivity = !hooksOnDisk && recentCursorIngest,
             vscodeExtensionDetected = false,
             mcpConfigured = true,
             lastIngestAtUtc = status.LastEventAtUtc,
-            notes = new[]
-            {
-                status.QueuedEventCount > 0
-                    ? $"{status.QueuedEventCount} queued offline event(s) under {queuePath}."
-                    : "No queued offline events detected.",
-                "VS Code extension presence is not auto-detected from the server process."
-            }
+            notes
         });
     }
 
     private static object ToSettingsDto(TrackingOptions options) => new
     {
         inactivityThresholdMinutes = options.InactivityThresholdMinutes,
+        sessionInactivityCloseMinutes = options.SessionInactivityCloseMinutes,
         defaultCurrency = options.DefaultCurrency,
         cursorSubscriptionAmount = options.CursorSubscriptionAmount,
         cursorSubscriptionCurrency = options.CursorSubscriptionCurrency,
@@ -263,6 +299,8 @@ public static class DashboardAdminEndpoints
 public sealed class UpdateSettingsRequestDto
 {
     public int? InactivityThresholdMinutes { get; set; }
+
+    public int? SessionInactivityCloseMinutes { get; set; }
 
     public string? DefaultCurrency { get; set; }
 

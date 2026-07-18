@@ -90,6 +90,22 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async Task<DateTimeOffset?> GetLatestPromptTimestampAsync(
+        Guid editorSessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var matches = await SqliteDateTimeQuery.MaterializeAsync(
+            _db.PromptActivityEvents.AsNoTracking()
+                .Where(e =>
+                    e.EditorSessionId == editorSessionId &&
+                    e.EventType == ActivityEventType.PromptSubmitted),
+            orderBy: items => items.OrderByDescending(e => e.TimestampUtc),
+            take: 1,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return matches.FirstOrDefault()?.TimestampUtc;
+    }
+
+    /// <inheritdoc />
     public Task<PromptActivityEvent?> FindByExternalRequestIdAsync(
         string externalRequestId,
         CancellationToken cancellationToken = default)

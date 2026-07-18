@@ -445,6 +445,7 @@ export interface ApiKeyDto {
 
 export interface SettingsDto {
   inactivityThresholdMinutes: number;
+  sessionInactivityCloseMinutes?: number;
   defaultCurrency: string;
   cursorSubscriptionAmount: number;
   cursorSubscriptionCurrency: string;
@@ -473,6 +474,7 @@ export interface CursorModelTokenRateDto {
 
 export interface UpdateSettingsRequest {
   inactivityThresholdMinutes?: number;
+  sessionInactivityCloseMinutes?: number;
   defaultCurrency?: string;
   cursorSubscriptionAmount?: number;
   cursorSubscriptionCurrency?: string;
@@ -548,6 +550,8 @@ export interface DateRangeParams {
 
 export interface IntegrationStatusDto {
   cursorHooksConfigured: boolean;
+  cursorHooksOnDisk?: boolean;
+  cursorHooksInferredFromActivity?: boolean;
   vscodeExtensionDetected: boolean;
   mcpConfigured: boolean;
   lastIngestAtUtc?: string | null;

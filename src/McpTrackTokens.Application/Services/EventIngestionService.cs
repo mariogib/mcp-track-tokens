@@ -110,7 +110,8 @@ public sealed class EventIngestionService : IEventIngestionService
             }
         }
 
-        var session = await ResolveSessionAsync(dto, editor, project?.Id, cancellationToken).ConfigureAwait(false);
+        var session = await ResolveSessionAsync(dto, editor, project?.Id, eventType, cancellationToken)
+            .ConfigureAwait(false);
 
         if (EnumParsing.IsTerminalAgentEvent(eventType))
         {
@@ -257,6 +258,14 @@ public sealed class EventIngestionService : IEventIngestionService
                 .ConfigureAwait(false);
         }
 
+        var activeForWorkspace = await _sessions
+            .GetActiveForWorkspaceAsync(editor, dto.WorkspacePath, cancellationToken)
+            .ConfigureAwait(false);
+        if (activeForWorkspace is not null)
+        {
+            return await EnsureTrackedSessionAsync(activeForWorkspace, cancellationToken).ConfigureAwait(false);
+        }
+
         if (!string.IsNullOrWhiteSpace(dto.ExternalSessionId))
         {
             var existing = await _sessions
@@ -264,7 +273,7 @@ public sealed class EventIngestionService : IEventIngestionService
                 .ConfigureAwait(false);
             if (existing is not null && existing.Status == SessionStatus.Active)
             {
-                return existing;
+                return await EnsureTrackedSessionAsync(existing, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -340,19 +349,58 @@ public sealed class EventIngestionService : IEventIngestionService
         IngestEventDto dto,
         EditorType editor,
         Guid? projectId,
+        ActivityEventType eventType,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(dto.ExternalSessionId))
+        if (eventType == ActivityEventType.PromptSubmitted)
         {
-            return null;
+            return await ResolveOrCreateSessionForPromptAsync(dto, editor, projectId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        var existing = await _sessions
-            .GetByExternalSessionIdAsync(dto.ExternalSessionId, editor, cancellationToken)
+        // Non-prompt events attach to an existing active workspace session only.
+        return await _sessions
+            .GetActiveForWorkspaceAsync(editor, dto.WorkspacePath, cancellationToken)
             .ConfigureAwait(false);
-        if (existing is not null)
+    }
+
+    private async Task<EditorSession> ResolveOrCreateSessionForPromptAsync(
+        IngestEventDto dto,
+        EditorType editor,
+        Guid? projectId,
+        CancellationToken cancellationToken)
+    {
+        var active = await _sessions
+            .GetActiveForWorkspaceAsync(editor, dto.WorkspacePath, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (active is not null)
         {
-            return existing;
+            var lastPromptAt = await _events
+                .GetLatestPromptTimestampAsync(active.Id, cancellationToken)
+                .ConfigureAwait(false) ?? active.LastActivityAtUtc;
+
+            var inactivity = dto.TimestampUtc.ToUniversalTime() - lastPromptAt.ToUniversalTime();
+            var closeAfter = TimeSpan.FromMinutes(Math.Max(1, _options.SessionInactivityCloseMinutes));
+
+            if (inactivity > closeAfter)
+            {
+                var tracked = await EnsureTrackedSessionAsync(active, cancellationToken).ConfigureAwait(false);
+                tracked.TransitionTo(SessionStatus.Ended, lastPromptAt);
+                await _sessions.UpdateAsync(tracked, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var tracked = await EnsureTrackedSessionAsync(active, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(dto.ExternalSessionId) &&
+                    !string.Equals(tracked.ExternalSessionId, dto.ExternalSessionId, StringComparison.Ordinal))
+                {
+                    tracked.ExternalSessionId = dto.ExternalSessionId;
+                    await _sessions.UpdateAsync(tracked, cancellationToken).ConfigureAwait(false);
+                }
+
+                return tracked;
+            }
         }
 
         var created = EditorSession.Start(
@@ -369,6 +417,14 @@ public sealed class EventIngestionService : IEventIngestionService
             dto.ExternalSessionId);
         await _sessions.AddAsync(created, cancellationToken).ConfigureAwait(false);
         return created;
+    }
+
+    private async Task<EditorSession> EnsureTrackedSessionAsync(
+        EditorSession session,
+        CancellationToken cancellationToken)
+    {
+        var tracked = await _sessions.GetByIdAsync(session.Id, cancellationToken).ConfigureAwait(false);
+        return tracked ?? session;
     }
 
     private async Task<EditorSession?> FindSessionAsync(

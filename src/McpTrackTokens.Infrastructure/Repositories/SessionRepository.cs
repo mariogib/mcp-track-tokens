@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
+using McpTrackTokens.Domain.ValueObjects;
 using McpTrackTokens.Infrastructure.Persistence;
 
 namespace McpTrackTokens.Infrastructure.Repositories;
@@ -48,6 +49,26 @@ public sealed class SessionRepository : ISessionRepository
             _db.EditorSessions.AsNoTracking().Where(s => s.Status == SessionStatus.Active),
             orderBy: items => items.OrderByDescending(s => s.LastActivityAtUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<EditorSession?> GetActiveForWorkspaceAsync(
+        EditorType editor,
+        string? workspacePath,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedWorkspace = NormalizedPath.Normalize(workspacePath);
+        var active = await SqliteDateTimeQuery.MaterializeAsync(
+            _db.EditorSessions.AsNoTracking()
+                .Where(s => s.Status == SessionStatus.Active && s.Editor == editor),
+            orderBy: items => items.OrderByDescending(s => s.LastActivityAtUtc),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return active.FirstOrDefault(s =>
+            string.Equals(
+                NormalizedPath.Normalize(s.WorkspacePath),
+                normalizedWorkspace,
+                StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<EditorSession>> GetActiveAtAsync(

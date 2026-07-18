@@ -79,6 +79,12 @@ public sealed class TrackingOptions
     public int InactivityThresholdMinutes { get; set; } = 15;
 
     /// <summary>
+    /// When an active editor session has had no prompt for longer than this many minutes,
+    /// the next prompt closes that session (at the last prompt time) and opens a new one.
+    /// </summary>
+    public int SessionInactivityCloseMinutes { get; set; } = 60;
+
+    /// <summary>
     /// Enables optional streamable HTTP MCP transport.
     /// </summary>
     public bool EnableHttpMcp { get; set; }
