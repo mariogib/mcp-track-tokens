@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -67,8 +69,16 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         }
 
         var duplicateRows = 0;
-        foreach (var record in parsed.Records.Where(r => !string.IsNullOrWhiteSpace(r.ExternalRecordId)))
+        var seenInFile = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var record in parsed.Records)
         {
+            EnsureStableExternalRecordId(record, parsed.Source);
+            if (!seenInFile.Add(record.ExternalRecordId!))
+            {
+                duplicateRows++;
+                continue;
+            }
+
             var existing = await _usage
                 .FindByExternalRecordIdAsync(parsed.Source, record.ExternalRecordId!, cancellationToken)
                 .ConfigureAwait(false);
@@ -110,27 +120,9 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
                 .ConfigureAwait(false);
             if (existingBatch is not null)
             {
-                if (!request.Force)
-                {
-                    return new ImportResultDto
-                    {
-                        ImportBatchId = existingBatch.Id,
-                        DryRun = request.DryRun,
-                        FileName = parsed.FileName,
-                        FileHash = parsed.FileHash,
-                        Source = parsed.Source,
-                        Status = ImportStatus.Completed,
-                        ReceivedCount = existingBatch.ReceivedCount,
-                        ImportedCount = 0,
-                        DuplicateCount = existingBatch.ReceivedCount,
-                        FailedCount = 0,
-                        ErrorSummary = "Duplicate file hash; import skipped. Pass Force=true to re-import.",
-                        StartedAtUtc = started,
-                        CompletedAtUtc = DateTimeOffset.UtcNow
-                    };
-                }
-
-                // Allow re-import under Force by releasing the unique hash on the prior batch.
+                // Never skip the whole file on hash match — row-level ExternalRecordId
+                // dedupe imports new Total-Tokens rows (e.g. Included cost) that an older
+                // cost-only import missed. Release the unique hash on the prior batch.
                 existingBatch.FileHash = $"{existingBatch.FileHash}#superseded:{existingBatch.Id:N}";
                 await _batches.UpdateAsync(existingBatch, cancellationToken).ConfigureAwait(false);
                 await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -173,19 +165,25 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
                 .ConfigureAwait(false);
 
             var toInsert = new List<ExternalUsageRecord>();
+            var seenInBatch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var entity in entities)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                if (!string.IsNullOrWhiteSpace(entity.ExternalRecordId))
+                EnsureStableExternalRecordId(entity);
+
+                if (!seenInBatch.Add(entity.ExternalRecordId!))
                 {
-                    var existing = await _usage
-                        .FindByExternalRecordIdAsync(entity.Source, entity.ExternalRecordId, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (existing is not null)
-                    {
-                        duplicates++;
-                        continue;
-                    }
+                    duplicates++;
+                    continue;
+                }
+
+                var existing = await _usage
+                    .FindByExternalRecordIdAsync(entity.Source, entity.ExternalRecordId!, cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is not null)
+                {
+                    duplicates++;
+                    continue;
                 }
 
                 toInsert.Add(entity);
@@ -318,7 +316,15 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
                     row[header] = csv.GetField(header);
                 }
 
-                records.Add(MapRow(row, mappings, headers, timeZone));
+                var mapped = MapRow(row, mappings, headers, timeZone);
+                // Import only rows with Total Tokens > 0 (cost may be Included/0).
+                if ((mapped.TotalTokens ?? 0) <= 0)
+                {
+                    continue;
+                }
+
+                EnsureStableExternalRecordId(mapped, source);
+                records.Add(mapped);
             }
             catch (Exception ex)
             {
@@ -332,6 +338,8 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         {
             warnings.Add("No timestamp/date column was detected.");
         }
+
+        warnings.Add("Only rows with Total Tokens > 0 are imported; each dated row imports at most once.");
 
         return new ParsedUsageFile(fileName, hash, source, headers, mappings, records, invalid, errors, warnings);
     }
@@ -425,7 +433,14 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
                 }
 
                 var mappings = _columnMapper.MapColumns(sampleKeys, overrides);
-                records.Add(MapRow(row, mappings, sampleKeys, timeZone));
+                var mapped = MapRow(row, mappings, sampleKeys, timeZone);
+                if ((mapped.TotalTokens ?? 0) <= 0)
+                {
+                    continue;
+                }
+
+                EnsureStableExternalRecordId(mapped, source);
+                records.Add(mapped);
             }
             catch (Exception ex)
             {
@@ -464,22 +479,69 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
                 ? value
                 : null;
 
-        var timestampRaw = GetMapped("TimestampUtc");
+        var timestampRaw = GetMapped("TimestampUtc") ?? FindRawByNormalizedHeader(row, "date", "timestamp", "day");
         if (string.IsNullOrWhiteSpace(timestampRaw))
         {
             throw new InvalidOperationException("Missing timestamp/date value.");
         }
 
         var timestamp = ParseTimestamp(timestampRaw, timeZone);
-        var inputTokens = ParseLong(GetMapped("InputTokens"));
-        var outputTokens = ParseLong(GetMapped("OutputTokens"));
-        var totalTokens = ParseLong(GetMapped("TotalTokens"));
-        if (totalTokens is null && inputTokens is null && outputTokens is null)
+
+        // Cursor exports split input across cache-write / non-cache-write columns.
+        var inputWithCacheWrite = FindLongByNormalizedHeader(row, "inputwcachewrite", "inputwithcachewrite");
+        var inputWithoutCacheWrite = FindLongByNormalizedHeader(row, "inputwocachewrite", "inputwithoutcachewrite");
+        var inputTokens = ParseLongSoft(GetMapped("InputTokens"));
+        if (inputWithCacheWrite is not null || inputWithoutCacheWrite is not null)
         {
-            // "Tokens" alone may have mapped to TotalTokens; already handled.
+            inputTokens = (inputWithCacheWrite ?? 0) + (inputWithoutCacheWrite ?? 0);
+        }
+
+        var outputTokens = ParseLongSoft(GetMapped("OutputTokens"))
+            ?? FindLongByNormalizedHeader(row, "outputtokens");
+        var cachedInputTokens = ParseLongSoft(GetMapped("CachedInputTokens"))
+            ?? FindLongByNormalizedHeader(row, "cacheread", "cachedinputtokens", "cachetokens");
+        var reasoningTokens = ParseLongSoft(GetMapped("ReasoningTokens"));
+        var totalTokens = ParseLongSoft(GetMapped("TotalTokens"))
+            ?? FindLongByNormalizedHeader(row, "totaltokens", "tokens", "tokencount");
+
+        if (totalTokens is null)
+        {
+            var derived = (inputTokens ?? 0) + (outputTokens ?? 0) + (cachedInputTokens ?? 0) + (reasoningTokens ?? 0);
+            if (derived > 0)
+            {
+                totalTokens = derived;
+            }
+        }
+
+        // When the file exposes Total Tokens, keep every row that carries a value so project
+        // token allocation can use them. Rows without any token signal remain cost-only imports.
+        var hasTotalTokensColumn = mappings.ContainsKey("TotalTokens")
+            || allColumns.Any(c =>
+            {
+                var n = CursorUsageColumnMapper.NormalizeHeader(c);
+                return n is "totaltokens" or "tokens" or "tokencount";
+            });
+        if (hasTotalTokensColumn &&
+            totalTokens is null &&
+            inputTokens is null &&
+            outputTokens is null &&
+            cachedInputTokens is null)
+        {
+            throw new InvalidOperationException("Row has no Total Tokens (or component token) value.");
         }
 
         var knownColumns = new HashSet<string>(mappings.Values, StringComparer.OrdinalIgnoreCase);
+        // Cursor-specific columns resolved above should not be dumped into metadata.
+        foreach (var column in allColumns)
+        {
+            var n = CursorUsageColumnMapper.NormalizeHeader(column);
+            if (n is "inputwcachewrite" or "inputwithcachewrite" or "inputwocachewrite"
+                or "inputwithoutcachewrite" or "cacheread" or "totaltokens")
+            {
+                knownColumns.Add(column);
+            }
+        }
+
         var unknown = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var column in allColumns)
         {
@@ -498,7 +560,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         if (unknown.Count > 0)
         {
             metadataJson = JsonSerializer.Serialize(unknown, JsonOptions);
-            var bytes = System.Text.Encoding.UTF8.GetByteCount(metadataJson);
+            var bytes = Encoding.UTF8.GetByteCount(metadataJson);
             if (bytes > _options.MaxMetadataBytes)
             {
                 metadataJson = JsonSerializer.Serialize(
@@ -518,12 +580,14 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             Provider = NullIfWhiteSpace(GetMapped("Provider")) ?? "Cursor",
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
-            CachedInputTokens = ParseLong(GetMapped("CachedInputTokens")),
-            ReasoningTokens = ParseLong(GetMapped("ReasoningTokens")),
+            CachedInputTokens = cachedInputTokens,
+            ReasoningTokens = reasoningTokens,
             TotalTokens = totalTokens,
-            ReportedCost = ParseDecimal(GetMapped("ReportedCost")),
+            // Non-numeric Cursor costs (Included, Free, -) become 0 so reconciliation can
+            // attribute by Total Tokens without treating missing cost as "unknown".
+            ReportedCost = ParseDecimalSoft(GetMapped("ReportedCost")) ?? 0m,
             Currency = NullIfWhiteSpace(GetMapped("Currency")) ?? _options.DefaultCurrency,
-            RequestCount = ParseInt(GetMapped("RequestCount")),
+            RequestCount = ParseIntSoft(GetMapped("RequestCount")),
             ExternalSessionId = NullIfWhiteSpace(GetMapped("ExternalSessionId")),
             ExternalRequestId = NullIfWhiteSpace(GetMapped("ExternalRequestId")),
             ExternalConversationId = NullIfWhiteSpace(GetMapped("ExternalConversationId")),
@@ -589,45 +653,204 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
     private static DateTimeOffset? ParseOptionalTimestamp(string? value, TimeZoneInfo timeZone)
         => string.IsNullOrWhiteSpace(value) ? null : ParseTimestamp(value, timeZone);
 
-    private static long? ParseLong(string? value)
+    private static long? ParseLongSoft(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (IsBlankOrNonNumericPlaceholder(value))
         {
             return null;
         }
 
-        return long.TryParse(value, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var result)
-            ? result
-            : throw new FormatException($"Unable to parse integer '{value}'.");
+        var trimmed = value!.Trim();
+        if (long.TryParse(
+                trimmed,
+                NumberStyles.Integer | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture,
+                out var result))
+        {
+            return result;
+        }
+
+        // Cursor sometimes exports totals as decimals (e.g. "3250.0").
+        if (decimal.TryParse(
+                trimmed,
+                NumberStyles.Number,
+                CultureInfo.InvariantCulture,
+                out var asDecimal))
+        {
+            return (long)decimal.Truncate(asDecimal);
+        }
+
+        return null;
     }
 
-    private static int? ParseInt(string? value)
+    private static int? ParseIntSoft(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (IsBlankOrNonNumericPlaceholder(value))
         {
             return null;
         }
 
-        return int.TryParse(value, NumberStyles.Integer | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var result)
+        return int.TryParse(
+            value!.Trim(),
+            NumberStyles.Integer | NumberStyles.AllowThousands,
+            CultureInfo.InvariantCulture,
+            out var result)
             ? result
-            : throw new FormatException($"Unable to parse integer '{value}'.");
+            : null;
     }
 
-    private static decimal? ParseDecimal(string? value)
+    private static decimal? ParseDecimalSoft(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (IsBlankOrNonNumericPlaceholder(value))
         {
             return null;
         }
 
-        var trimmed = value.Trim().TrimStart('$');
+        var trimmed = value!.Trim().TrimStart('$');
         return decimal.TryParse(trimmed, NumberStyles.Number, CultureInfo.InvariantCulture, out var result)
             ? result
-            : throw new FormatException($"Unable to parse decimal '{value}'.");
+            : null;
     }
+
+    private static bool IsBlankOrNonNumericPlaceholder(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed is "-" or "—" or "n/a" or "na" or "none" or "null"
+            || trimmed.Equals("included", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("free", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("covered", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? FindRawByNormalizedHeader(
+        IReadOnlyDictionary<string, string?> row,
+        params string[] normalizedNames)
+    {
+        foreach (var (key, value) in row)
+        {
+            var normalized = CursorUsageColumnMapper.NormalizeHeader(key);
+            if (normalizedNames.Any(n => string.Equals(n, normalized, StringComparison.OrdinalIgnoreCase)) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    private static long? FindLongByNormalizedHeader(
+        IReadOnlyDictionary<string, string?> row,
+        params string[] normalizedNames)
+        => ParseLongSoft(FindRawByNormalizedHeader(row, normalizedNames));
 
     private static string? NullIfWhiteSpace(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// Ensures every row has a stable <see cref="NormalizedUsageRecordDto.ExternalRecordId"/> that
+    /// includes the row timestamp so overlapping CSV re-exports import each dated row only once.
+    /// </summary>
+    private static void EnsureStableExternalRecordId(NormalizedUsageRecordDto record, UsageSource source)
+    {
+        if (!string.IsNullOrWhiteSpace(record.ExternalRecordId))
+        {
+            record.ExternalRecordId = TruncateId(record.ExternalRecordId);
+            return;
+        }
+
+        record.ExternalRecordId = BuildStableExternalRecordId(
+            source,
+            record.TimestampUtc,
+            record.ExternalRequestId,
+            record.Model,
+            record.ReportedCost,
+            record.TotalTokens,
+            record.InputTokens,
+            record.OutputTokens,
+            record.CachedInputTokens,
+            record.RequestCount,
+            record.UserIdentifier);
+    }
+
+    /// <summary>
+    /// Fallback for entities that somehow lack an external record id after normalization.
+    /// </summary>
+    private static void EnsureStableExternalRecordId(ExternalUsageRecord entity)
+    {
+        if (!string.IsNullOrWhiteSpace(entity.ExternalRecordId))
+        {
+            entity.ExternalRecordId = TruncateId(entity.ExternalRecordId);
+            return;
+        }
+
+        entity.ExternalRecordId = BuildStableExternalRecordId(
+            entity.Source,
+            entity.TimestampUtc,
+            externalRequestId: null,
+            entity.Model,
+            entity.ReportedCost,
+            entity.TotalTokens,
+            entity.InputTokens,
+            entity.OutputTokens,
+            entity.CachedInputTokens,
+            entity.RequestCount,
+            entity.UserIdentifier);
+    }
+
+    private static string BuildStableExternalRecordId(
+        UsageSource source,
+        DateTimeOffset timestampUtc,
+        string? externalRequestId,
+        string? model,
+        decimal? reportedCost,
+        long? totalTokens,
+        long? inputTokens,
+        long? outputTokens,
+        long? cachedInputTokens,
+        int? requestCount,
+        string? userIdentifier)
+    {
+        // Identity is anchored on the row date so overlapping re-exports import each dated
+        // row only once. Full timestamp remains in the fingerprint so distinct same-day rows
+        // stay separate; TimestampUtc is matched to the closest prior prompt (second precision).
+        var utc = timestampUtc.ToUniversalTime();
+        var dateKey = utc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var timeKey = utc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
+
+        if (!string.IsNullOrWhiteSpace(externalRequestId))
+        {
+            return TruncateId($"cursor:{source}:req:{externalRequestId.Trim()}@{dateKey}");
+        }
+
+        var material = string.Join(
+            '|',
+            source.ToString(),
+            dateKey,
+            timeKey,
+            model?.Trim() ?? string.Empty,
+            reportedCost?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            (totalTokens ?? 0).ToString(CultureInfo.InvariantCulture),
+            (inputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
+            (outputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
+            (cachedInputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
+            (requestCount ?? 0).ToString(CultureInfo.InvariantCulture),
+            userIdentifier?.Trim() ?? string.Empty);
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(material)))
+            .ToLowerInvariant();
+        return TruncateId($"cursor:{source}:day:{dateKey}:{hash[..32]}");
+    }
+
+    private static string TruncateId(string value)
+    {
+        var trimmed = value.Trim();
+        return trimmed.Length <= 512 ? trimmed : trimmed[..512];
+    }
 
     private sealed record ParsedUsageFile(
         string FileName,

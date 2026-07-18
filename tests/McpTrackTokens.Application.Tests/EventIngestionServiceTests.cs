@@ -120,4 +120,52 @@ public sealed class EventIngestionServiceTests
         saved.PromptHash.Should().NotBeNullOrEmpty();
         await _encryption.DidNotReceive().EncryptAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task IngestAsync_completion_updates_matching_prompt_submitted()
+    {
+        var started = DateTimeOffset.Parse("2026-07-17T16:00:00Z");
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            started,
+            externalEventId: "gen-42",
+            externalRequestId: "gen-42",
+            projectId: Guid.NewGuid(),
+            status: ActivityStatus.Unknown);
+
+        _events.FindByExternalIdAsync("gen-42:AgentCompleted", EditorType.Cursor, Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
+        _events.FindByExternalIdAsync("gen-42", EditorType.Cursor, Arg.Any<CancellationToken>())
+            .Returns(prompt);
+
+        PromptActivityEvent? added = null;
+        _events.AddAsync(Arg.Any<PromptActivityEvent>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                added = ci.Arg<PromptActivityEvent>();
+                return Task.CompletedTask;
+            });
+
+        var sut = CreateSut();
+        var result = await sut.IngestAsync(new IngestEventDto
+        {
+            EventType = nameof(ActivityEventType.AgentCompleted),
+            Editor = nameof(EditorType.Cursor),
+            TimestampUtc = DateTimeOffset.Parse("2026-07-17T16:02:30Z"),
+            ExternalEventId = "gen-42:AgentCompleted",
+            ExternalRequestId = "gen-42",
+            Status = "completed",
+            WorkspacePath = @"C:\work\repo"
+        });
+
+        result.WasDuplicate.Should().BeFalse();
+        prompt.Status.Should().Be(ActivityStatus.Completed);
+        prompt.DurationMilliseconds.Should().Be(150_000);
+        prompt.ResponseCompletedAtUtc.Should().NotBeNull();
+        added.Should().NotBeNull();
+        added!.EventType.Should().Be(ActivityEventType.AgentCompleted);
+        added.Status.Should().Be(ActivityStatus.Completed);
+        await _events.Received().UpdateAsync(prompt, Arg.Any<CancellationToken>());
+    }
 }

@@ -15,6 +15,14 @@ public sealed class NormalizedPathTests
     }
 
     [Theory]
+    [InlineData("/d:/Dev/LunarQ/mcp-track-tokens", "D:/Dev/LunarQ/mcp-track-tokens")]
+    [InlineData("/c:/Users/dev/repo/", "C:/Users/dev/repo")]
+    public void Normalize_strips_leading_slash_before_windows_drive(string input, string expected)
+    {
+        NormalizedPath.Normalize(input).Should().Be(expected);
+    }
+
+    [Theory]
     [InlineData("/home/dev/repo", "/home/dev/repo")]
     [InlineData("/home/dev/repo/", "/home/dev/repo")]
     [InlineData("/var//log/app", "/var/log/app")]

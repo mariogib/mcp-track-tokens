@@ -1,11 +1,6 @@
 import { useMemo, useState } from 'react';
-import {
-  useAllocateUsageMutation,
-  useProjectsQuery,
-  useReconciliationMutation,
-  useUnallocatedQuery,
-} from '../api/hooks';
-import type { UnallocatedItemDto, UnallocatedUsageReport, UsageAttributionRow } from '../api/types';
+import { useReconciliationMutation, useUnallocatedQuery } from '../api/hooks';
+import type { ReconciliationResultDto, UnallocatedItemDto, UsageAttributionRow } from '../api/types';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
@@ -15,12 +10,6 @@ import {
   formatNumber,
   lastDaysRange,
 } from '../utils/format';
-
-function asItems(data: UnallocatedItemDto[] | UnallocatedUsageReport | undefined): UnallocatedItemDto[] {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  return data.items ?? [];
-}
 
 function confidenceTone(value?: string | null): 'success' | 'warning' | 'danger' | 'neutral' {
   const c = (value ?? '').toLowerCase();
@@ -33,20 +22,15 @@ function confidenceTone(value?: string | null): 'success' | 'warning' | 'danger'
 export function ReconciliationPage() {
   const range = useMemo(() => lastDaysRange(30), []);
   const [includeLowConfidence, setIncludeLowConfidence] = useState(true);
-  const [dryRun, setDryRun] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState('');
-  const [percentage, setPercentage] = useState(100);
-  const [reason, setReason] = useState('');
+  const [dryRun, setDryRun] = useState(false);
+  const [lastResult, setLastResult] = useState<ReconciliationResultDto | null>(null);
   const [audit, setAudit] = useState<UsageAttributionRow[]>([]);
 
   const unallocated = useUnallocatedQuery(range.fromUtc, range.toUtc);
-  const projects = useProjectsQuery();
   const reconcile = useReconciliationMutation();
-  const allocate = useAllocateUsageMutation();
 
-  const items = asItems(unallocated.data);
-  const selected = items.find((i) => i.id === selectedId) ?? null;
+  const items: UnallocatedItemDto[] = unallocated.data?.usage?.items ?? [];
+  const failed = lastResult?.unallocated ?? [];
 
   if (unallocated.isLoading) {
     return <LoadingState label="Loading unallocated usage…" />;
@@ -70,7 +54,10 @@ export function ReconciliationPage() {
         <div className="section-header">
           <div>
             <h2>Unallocated usage</h2>
-            <p>Review candidates, confidence, and allocate manually when needed.</p>
+            <p>
+              Allocate all links each imported row (Total Tokens &gt; 0) to the closest prompt at
+              or before the usage timestamp (second precision).
+            </p>
           </div>
           <div className="row">
             <label className="row">
@@ -93,7 +80,8 @@ export function ReconciliationPage() {
               type="button"
               className="btn"
               disabled={reconcile.isPending}
-              onClick={() =>
+              onClick={() => {
+                setLastResult(null);
                 reconcile.mutate(
                   {
                     fromUtc: range.fromUtc,
@@ -103,13 +91,14 @@ export function ReconciliationPage() {
                   },
                   {
                     onSuccess: (result) => {
+                      setLastResult(result);
                       setAudit((prev) => [...result.attributions, ...prev].slice(0, 100));
                     },
                   },
-                )
-              }
+                );
+              }}
             >
-              Run reconciliation
+              {reconcile.isPending ? 'Allocating…' : 'Allocate all'}
             </button>
           </div>
         </div>
@@ -117,17 +106,48 @@ export function ReconciliationPage() {
         {reconcile.isError ? (
           <ErrorState
             message={
-              reconcile.error instanceof Error ? reconcile.error.message : 'Reconciliation failed'
+              reconcile.error instanceof Error ? reconcile.error.message : 'Allocate all failed'
             }
           />
         ) : null}
 
-        {reconcile.isSuccess ? (
+        {lastResult ? (
           <div className="panel">
-            Processed {formatNumber(reconcile.data.processedCount)} · allocated{' '}
-            {formatNumber(reconcile.data.allocatedCount)} · still unallocated{' '}
-            {formatNumber(reconcile.data.unallocatedCount)}
-            {reconcile.data.dryRun ? ' (dry run)' : ''}
+            Processed {formatNumber(lastResult.processedCount)} · allocated{' '}
+            {formatNumber(lastResult.allocatedCount)} · could not allocate{' '}
+            {formatNumber(lastResult.unallocatedCount)}
+            {lastResult.dryRun ? ' (dry run)' : ''}
+          </div>
+        ) : null}
+
+        {lastResult && failed.length > 0 ? (
+          <div className="stack" style={{ marginTop: '1rem' }}>
+            <h3>Could not allocate</h3>
+            <p>No prompt with a project at or before these usage timestamps.</p>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Model</th>
+                    <th>Total Tokens</th>
+                    <th>Cost</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {failed.map((row, index) => (
+                    <tr key={`${row.usageRecordId}-fail-${index}`}>
+                      <td>{formatDateTime(row.timestampUtc)}</td>
+                      <td>{row.model ?? '—'}</td>
+                      <td>{formatNumber(row.allocatedTotalTokens)}</td>
+                      <td>{formatCurrency(row.allocatedCost)}</td>
+                      <td>{row.reason ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : null}
 
@@ -141,10 +161,10 @@ export function ReconciliationPage() {
                   <th>When</th>
                   <th>Kind</th>
                   <th>Model</th>
+                  <th>Total Tokens</th>
                   <th>Cost</th>
                   <th>Candidate</th>
                   <th>Confidence</th>
-                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -153,27 +173,14 @@ export function ReconciliationPage() {
                     <td>{formatDateTime(item.timestampUtc)}</td>
                     <td>{item.kind}</td>
                     <td>{item.model ?? '—'}</td>
-                    <td>{formatCurrency(item.reportedCost, item.currency ?? 'USD')}</td>
+                    <td>{formatNumber(item.totalTokens ?? 0)}</td>
+                    <td>{formatCurrency(item.reportedCost ?? 0, item.currency ?? 'USD')}</td>
                     <td>{item.suggestedProjectName ?? '—'}</td>
                     <td>
                       <StatusBadge
                         label={item.suggestedConfidence ?? 'n/a'}
                         tone={confidenceTone(item.suggestedConfidence)}
                       />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => {
-                          setSelectedId(item.id);
-                          setProjectId(item.suggestedProjectId ?? '');
-                          setPercentage(100);
-                          setReason(item.reason ?? '');
-                        }}
-                      >
-                        Allocate
-                      </button>
                     </td>
                   </tr>
                 ))}
@@ -182,89 +189,6 @@ export function ReconciliationPage() {
           </div>
         )}
       </section>
-
-      {selected ? (
-        <section className="page-section">
-          <div className="panel stack">
-            <h3 className="panel-title">Manual allocation</h3>
-            <p className="mono">{selected.id}</p>
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="alloc-project">Project</label>
-                <select
-                  id="alloc-project"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                >
-                  <option value="">Select project…</option>
-                  {(projects.data ?? []).map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="alloc-pct">Percentage</label>
-                <input
-                  id="alloc-pct"
-                  type="number"
-                  min={1}
-                  max={100}
-                  value={percentage}
-                  onChange={(e) => setPercentage(Number(e.target.value))}
-                />
-              </div>
-            </div>
-            <div className="field">
-              <label htmlFor="alloc-reason">Reason</label>
-              <textarea
-                id="alloc-reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-              />
-            </div>
-            <div className="row">
-              <button
-                type="button"
-                className="btn"
-                disabled={!projectId || allocate.isPending}
-                onClick={() =>
-                  allocate.mutate(
-                    {
-                      usageRecordId: selected.id,
-                      projectAllocations: [{ projectId, percentage }],
-                      reason: reason || null,
-                      reviewedBy: 'dashboard',
-                      replaceExisting: true,
-                    },
-                    {
-                      onSuccess: (rows) => {
-                        setAudit((prev) => [...rows, ...prev].slice(0, 100));
-                        setSelectedId(null);
-                      },
-                    },
-                  )
-                }
-              >
-                Save allocation
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setSelectedId(null)}
-              >
-                Cancel
-              </button>
-            </div>
-            {allocate.isError ? (
-              <ErrorState
-                message={allocate.error instanceof Error ? allocate.error.message : 'Allocate failed'}
-              />
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
       <section className="page-section">
         <div className="section-header">
@@ -284,7 +208,9 @@ export function ReconciliationPage() {
                   <th>Project</th>
                   <th>Method</th>
                   <th>Confidence</th>
+                  <th>Total Tokens</th>
                   <th>Cost</th>
+                  <th>Prompt</th>
                   <th>Reason</th>
                 </tr>
               </thead>
@@ -297,7 +223,9 @@ export function ReconciliationPage() {
                     <td>
                       <StatusBadge label={row.confidence} tone={confidenceTone(row.confidence)} />
                     </td>
+                    <td>{formatNumber(row.allocatedTotalTokens)}</td>
                     <td>{formatCurrency(row.allocatedCost)}</td>
+                    <td className="mono">{row.activityEventId ?? '—'}</td>
                     <td>{row.reason ?? '—'}</td>
                   </tr>
                 ))}

@@ -117,6 +117,7 @@ export interface DailyActivityRow {
   agentDurationMilliseconds: number;
   activeProjectTimeSeconds: number;
   sessionCount: number;
+  totalTokens?: number;
 }
 
 export interface NamedMetricRow {
@@ -166,6 +167,40 @@ export interface ProjectCostReport {
   byModel: NamedMetricRow[];
 }
 
+export interface TokenCostModelRow {
+  model: string;
+  rateSource: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  reportedCost: number;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion: number;
+  reasoningPerMillion?: number | null;
+}
+
+export interface ProjectTokenCostEstimate {
+  projectId: string;
+  projectName: string;
+  fromUtc: string;
+  toUtc: string;
+  currency: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  reportedCost: number;
+  rateCardModelCount: number;
+  hasRateCard: boolean;
+  byModel: TokenCostModelRow[];
+}
+
 export interface TrackingStatusDto {
   isHealthy: boolean;
   databasePath: string;
@@ -193,6 +228,7 @@ export interface UnallocatedItemDto {
   remoteUrl?: string | null;
   externalSessionId?: string | null;
   externalRequestId?: string | null;
+  totalTokens?: number | null;
   reportedCost?: number | null;
   currency?: string | null;
   suggestedProjectName?: string | null;
@@ -200,6 +236,9 @@ export interface UnallocatedItemDto {
   suggestedMethod?: string | null;
   suggestedConfidence?: string | null;
   reason?: string | null;
+  workspacePath?: string | null;
+  eventType?: string | null;
+  durationMilliseconds?: number | null;
 }
 
 export interface UnallocatedUsageReport {
@@ -209,6 +248,53 @@ export interface UnallocatedUsageReport {
   totalCost: number;
   currency: string;
   items: UnallocatedItemDto[];
+}
+
+export interface ImportedUsageItemDto {
+  id: string;
+  timestampUtc: string;
+  source: string;
+  externalRecordId?: string | null;
+  model?: string | null;
+  provider?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  cachedInputTokens?: number | null;
+  totalTokens: number;
+  reportedCost: number;
+  currency: string;
+  requestCount?: number | null;
+  importBatchId?: string | null;
+  importedAtUtc: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  activityEventId?: string | null;
+  attributionMethod?: string | null;
+}
+
+export interface ImportedUsageReport {
+  fromUtc: string;
+  toUtc: string;
+  count: number;
+  totalTokens: number;
+  totalCost: number;
+  currency: string;
+  items: ImportedUsageItemDto[];
+}
+
+export interface UnallocatedBundle {
+  activity: UnallocatedItemDto[];
+  usage: UnallocatedUsageReport;
+}
+
+export interface AssignActivityRequestDto {
+  projectId: string;
+  eventIds: string[];
+}
+
+export interface AssignActivityResultDto {
+  projectId: string;
+  assigned: number;
 }
 
 export interface MonthlySummaryReport {
@@ -289,6 +375,7 @@ export interface UsageAttributionRow {
   attributionId?: string | null;
   projectId?: string | null;
   projectName?: string | null;
+  activityEventId?: string | null;
   timestampUtc: string;
   model?: string | null;
   provider?: string | null;
@@ -309,6 +396,8 @@ export interface ReconciliationResultDto {
   unallocatedCount: number;
   skippedCount: number;
   attributions: UsageAttributionRow[];
+  /** Rows that could not be linked to a prior prompt. */
+  unallocated: UsageAttributionRow[];
 }
 
 export interface AllocationRequestDto {
@@ -369,6 +458,17 @@ export interface SettingsDto {
   dataRetentionDays?: number | null;
   serverUrl: string;
   autoCreateProjects: boolean;
+  estimateCostFromTokenRates?: boolean;
+  cursorTokenRates?: CursorModelTokenRateDto[];
+}
+
+export interface CursorModelTokenRateDto {
+  model: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion: number;
+  cacheWritePerMillion: number;
+  reasoningPerMillion?: number | null;
 }
 
 export interface UpdateSettingsRequest {
@@ -383,6 +483,8 @@ export interface UpdateSettingsRequest {
   exportPath?: string;
   dataRetentionDays?: number | null;
   autoCreateProjects?: boolean;
+  estimateCostFromTokenRates?: boolean;
+  cursorTokenRates?: CursorModelTokenRateDto[];
 }
 
 export interface ExportRequestDto {
@@ -420,6 +522,12 @@ export interface PromptEventDto {
   status?: string | null;
   durationMilliseconds?: number | null;
   repositoryPath?: string | null;
+  /** Present when reconciliation linked this prompt to imported usage. */
+  totalTokens?: number | null;
+  reportedCost?: number | null;
+  /** Number of imported usage rows linked to this prompt (many-to-one). */
+  linkedUsageCount?: number;
+  hasLinkedUsage?: boolean;
 }
 
 export interface SessionDto {

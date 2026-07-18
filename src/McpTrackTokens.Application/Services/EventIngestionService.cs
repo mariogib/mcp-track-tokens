@@ -53,6 +53,7 @@ public sealed class EventIngestionService : IEventIngestionService
         await _validator.ValidateAndThrowAsync(dto, cancellationToken).ConfigureAwait(false);
 
         var editor = EnumParsing.ParseEditor(dto.Editor);
+        var eventType = EnumParsing.ParseEventType(dto.EventType);
         if (!string.IsNullOrWhiteSpace(dto.ExternalEventId))
         {
             var existing = await _events
@@ -60,6 +61,16 @@ public sealed class EventIngestionService : IEventIngestionService
                 .ConfigureAwait(false);
             if (existing is not null)
             {
+                if (EnumParsing.IsTerminalAgentEvent(eventType))
+                {
+                    var refined = await TryCompletePromptSubmittedAsync(dto, editor, eventType, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (refined)
+                    {
+                        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                }
+
                 return new IngestEventResultDto
                 {
                     EventId = existing.Id,
@@ -101,6 +112,12 @@ public sealed class EventIngestionService : IEventIngestionService
 
         var session = await ResolveSessionAsync(dto, editor, project?.Id, cancellationToken).ConfigureAwait(false);
 
+        if (EnumParsing.IsTerminalAgentEvent(eventType))
+        {
+            await TryCompletePromptSubmittedAsync(dto, editor, eventType, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         string? promptHash = dto.PromptHash;
         string? encryptedContent = null;
         var storeContent = false;
@@ -130,7 +147,7 @@ public sealed class EventIngestionService : IEventIngestionService
         }
 
         var activityEvent = PromptActivityEvent.Create(
-            eventType: EnumParsing.ParseEventType(dto.EventType),
+            eventType: eventType,
             editor: editor,
             timestampUtc: dto.TimestampUtc,
             projectId: project?.Id,
@@ -150,7 +167,7 @@ public sealed class EventIngestionService : IEventIngestionService
             durationMilliseconds: dto.DurationMilliseconds,
             model: dto.Model,
             provider: EnumParsing.ParseProvider(dto.Provider),
-            status: EnumParsing.ParseStatus(dto.Status),
+            status: ResolveStatus(dto, eventType),
             attributionMethod: attributionMethod,
             attributionConfidence: attributionConfidence,
             metadataJson: MetadataSerializer.Serialize(dto.Metadata, _options.MaxMetadataBytes));
@@ -159,13 +176,12 @@ public sealed class EventIngestionService : IEventIngestionService
 
         if (session is not null)
         {
-            session.RecordActivity(dto.TimestampUtc);
-            if (project is not null && session.ProjectId is null)
-            {
-                session.ProjectId = project.Id;
-            }
-
-            await _sessions.UpdateAsync(session, cancellationToken).ConfigureAwait(false);
+            Guid? assignProjectId = project is not null && session.ProjectId is null
+                ? project.Id
+                : null;
+            await _sessions
+                .TouchActivityAsync(session.Id, dto.TimestampUtc, assignProjectId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -374,5 +390,92 @@ public sealed class EventIngestionService : IEventIngestionService
         }
 
         return null;
+    }
+
+    private static ActivityStatus ResolveStatus(IngestEventDto dto, ActivityEventType eventType)
+    {
+        var parsed = EnumParsing.ParseStatus(dto.Status);
+        if (parsed != ActivityStatus.Unknown)
+        {
+            return parsed;
+        }
+
+        return EnumParsing.StatusFromEventType(eventType);
+    }
+
+    /// <summary>
+    /// Updates the matching PromptSubmitted row with status and duration from a terminal agent event.
+    /// </summary>
+    private async Task<bool> TryCompletePromptSubmittedAsync(
+        IngestEventDto dto,
+        EditorType editor,
+        ActivityEventType eventType,
+        CancellationToken cancellationToken)
+    {
+        var generationKey = ResolveGenerationKey(dto);
+        if (string.IsNullOrWhiteSpace(generationKey))
+        {
+            return false;
+        }
+
+        var prompt = await _events
+            .FindByExternalIdAsync(generationKey, editor, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (prompt is null || prompt.EventType != ActivityEventType.PromptSubmitted)
+        {
+            // Fallback: ExternalRequestId may differ from ExternalEventId on older rows.
+            if (!string.IsNullOrWhiteSpace(dto.ExternalRequestId))
+            {
+                var byRequest = await _events
+                    .FindByExternalRequestIdAsync(dto.ExternalRequestId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (byRequest is { EventType: ActivityEventType.PromptSubmitted })
+                {
+                    prompt = await _events.GetByIdAsync(byRequest.Id, cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+
+        if (prompt is null || prompt.EventType != ActivityEventType.PromptSubmitted)
+        {
+            return false;
+        }
+
+        var completedAt = dto.ResponseCompletedAtUtc ?? dto.TimestampUtc;
+        var status = ResolveStatus(dto, eventType);
+        prompt.ApplyCompletion(status, completedAt, dto.DurationMilliseconds, dto.Model);
+        await _events.UpdateAsync(prompt, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private static string? ResolveGenerationKey(IngestEventDto dto)
+    {
+        if (!string.IsNullOrWhiteSpace(dto.ExternalRequestId))
+        {
+            return dto.ExternalRequestId.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.ExternalEventId))
+        {
+            return null;
+        }
+
+        var id = dto.ExternalEventId.Trim();
+        var separators = new[]
+        {
+            ":AgentCompleted",
+            ":AgentFailed",
+            ":AgentCancelled"
+        };
+        foreach (var suffix in separators)
+        {
+            if (id.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                return id[..^suffix.Length];
+            }
+        }
+
+        return id;
     }
 }

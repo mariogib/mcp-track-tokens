@@ -1,3 +1,4 @@
+import { normalizeWorkspacePath } from './git';
 import type { ActivityEventType, CursorHookPayload, TrackingEvent } from './shared';
 import { newEventId } from './shared';
 
@@ -84,6 +85,40 @@ function asStringArray(value: unknown): string[] {
   return value.map(asString).filter((v): v is string => Boolean(v));
 }
 
+/** Map Cursor stop/hook status strings to tracking ActivityStatus names. */
+export function mapCursorStatus(
+  status: string | undefined,
+  eventType: ActivityEventType,
+): string | undefined {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === 'completed' || normalized === 'success' || normalized === 'ok') {
+    return 'Completed';
+  }
+  if (
+    normalized === 'aborted' ||
+    normalized === 'cancelled' ||
+    normalized === 'canceled' ||
+    normalized === 'stopped'
+  ) {
+    return 'Cancelled';
+  }
+  if (normalized === 'error' || normalized === 'failed' || normalized === 'failure') {
+    return 'Failed';
+  }
+
+  if (eventType === 'AgentCompleted') {
+    return 'Completed';
+  }
+  if (eventType === 'AgentFailed') {
+    return 'Failed';
+  }
+  if (eventType === 'AgentCancelled') {
+    return 'Cancelled';
+  }
+
+  return status;
+}
+
 /**
  * Resolve model from Cursor's evolving payload shapes.
  * Prefers human-readable slug (`model`) then structured ids / nested objects.
@@ -132,8 +167,10 @@ export function adaptCursorPayload(
   const workspaceRoots = [
     ...asStringArray(payload.workspace_roots),
     ...asStringArray(payload.workspaceRoots),
-  ];
-  const cwd = asString(payload.cwd);
+  ]
+    .map((root) => normalizeWorkspacePath(root) ?? root)
+    .filter(Boolean);
+  const cwd = normalizeWorkspacePath(asString(payload.cwd)) ?? asString(payload.cwd);
 
   const conversationId =
     asString(payload.conversation_id) ?? asString(payload.conversationId);
@@ -146,8 +183,9 @@ export function adaptCursorPayload(
   const status = asString(payload.status);
   const duration =
     asNumber(payload.duration_ms) ?? asNumber(payload.durationMs);
-  const repositoryPath =
-    asString(payload.repository_path) ?? asString(payload.repositoryPath);
+  const repositoryPath = normalizeWorkspacePath(
+    asString(payload.repository_path) ?? asString(payload.repositoryPath),
+  );
   const branch = asString(payload.branch);
   const remoteUrl = asString(payload.remote_url) ?? asString(payload.remoteUrl);
   const editorVersion =
@@ -191,9 +229,19 @@ export function adaptCursorPayload(
     metadata.composerMode = composerMode;
   }
 
-  const externalEventId =
-    generationId ??
-    (conversationId && eventType ? `${conversationId}:${eventType}:${newEventId().slice(0, 8)}` : newEventId());
+  // PromptSubmitted uses generationId alone. Completion events must use a distinct
+  // externalEventId or the server treats them as duplicates of the prompt row.
+  const isTerminal =
+    eventType === 'AgentCompleted' ||
+    eventType === 'AgentFailed' ||
+    eventType === 'AgentCancelled';
+  const externalEventId = generationId
+    ? isTerminal
+      ? `${generationId}:${eventType}`
+      : generationId
+    : conversationId && eventType
+      ? `${conversationId}:${eventType}:${newEventId().slice(0, 8)}`
+      : newEventId();
 
   return {
     workspaceRoots: workspaceRoots.length > 0 ? workspaceRoots : cwd ? [cwd] : [],
@@ -206,7 +254,7 @@ export function adaptCursorPayload(
       externalSessionId: sessionId,
       model,
       provider,
-      status,
+      status: mapCursorStatus(status, eventType),
       durationMilliseconds: duration,
       repositoryPath,
       branch,

@@ -25,6 +25,7 @@ public sealed class UsageAttributionConfiguration : IEntityTypeConfiguration<Usa
         builder.HasIndex(e => e.ExternalUsageRecordId);
         builder.HasIndex(e => e.ProjectId);
         builder.HasIndex(e => e.EditorSessionId);
+        // Non-unique: many usage attributions may reference the same prompt.
         builder.HasIndex(e => e.ActivityEventId);
         builder.HasIndex(e => e.CreatedAtUtc);
         builder.HasIndex(e => e.ReviewedAtUtc);

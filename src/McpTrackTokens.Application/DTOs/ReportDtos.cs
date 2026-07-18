@@ -38,6 +38,9 @@ public sealed record DailyActivityRow
     public long ActiveProjectTimeSeconds { get; init; }
 
     public int SessionCount { get; init; }
+
+    /// <summary>Imported usage tokens attributed to the project on this day.</summary>
+    public long TotalTokens { get; init; }
 }
 
 /// <summary>
@@ -135,6 +138,74 @@ public sealed record ProjectCostReport
 }
 
 /// <summary>
+/// Estimated project token cost using the configured Cursor rate card.
+/// </summary>
+public sealed record ProjectTokenCostEstimate
+{
+    public Guid ProjectId { get; init; }
+
+    public string ProjectName { get; init; } = string.Empty;
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public string Currency { get; init; } = "USD";
+
+    public long InputTokens { get; init; }
+
+    public long OutputTokens { get; init; }
+
+    public long CachedInputTokens { get; init; }
+
+    public long ReasoningTokens { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    public decimal EstimatedCost { get; init; }
+
+    public decimal ReportedCost { get; init; }
+
+    public int RateCardModelCount { get; init; }
+
+    public bool HasRateCard { get; init; }
+
+    public IReadOnlyList<TokenCostModelRow> ByModel { get; init; } = [];
+}
+
+/// <summary>
+/// Per-model token cost estimate row.
+/// </summary>
+public sealed record TokenCostModelRow
+{
+    public string Model { get; init; } = string.Empty;
+
+    public string RateSource { get; init; } = string.Empty;
+
+    public long InputTokens { get; init; }
+
+    public long OutputTokens { get; init; }
+
+    public long CachedInputTokens { get; init; }
+
+    public long ReasoningTokens { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    public decimal EstimatedCost { get; init; }
+
+    public decimal ReportedCost { get; init; }
+
+    public decimal InputPerMillion { get; init; }
+
+    public decimal OutputPerMillion { get; init; }
+
+    public decimal CacheReadPerMillion { get; init; }
+
+    public decimal? ReasoningPerMillion { get; init; }
+}
+
+/// <summary>
 /// Client-level cost rollup.
 /// </summary>
 public sealed record ClientCostReport
@@ -197,6 +268,9 @@ public sealed record UsageAttributionRow
 
     public string? ProjectName { get; init; }
 
+    /// <summary>Prompt activity event this usage row was linked to during reconciliation.</summary>
+    public Guid? ActivityEventId { get; init; }
+
     public DateTimeOffset TimestampUtc { get; init; }
 
     public string? Model { get; init; }
@@ -232,6 +306,70 @@ public sealed record UnallocatedUsageReport
     public string Currency { get; init; } = "USD";
 
     public IReadOnlyList<UnallocatedItemDto> Items { get; init; } = [];
+}
+
+/// <summary>
+/// A single imported external usage row.
+/// </summary>
+public sealed record ImportedUsageItemDto
+{
+    public Guid Id { get; init; }
+
+    public DateTimeOffset TimestampUtc { get; init; }
+
+    public string Source { get; init; } = string.Empty;
+
+    public string? ExternalRecordId { get; init; }
+
+    public string? Model { get; init; }
+
+    public string? Provider { get; init; }
+
+    public long? InputTokens { get; init; }
+
+    public long? OutputTokens { get; init; }
+
+    public long? CachedInputTokens { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    public decimal ReportedCost { get; init; }
+
+    public string Currency { get; init; } = "USD";
+
+    public int? RequestCount { get; init; }
+
+    public Guid? ImportBatchId { get; init; }
+
+    public DateTimeOffset ImportedAtUtc { get; init; }
+
+    public Guid? ProjectId { get; init; }
+
+    public string? ProjectName { get; init; }
+
+    public Guid? ActivityEventId { get; init; }
+
+    public string? AttributionMethod { get; init; }
+}
+
+/// <summary>
+/// All imported usage rows in a date range.
+/// </summary>
+public sealed record ImportedUsageReport
+{
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public int Count { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    public decimal TotalCost { get; init; }
+
+    public string Currency { get; init; } = "USD";
+
+    public IReadOnlyList<ImportedUsageItemDto> Items { get; init; } = [];
 }
 
 /// <summary>

@@ -27,5 +27,10 @@ public enum AttributionMethod
     Manual = 6,
 
     /// <summary>Could not be attributed to any project.</summary>
-    Unallocated = 7
+    Unallocated = 7,
+
+    /// <summary>
+    /// Matched to the closest prompt at or before the usage timestamp (second precision).
+    /// </summary>
+    ClosestPromptMatch = 8
 }

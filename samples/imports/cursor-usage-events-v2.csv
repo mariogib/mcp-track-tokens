@@ -1,0 +1,4 @@
+Date,Kind,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Total Tokens,Cost
+2026-07-15T10:00:00.000Z,Usage-based,gpt-4.1,No,100,900,2000,250,3250,0.42
+2026-07-15T10:05:00.000Z,Usage-based,claude-4-sonnet,Yes,50,800,1500,400,2750,$0.31
+2026-07-15T10:10:00.000Z,Usage-based,gpt-4.1,No,0,500,100,100,700,Included

@@ -21,6 +21,9 @@ services:
       # One process owns SQLite; Cursor MCP should use HTTP (see samples/cursor-config/mcp.http.json).
       MCP_TRACK_TOKENS_ENABLE_HTTP_MCP: "true"
       MCP_TRACK_TOKENS_API_KEY: ${MCP_TRACK_TOKENS_API_KEY:-OverTheMoon}
+      MCP_TRACK_TOKENS_CURSOR_SUBSCRIPTION_AMOUNT: "20"
+      MCP_TRACK_TOKENS_CURSOR_SUBSCRIPTION_CURRENCY: "USD"
+      MCP_TRACK_TOKENS_CURSOR_ALLOCATION_METHOD: "ByActiveProjectTime"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5187/health"]

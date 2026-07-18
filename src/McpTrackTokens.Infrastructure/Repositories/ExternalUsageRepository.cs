@@ -58,11 +58,16 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
         return await SqliteDateTimeQuery.MaterializeAsync(
             query,
             r => r.TimestampUtc >= from && r.TimestampUtc <= to,
-            items => items.OrderBy(r => r.TimestampUtc),
+            items => items.OrderByDescending(r => r.TimestampUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// A usage row is unallocated when it has no attribution with a project.
+    /// Rows that only have <see cref="AttributionMethod.Unallocated"/> placeholders
+    /// (written by reconciliation when no prompt match exists) remain unallocated.
+    /// </remarks>
     public async Task<IReadOnlyList<ExternalUsageRecord>> ListUnallocatedAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
@@ -71,17 +76,21 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
     {
         var from = fromUtc.ToUniversalTime();
         var to = toUtc.ToUniversalTime();
-        var attributedIds = await _db.UsageAttributions.AsNoTracking()
+
+        // Allocated = has at least one attribution row with a project id.
+        // Unallocated placeholder rows (method Unallocated, ProjectId null) do not count.
+        var allocatedIds = await _db.UsageAttributions.AsNoTracking()
+            .Where(a => a.ProjectId != null)
             .Select(a => a.ExternalUsageRecordId)
             .Distinct()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        var attributed = attributedIds.ToHashSet();
+        var allocated = allocatedIds.ToHashSet();
 
         return await SqliteDateTimeQuery.MaterializeAsync(
             _db.ExternalUsageRecords.AsNoTracking(),
-            r => r.TimestampUtc >= from && r.TimestampUtc <= to && !attributed.Contains(r.Id),
-            items => items.OrderBy(r => r.TimestampUtc),
+            r => r.TimestampUtc >= from && r.TimestampUtc <= to && !allocated.Contains(r.Id),
+            items => items.OrderByDescending(r => r.TimestampUtc),
             take: limit,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

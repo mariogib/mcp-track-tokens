@@ -124,6 +124,16 @@ public sealed class TrackingOptions
     public AllocationRuleType CursorAllocationMethod { get; set; } = AllocationRuleType.NotAllocated;
 
     /// <summary>
+    /// Cursor model token rates ($ per 1M tokens) used for cost estimates.
+    /// </summary>
+    public List<CursorModelTokenRate> CursorTokenRates { get; set; } = [];
+
+    /// <summary>
+    /// When true, estimate usage cost from <see cref="CursorTokenRates"/> when imported cost is zero.
+    /// </summary>
+    public bool EstimateCostFromTokenRates { get; set; }
+
+    /// <summary>
     /// Optional content-encryption key path (outside the database). Supports <c>~</c>.
     /// </summary>
     public string EncryptionKeyPath { get; set; } = "~/.mcp-track-tokens/encryption.key";

@@ -8,16 +8,18 @@ import { Page } from '../layout/AppLayout';
 import { formatNumber } from '../utils/format';
 
 const TARGET_FIELDS = [
-  'timestampUtc',
-  'model',
-  'provider',
-  'inputTokens',
-  'outputTokens',
-  'totalTokens',
-  'reportedCost',
-  'currency',
-  'externalRequestId',
-  'externalSessionId',
+  'TimestampUtc',
+  'Model',
+  'Provider',
+  'InputTokens',
+  'OutputTokens',
+  'TotalTokens',
+  'CachedInputTokens',
+  'ReportedCost',
+  'Currency',
+  'ExternalRequestId',
+  'ExternalSessionId',
+  'ExternalRecordId',
   'ignore',
 ];
 
@@ -85,7 +87,11 @@ export function ImportsPage() {
         <div className="section-header">
           <div>
             <h2>Cursor usage import</h2>
-            <p>Upload CSV or JSON, preview columns, map fields, then dry-run or complete.</p>
+            <p>
+              Upload CSV or JSON, preview columns, map fields, then import. Every row with Total
+              Tokens &gt; 0 is imported (cost may be Included / 0). Re-importing the same file adds
+              any missing rows.
+            </p>
           </div>
           <StatusBadge
             label={step === 'upload' ? 'Step 1' : step === 'map' ? 'Step 2' : 'Complete'}

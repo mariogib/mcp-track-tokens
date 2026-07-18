@@ -3,6 +3,7 @@ using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Options;
 using McpTrackTokens.Domain.Enums;
+using McpTrackTokens.Infrastructure.Persistence;
 
 namespace McpTrackTokens.Server.Endpoints;
 
@@ -20,7 +21,7 @@ public static class DashboardAdminEndpoints
 
         api.MapGet("/status", GetStatusAsync);
         api.MapGet("/settings", GetSettings);
-        api.MapPut("/settings", UpdateSettings);
+        api.MapPut("/settings", UpdateSettingsAsync);
         api.MapGet("/api-keys", ListApiKeysAsync);
         api.MapPost("/api-keys", CreateApiKeyAsync);
         api.MapDelete("/api-keys/{id:guid}", RevokeApiKeyAsync);
@@ -42,9 +43,11 @@ public static class DashboardAdminEndpoints
         return Results.Ok(ToSettingsDto(optionsAccessor.Value));
     }
 
-    private static IResult UpdateSettings(
+    private static async Task<IResult> UpdateSettingsAsync(
         UpdateSettingsRequestDto request,
-        IOptions<TrackingOptions> optionsAccessor)
+        IOptions<TrackingOptions> optionsAccessor,
+        ICursorTokenRateStore rateStore,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         var options = optionsAccessor.Value;
@@ -107,6 +110,42 @@ public static class DashboardAdminEndpoints
         else if (request.ClearDataRetentionDays)
         {
             options.DataRetentionDays = null;
+        }
+
+        var ratesChanged = false;
+        if (request.EstimateCostFromTokenRates is bool estimate)
+        {
+            options.EstimateCostFromTokenRates = estimate;
+            ratesChanged = true;
+        }
+
+        if (request.CursorTokenRates is not null)
+        {
+            options.CursorTokenRates = request.CursorTokenRates
+                .Where(r => !string.IsNullOrWhiteSpace(r.Model))
+                .Select(r => new CursorModelTokenRate
+                {
+                    Model = r.Model.Trim(),
+                    InputPerMillion = Math.Max(0m, r.InputPerMillion),
+                    OutputPerMillion = Math.Max(0m, r.OutputPerMillion),
+                    CacheReadPerMillion = Math.Max(0m, r.CacheReadPerMillion),
+                    CacheWritePerMillion = Math.Max(0m, r.CacheWritePerMillion),
+                    ReasoningPerMillion = r.ReasoningPerMillion is null
+                        ? null
+                        : Math.Max(0m, r.ReasoningPerMillion.Value)
+                })
+                .ToList();
+            if (options.CursorTokenRates.Count == 0)
+            {
+                options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
+            }
+
+            ratesChanged = true;
+        }
+
+        if (ratesChanged)
+        {
+            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
         }
 
         return Results.Ok(ToSettingsDto(options));
@@ -204,7 +243,17 @@ public static class DashboardAdminEndpoints
         databaseProvider = options.DatabaseProvider,
         dataRetentionDays = options.DataRetentionDays,
         serverUrl = options.ServerUrl,
-        autoCreateProjects = options.AutoCreateProjects
+        autoCreateProjects = options.AutoCreateProjects,
+        estimateCostFromTokenRates = options.EstimateCostFromTokenRates,
+        cursorTokenRates = options.CursorTokenRates.Select(r => new
+        {
+            model = r.Model,
+            inputPerMillion = r.InputPerMillion,
+            outputPerMillion = r.OutputPerMillion,
+            cacheReadPerMillion = r.CacheReadPerMillion,
+            cacheWritePerMillion = r.CacheWritePerMillion,
+            reasoningPerMillion = r.ReasoningPerMillion
+        })
     };
 }
 
@@ -236,4 +285,26 @@ public sealed class UpdateSettingsRequestDto
     public bool ClearDataRetentionDays { get; set; }
 
     public bool? AutoCreateProjects { get; set; }
+
+    public bool? EstimateCostFromTokenRates { get; set; }
+
+    public List<CursorModelTokenRateDto>? CursorTokenRates { get; set; }
+}
+
+/// <summary>
+/// One Cursor model rate row for settings updates.
+/// </summary>
+public sealed class CursorModelTokenRateDto
+{
+    public string Model { get; set; } = string.Empty;
+
+    public decimal InputPerMillion { get; set; }
+
+    public decimal OutputPerMillion { get; set; }
+
+    public decimal CacheReadPerMillion { get; set; }
+
+    public decimal CacheWritePerMillion { get; set; }
+
+    public decimal? ReasoningPerMillion { get; set; }
 }

@@ -28,7 +28,7 @@ public sealed class SessionRepository : ISessionRepository
         EditorType? editor = null,
         CancellationToken cancellationToken = default)
     {
-        var query = _db.EditorSessions.Where(s => s.ExternalSessionId == externalSessionId);
+        var query = _db.EditorSessions.AsNoTracking().Where(s => s.ExternalSessionId == externalSessionId);
         if (editor is not null)
         {
             query = query.Where(s => s.Editor == editor.Value);
@@ -86,7 +86,58 @@ public sealed class SessionRepository : ISessionRepository
     /// <inheritdoc />
     public Task UpdateAsync(EditorSession session, CancellationToken cancellationToken = default)
     {
-        _db.EditorSessions.Update(session);
+        // Never call Update() on an already-tracked entity — especially Added.
+        // Update() forces Modified and issues an UPDATE that fails for newly inserted rows
+        // (DbUpdateConcurrencyException: expected 1 row, affected 0).
+        var entry = _db.Entry(session);
+        if (entry.State == EntityState.Detached)
+        {
+            _db.EditorSessions.Update(session);
+        }
+
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public async Task TouchActivityAsync(
+        Guid sessionId,
+        DateTimeOffset activityAtUtc,
+        Guid? assignProjectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var at = activityAtUtc.ToUniversalTime();
+        var tracked = _db.ChangeTracker.Entries<EditorSession>()
+            .FirstOrDefault(e => e.Entity.Id == sessionId);
+
+        if (tracked is { State: EntityState.Added })
+        {
+            tracked.Entity.RecordActivity(at);
+            if (assignProjectId is Guid projectId && tracked.Entity.ProjectId is null)
+            {
+                tracked.Entity.ProjectId = projectId;
+            }
+
+            return;
+        }
+
+        // Bypass RowVersion concurrency so parallel hook/queue posts do not 500.
+        await _db.EditorSessions
+            .Where(s => s.Id == sessionId)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(s => s.LastActivityAtUtc, at)
+                    .SetProperty(s => s.UpdatedAtUtc, at),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (assignProjectId is Guid pid)
+        {
+            await _db.EditorSessions
+                .Where(s => s.Id == sessionId && s.ProjectId == null)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(s => s.ProjectId, pid),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 }

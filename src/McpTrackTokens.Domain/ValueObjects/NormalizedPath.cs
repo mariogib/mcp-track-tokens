@@ -48,6 +48,15 @@ public sealed class NormalizedPath : IEquatable<NormalizedPath>
         var trimmed = path.Trim();
         var unified = trimmed.Replace('\\', '/');
 
+        // Cursor on Windows often emits workspace roots like "/d:/Dev/..."
+        if (unified.Length >= 3 &&
+            unified[0] == '/' &&
+            char.IsLetter(unified[1]) &&
+            unified[2] == ':')
+        {
+            unified = unified[1..];
+        }
+
         while (unified.Contains("//", StringComparison.Ordinal) && !unified.StartsWith("//", StringComparison.Ordinal))
         {
             unified = unified.Replace("//", "/", StringComparison.Ordinal);

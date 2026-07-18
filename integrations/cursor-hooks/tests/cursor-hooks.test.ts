@@ -4,8 +4,27 @@ import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adaptCursorPayload } from '../src/adapters';
 import { sanitizeForDiagnostics } from '../src/diagnostics';
+import { findGitRoot, normalizeWorkspacePath } from '../src/git';
 import { enqueue, flushQueue, sendEvent } from '../src/send-event';
 import { loadConfig, privacySanitize, type TrackingEvent } from '../src/shared';
+
+describe('git path normalization', () => {
+  it('normalizes Cursor /d:/ workspace roots', () => {
+    expect(normalizeWorkspacePath('/d:/Dev/LunarQ/mcp-track-tokens')).toBe(
+      'D:/Dev/LunarQ/mcp-track-tokens',
+    );
+    expect(normalizeWorkspacePath('d:\\Dev\\repo')).toBe('D:/Dev/repo');
+    expect(normalizeWorkspacePath('/home/dev/repo')).toBe('/home/dev/repo');
+  });
+
+  it('finds git root from Cursor-style Windows paths', () => {
+    const exists = (p: string) =>
+      p.replace(/\\/g, '/').endsWith('/Dev/LunarQ/mcp-track-tokens/.git');
+    expect(findGitRoot('/d:/Dev/LunarQ/mcp-track-tokens', exists)).toMatch(
+      /mcp-track-tokens$/i,
+    );
+  });
+});
 
 describe('adapters', () => {
   it('maps common Cursor fields', () => {
@@ -29,6 +48,18 @@ describe('adapters', () => {
     expect(adapted.workspaceRoots).toEqual(['/ws/proj']);
     expect(adapted.event.metadata?.custom_field).toBe(42);
     expect(adapted.event.metadata?.prompt).toBeUndefined();
+  });
+
+  it('normalizes Cursor Windows workspace roots', () => {
+    const adapted = adaptCursorPayload(
+      {
+        workspace_roots: ['/d:/Dev/LunarQ/mcp-track-tokens'],
+        generation_id: 'gen-path',
+      },
+      'PromptSubmitted',
+    );
+    expect(adapted.workspaceRoots).toEqual(['D:/Dev/LunarQ/mcp-track-tokens']);
+    expect(adapted.event.workspacePath).toBe('D:/Dev/LunarQ/mcp-track-tokens');
   });
 
   it('resolves model_id and nested model objects', () => {
@@ -64,6 +95,31 @@ describe('adapters', () => {
     );
     expect(adapted.event.durationMilliseconds).toBe(1200);
     expect(adapted.event.externalConversationId).toBe('c');
+    expect(adapted.event.externalEventId).toBe('g:AgentCompleted');
+    expect(adapted.event.externalRequestId).toBe('g');
+    expect(adapted.event.status).toBe('Completed');
+  });
+
+  it('maps Cursor stop statuses and keeps distinct completion ids', () => {
+    const aborted = adaptCursorPayload(
+      { generation_id: 'gen-9', status: 'aborted', workspace_roots: ['/ws'] },
+      'AgentCompleted',
+    );
+    expect(aborted.event.status).toBe('Cancelled');
+    expect(aborted.event.externalEventId).toBe('gen-9:AgentCompleted');
+
+    const failed = adaptCursorPayload(
+      { generation_id: 'gen-9', status: 'error', workspace_roots: ['/ws'] },
+      'AgentFailed',
+    );
+    expect(failed.event.status).toBe('Failed');
+    expect(failed.event.externalEventId).toBe('gen-9:AgentFailed');
+
+    const submitted = adaptCursorPayload(
+      { generation_id: 'gen-9', workspace_roots: ['/ws'] },
+      'PromptSubmitted',
+    );
+    expect(submitted.event.externalEventId).toBe('gen-9');
   });
 
   it('rejects non-object payloads', () => {

@@ -53,7 +53,12 @@ export function ProjectsPage() {
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const list = projects.data ?? [];
+  const list = [...(projects.data ?? [])].sort((a, b) => {
+    const ta = a.lastActivityAtUtc ? Date.parse(a.lastActivityAtUtc) : 0;
+    const tb = b.lastActivityAtUtc ? Date.parse(b.lastActivityAtUtc) : 0;
+    if (tb !== ta) return tb - ta;
+    return a.name.localeCompare(b.name);
+  });
   const editing = list.find((p) => p.id === editingId) ?? null;
 
   useEffect(() => {

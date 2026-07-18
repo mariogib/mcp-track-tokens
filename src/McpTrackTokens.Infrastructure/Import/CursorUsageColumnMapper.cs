@@ -11,33 +11,31 @@ public sealed class CursorUsageColumnMapper : ICursorUsageColumnMapper
     {
         ["TimestampUtc"] =
         [
-            "timestamputc", "timestamp", "date", "datetime", "day", "time", "createdat", "created_at", "usage date"
+            "timestamputc", "timestamp", "date", "datetime", "day", "time", "createdat", "usagedate"
         ],
-        ["Model"] = ["model", "modelname", "model_name", "model name"],
+        ["Model"] = ["model", "modelname"],
         ["InputTokens"] =
         [
-            "inputtokens", "input_tokens", "input tokens", "prompttokens", "prompt_tokens", "prompt tokens"
+            "inputtokens", "prompttokens",
+            // Cursor dashboard export (input without cache write)
+            "inputwocachewrite", "inputwithoutcachewrite"
         ],
-        ["OutputTokens"] =
-        [
-            "outputtokens", "output_tokens", "output tokens", "completiontokens", "completion_tokens",
-            "completion tokens"
-        ],
-        ["TotalTokens"] = ["totaltokens", "total_tokens", "total tokens", "tokens", "token count", "tokencount"],
+        ["OutputTokens"] = ["outputtokens", "completiontokens"],
+        ["TotalTokens"] = ["totaltokens", "tokens", "tokencount"],
         ["CachedInputTokens"] =
         [
-            "cachedinputtokens", "cached_input_tokens", "cached input tokens", "cache tokens", "cachetokens"
+            "cachedinputtokens", "cachetokens", "cacheread"
         ],
-        ["ReasoningTokens"] = ["reasoningtokens", "reasoning_tokens", "reasoning tokens"],
+        ["ReasoningTokens"] = ["reasoningtokens"],
         ["ReportedCost"] =
         [
-            "reportedcost", "cost", "amount", "usage cost", "usagecost", "price", "total cost", "totalcost"
+            "reportedcost", "cost", "amount", "usagecost", "price", "totalcost", "apicost", "costtoyou"
         ],
         ["Currency"] = ["currency", "curr", "ccy"],
-        ["RequestCount"] = ["requestcount", "requests", "request count", "request_count", "qty", "quantity"],
+        ["RequestCount"] = ["requestcount", "requests", "qty", "quantity"],
         ["ExternalRecordId"] =
         [
-            "externalrecordid", "external_record_id", "id", "recordid", "record_id", "usageid", "usage_id"
+            "externalrecordid", "recordid", "usageid"
         ],
         ["UserIdentifier"] = ["useridentifier", "user", "user_id", "userid", "email", "account"],
         ["Provider"] = ["provider", "ai_provider", "aiprovider"],
@@ -64,10 +62,15 @@ public sealed class CursorUsageColumnMapper : ICursorUsageColumnMapper
         {
             foreach (var pair in overrides)
             {
-                if (!string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+                if (string.IsNullOrWhiteSpace(pair.Key) ||
+                    string.IsNullOrWhiteSpace(pair.Value) ||
+                    string.Equals(pair.Value.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
                 {
-                    result[pair.Value.Trim()] = pair.Key.Trim();
+                    continue;
                 }
+
+                // Dashboard sends source column → canonical field.
+                result[pair.Value.Trim()] = pair.Key.Trim();
             }
         }
 
@@ -102,9 +105,26 @@ public sealed class CursorUsageColumnMapper : ICursorUsageColumnMapper
         return result;
     }
 
-    private static string NormalizeHeader(string value)
-        => value.Trim().Replace("_", string.Empty, StringComparison.Ordinal)
-            .Replace("-", string.Empty, StringComparison.Ordinal)
-            .Replace(" ", string.Empty, StringComparison.Ordinal)
-            .ToLowerInvariant();
+    /// <summary>
+    /// Normalizes a header for alias matching by keeping letters and digits only.
+    /// </summary>
+    internal static string NormalizeHeader(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        Span<char> buffer = stackalloc char[value.Length];
+        var length = 0;
+        foreach (var ch in value.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                buffer[length++] = ch;
+            }
+        }
+
+        return new string(buffer[..length]);
+    }
 }

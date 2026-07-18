@@ -50,6 +50,19 @@ public sealed class ProjectDetectionService : IProjectDetectionService
         bool? createIfMissing = null,
         CancellationToken cancellationToken = default)
     {
+        // Match registered paths before Git resolution. Hook payloads often carry Windows
+        // paths that do not exist inside a Linux container; Git GetFullPath can mangle them.
+        foreach (var candidate in DistinctNonEmpty(repositoryPath, workspacePath, activeFilePath))
+        {
+            var byDirectPath = await _projects
+                .FindByNormalizedPathAsync(_paths.Normalize(candidate), cancellationToken)
+                .ConfigureAwait(false);
+            if (byDirectPath is not null)
+            {
+                return byDirectPath;
+            }
+        }
+
         var probePath = FirstNonEmpty(repositoryPath, workspacePath, activeFilePath);
         GitRepositoryInfo? gitInfo = null;
         if (!string.IsNullOrWhiteSpace(probePath))
@@ -57,7 +70,7 @@ public sealed class ProjectDetectionService : IProjectDetectionService
             gitInfo = await _git.ResolveAsync(probePath, cancellationToken).ConfigureAwait(false);
         }
 
-        var effectiveRepoPath = FirstNonEmpty(repositoryPath, gitInfo?.RootPath, workspacePath);
+        var effectiveRepoPath = FirstNonEmpty(repositoryPath, workspacePath, gitInfo?.RootPath);
         var effectiveRemote = FirstNonEmpty(remoteUrl, gitInfo?.RemoteUrl);
 
         if (!string.IsNullOrWhiteSpace(effectiveRepoPath))
@@ -295,4 +308,22 @@ public sealed class ProjectDetectionService : IProjectDetectionService
 
     private static string? FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+    private static IEnumerable<string> DistinctNonEmpty(params string?[] values)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in values)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            var trimmed = value.Trim();
+            if (seen.Add(trimmed))
+            {
+                yield return trimmed;
+            }
+        }
+    }
 }

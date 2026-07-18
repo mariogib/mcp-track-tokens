@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from './client';
 import type {
   AllocationRequestDto,
+  AssignActivityRequestDto,
   CreateApiKeyRequestDto,
   ExportRequestDto,
   ReconciliationRequestDto,
@@ -22,12 +23,15 @@ export const queryKeys = {
     ['projects', id, 'usage', from, to] as const,
   projectCost: (id: string, from: string, to: string) =>
     ['projects', id, 'cost', from, to] as const,
+  projectTokenCost: (id: string, from: string, to: string) =>
+    ['projects', id, 'token-cost', from, to] as const,
   projectPrompts: (id: string, from: string, to: string) =>
     ['projects', id, 'prompts', from, to] as const,
   projectSessions: (id: string, from?: string, to?: string) =>
     ['projects', id, 'sessions', from, to] as const,
   activeSession: ['sessions', 'active'] as const,
   unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
+  importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
   settings: ['settings'] as const,
   apiKeys: ['api-keys'] as const,
   integrations: ['integrations'] as const,
@@ -121,6 +125,14 @@ export function useProjectCostQuery(id: string | undefined, fromUtc: string, toU
   });
 }
 
+export function useProjectTokenCostQuery(id: string | undefined, fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.projectTokenCost(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectTokenCost(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
 export function useProjectPromptsQuery(id: string | undefined, fromUtc: string, toUtc: string) {
   return useQuery({
     queryKey: queryKeys.projectPrompts(id ?? '', fromUtc, toUtc),
@@ -149,6 +161,13 @@ export function useUnallocatedQuery(fromUtc?: string, toUtc?: string) {
   return useQuery({
     queryKey: queryKeys.unallocated(fromUtc, toUtc),
     queryFn: ({ signal }) => api.unallocated(fromUtc, toUtc, signal),
+  });
+}
+
+export function useImportedUsageQuery(fromUtc: string, toUtc: string) {
+  return useQuery({
+    queryKey: queryKeys.importedUsage(fromUtc, toUtc),
+    queryFn: ({ signal }) => api.importedUsage(fromUtc, toUtc, signal),
   });
 }
 
@@ -206,7 +225,10 @@ export function useReconciliationMutation() {
     mutationFn: (body: ReconciliationRequestDto) => api.runReconciliation(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }
@@ -218,6 +240,34 @@ export function useAllocateUsageMutation() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
+export function useAllocateUsageToClosestPromptMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (usageRecordId: string) => api.allocateUsageToClosestPrompt(usageRecordId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useAssignActivityMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AssignActivityRequestDto) => api.assignActivity(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }
@@ -240,6 +290,7 @@ export function useImportUploadMutation() {
     }) => api.importCursorUpload(args.file, args),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
       void qc.invalidateQueries({ queryKey: ['reports'] });
     },

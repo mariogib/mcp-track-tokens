@@ -281,6 +281,8 @@ public sealed record UnallocatedItemDto
 
     public string? ExternalRequestId { get; init; }
 
+    public long? TotalTokens { get; init; }
+
     public decimal? ReportedCost { get; init; }
 
     public string? Currency { get; init; }
@@ -294,4 +296,30 @@ public sealed record UnallocatedItemDto
     public string? SuggestedConfidence { get; init; }
 
     public string? Reason { get; init; }
+
+    public string? WorkspacePath { get; init; }
+
+    public string? EventType { get; init; }
+
+    public long? DurationMilliseconds { get; init; }
+}
+
+/// <summary>
+/// Request to assign unallocated activity events to a project.
+/// </summary>
+public sealed record AssignActivityRequestDto
+{
+    public Guid ProjectId { get; init; }
+
+    public IReadOnlyList<Guid> EventIds { get; init; } = [];
+}
+
+/// <summary>
+/// Result of assigning activity events to a project.
+/// </summary>
+public sealed record AssignActivityResultDto
+{
+    public Guid ProjectId { get; init; }
+
+    public int Assigned { get; init; }
 }

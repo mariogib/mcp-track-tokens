@@ -64,6 +64,15 @@ public interface ISessionRepository
     Task AddAsync(EditorSession session, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(EditorSession session, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates last-activity (and optionally assigns a project) without optimistic concurrency conflicts.
+    /// </summary>
+    Task TouchActivityAsync(
+        Guid sessionId,
+        DateTimeOffset activityAtUtc,
+        Guid? assignProjectId = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -99,6 +108,16 @@ public interface IActivityEventRepository
 
     Task<PromptActivityEvent?> FindByExternalConversationIdAsync(
         string externalConversationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds the prompt (with a project) whose timestamp (rounded to the second)
+    /// is closest at or before <paramref name="timestampUtc"/>.
+    /// Already-attributed prompts remain eligible — multiple usage rows may
+    /// link to the same prompt (many usages → one prompt).
+    /// </summary>
+    Task<PromptActivityEvent?> FindClosestPriorPromptWithProjectAsync(
+        DateTimeOffset timestampUtc,
         CancellationToken cancellationToken = default);
 
     Task<int> CountUnallocatedAsync(
@@ -183,6 +202,14 @@ public interface IUsageAttributionRepository
 
     Task<IReadOnlyList<UsageAttribution>> ListByUsageRecordAsync(
         Guid externalUsageRecordId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UsageAttribution>> ListByUsageRecordIdsAsync(
+        IReadOnlyCollection<Guid> externalUsageRecordIds,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<UsageAttribution>> ListByActivityEventIdsAsync(
+        IReadOnlyCollection<Guid> activityEventIds,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UsageAttribution>> ListAsync(

@@ -10,24 +10,16 @@ namespace McpTrackTokens.Application.Tests;
 
 public sealed class AttributionEngineTests
 {
-    private readonly IProjectRepository _projects = Substitute.For<IProjectRepository>();
-    private readonly ISessionRepository _sessions = Substitute.For<ISessionRepository>();
     private readonly IActivityEventRepository _events = Substitute.For<IActivityEventRepository>();
-    private readonly IActivityWindowRepository _windows = Substitute.For<IActivityWindowRepository>();
     private readonly IUsageAttributionRepository _attributions = Substitute.For<IUsageAttributionRepository>();
     private readonly IExternalUsageRepository _usage = Substitute.For<IExternalUsageRepository>();
-    private readonly IPathNormalizer _pathNormalizer = Substitute.For<IPathNormalizer>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
 
     private AttributionEngine CreateSut()
         => new(
-            _projects,
-            _sessions,
             _events,
-            _windows,
             _attributions,
             _usage,
-            _pathNormalizer,
             _unitOfWork,
             new AllocationRequestDtoValidator());
 
@@ -39,114 +31,101 @@ public sealed class AttributionEngineTests
             totalTokens: 1000);
 
     [Fact]
-    public async Task ProposeAsync_SingleActiveSession_attributes_to_only_project_session()
+    public async Task ProposeAsync_ClosestPriorPrompt_links_usage_to_prompt_project()
     {
         var projectId = Guid.NewGuid();
-        var session = EditorSession.Start(
+        var usageAt = DateTimeOffset.Parse("2026-07-17T10:00:30Z");
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
             EditorType.Cursor,
-            DateTimeOffset.UtcNow.AddHours(-1),
+            DateTimeOffset.Parse("2026-07-17T10:00:00Z"),
             projectId: projectId);
 
-        _sessions.GetActiveAtAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns([session]);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns([]);
+        _events.FindClosestPriorPromptWithProjectAsync(usageAt, Arg.Any<CancellationToken>())
+            .Returns(prompt);
 
-        var sut = CreateSut();
-        var result = await sut.ProposeAsync(CreateUsage());
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: usageAt));
 
         result.Should().HaveCount(1);
         result[0].ProjectId.Should().Be(projectId);
-        result[0].AttributionMethod.Should().Be(AttributionMethod.SingleActiveSession);
+        result[0].ActivityEventId.Should().Be(prompt.Id);
+        result[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
         result[0].Confidence.Should().Be(AttributionConfidence.High);
-        result[0].AllocationPercentage.Should().Be(100m);
+        result[0].AllocatedCost.Should().Be(10m);
+        result[0].AllocatedTotalTokens.Should().Be(1000);
     }
 
     [Fact]
-    public async Task ProposeAsync_TimeWindowMatch_when_single_covering_project()
+    public async Task ProposeAsync_NoPriorPrompt_is_unallocated()
     {
-        var projectId = Guid.NewGuid();
         var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
-        var window = ActivityWindow.Create(at.AddMinutes(-5), at.AddMinutes(10), 15, projectId);
+        _events.FindClosestPriorPromptWithProjectAsync(at, Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
 
-        _sessions.GetActiveAtAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns([]);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns([window]);
-
-        var sut = CreateSut();
-        var result = await sut.ProposeAsync(CreateUsage(at: at));
-
-        result.Should().HaveCount(1);
-        result[0].ProjectId.Should().Be(projectId);
-        result[0].AttributionMethod.Should().Be(AttributionMethod.TimeWindowMatch);
-        result[0].Confidence.Should().Be(AttributionConfidence.Medium);
-    }
-
-    [Fact]
-    public async Task ProposeAsync_ProportionalTimeAllocation_for_overlapping_windows()
-    {
-        var projectA = Guid.NewGuid();
-        var projectB = Guid.NewGuid();
-        var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
-        // DurationSeconds derived from timestamps: 3h vs 1h
-        var windowA = ActivityWindow.Create(at.AddHours(-3), at.AddHours(0), 15, projectA);
-        var windowB = ActivityWindow.Create(at.AddHours(-1), at.AddHours(0), 15, projectB);
-
-        _sessions.GetActiveAtAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns([]);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns([windowA, windowB]);
-
-        var sut = CreateSut();
-        var result = await sut.ProposeAsync(CreateUsage(10m, at));
-
-        result.Should().HaveCount(2);
-        result.Should().OnlyContain(a => a.AttributionMethod == AttributionMethod.ProportionalTimeAllocation);
-        result.Should().OnlyContain(a => a.Confidence == AttributionConfidence.Low);
-        result.Sum(a => a.AllocatedCost).Should().Be(10m);
-        result.Sum(a => a.AllocationPercentage).Should().Be(100m);
-
-        var byProject = result.ToDictionary(a => a.ProjectId!.Value, a => a.AllocatedCost);
-        byProject[projectA].Should().Be(7.50m);
-        byProject[projectB].Should().Be(2.50m);
-    }
-
-    [Fact]
-    public async Task ProposeAsync_Unallocated_when_no_match()
-    {
-        _sessions.GetActiveAtAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
-            .Returns([]);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns([]);
-
-        var sut = CreateSut();
-        var result = await sut.ProposeAsync(CreateUsage());
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: at));
 
         result.Should().HaveCount(1);
         result[0].ProjectId.Should().BeNull();
+        result[0].ActivityEventId.Should().BeNull();
         result[0].AttributionMethod.Should().Be(AttributionMethod.Unallocated);
-        result[0].Confidence.Should().Be(AttributionConfidence.Unallocated);
-        result[0].AllocatedCost.Should().Be(0m);
     }
 
     [Fact]
-    public async Task ProposeAsync_does_not_promote_low_confidence_proportional_to_certain()
+    public async Task ProposeAsync_ZeroCost_still_can_link_when_proposed_directly()
     {
-        // Covered by ProportionalTimeAllocation confidence assertion above; keep explicit guard.
-        var projectA = Guid.NewGuid();
-        var projectB = Guid.NewGuid();
-        var at = DateTimeOffset.Parse("2026-07-17T12:00:00Z");
-        _sessions.GetActiveAtAsync(Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>()).Returns([]);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
-            .Returns(
-            [
-                ActivityWindow.Create(at.AddMinutes(-30), at.AddMinutes(5), 15, projectA),
-                ActivityWindow.Create(at.AddMinutes(-20), at.AddMinutes(5), 15, projectB)
-            ]);
+        var projectId = Guid.NewGuid();
+        var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            at,
+            projectId: projectId);
 
-        var result = await CreateSut().ProposeAsync(CreateUsage(at: at));
-        result.Should().OnlyContain(a => a.Confidence == AttributionConfidence.Low);
-        result.Should().NotContain(a => a.Confidence == AttributionConfidence.Certain);
+        _events.FindClosestPriorPromptWithProjectAsync(at, Arg.Any<CancellationToken>())
+            .Returns(prompt);
+
+        var usage = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            at,
+            reportedCost: 0m,
+            totalTokens: 3250);
+
+        var result = await CreateSut().ProposeAsync(usage);
+
+        result[0].ProjectId.Should().Be(projectId);
+        result[0].ActivityEventId.Should().Be(prompt.Id);
+        result[0].AllocatedCost.Should().Be(0m);
+        result[0].AllocatedTotalTokens.Should().Be(3250);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_MultipleUsages_can_link_to_same_prompt()
+    {
+        var projectId = Guid.NewGuid();
+        var promptAt = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            promptAt,
+            projectId: projectId);
+
+        var usageAt1 = promptAt.AddSeconds(2);
+        var usageAt2 = promptAt.AddSeconds(45);
+
+        _events.FindClosestPriorPromptWithProjectAsync(
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(prompt);
+
+        var sut = CreateSut();
+        var first = await sut.ProposeAsync(CreateUsage(cost: 1m, at: usageAt1));
+        var second = await sut.ProposeAsync(CreateUsage(cost: 2m, at: usageAt2));
+
+        first[0].ActivityEventId.Should().Be(prompt.Id);
+        second[0].ActivityEventId.Should().Be(prompt.Id);
+        first[0].ProjectId.Should().Be(projectId);
+        second[0].ProjectId.Should().Be(projectId);
+        first[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
+        second[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
     }
 }

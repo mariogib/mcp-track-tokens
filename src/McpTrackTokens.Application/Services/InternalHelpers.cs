@@ -55,10 +55,34 @@ internal static class EnumParsing
             return ActivityStatus.Unknown;
         }
 
-        return Enum.TryParse<ActivityStatus>(value.Trim(), ignoreCase: true, out var status)
-            ? status
-            : ActivityStatus.Unknown;
+        var trimmed = value.Trim();
+        if (Enum.TryParse<ActivityStatus>(trimmed, ignoreCase: true, out var status))
+        {
+            return status;
+        }
+
+        return trimmed.ToLowerInvariant() switch
+        {
+            "completed" or "success" or "ok" => ActivityStatus.Completed,
+            "aborted" or "cancelled" or "canceled" or "stopped" => ActivityStatus.Cancelled,
+            "error" or "failed" or "failure" => ActivityStatus.Failed,
+            _ => ActivityStatus.Unknown
+        };
     }
+
+    public static ActivityStatus StatusFromEventType(ActivityEventType eventType)
+        => eventType switch
+        {
+            ActivityEventType.AgentCompleted => ActivityStatus.Completed,
+            ActivityEventType.AgentFailed => ActivityStatus.Failed,
+            ActivityEventType.AgentCancelled => ActivityStatus.Cancelled,
+            _ => ActivityStatus.Unknown
+        };
+
+    public static bool IsTerminalAgentEvent(ActivityEventType eventType)
+        => eventType is ActivityEventType.AgentCompleted
+            or ActivityEventType.AgentFailed
+            or ActivityEventType.AgentCancelled;
 
     public static AIProvider? ParseProvider(string? value)
     {

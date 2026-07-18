@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
+using McpTrackTokens.Domain.Services;
 using McpTrackTokens.Infrastructure.Persistence;
 
 namespace McpTrackTokens.Infrastructure.Repositories;
@@ -39,7 +40,12 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     /// <inheritdoc />
     public Task UpdateAsync(PromptActivityEvent activityEvent, CancellationToken cancellationToken = default)
     {
-        _db.PromptActivityEvents.Update(activityEvent);
+        var entry = _db.Entry(activityEvent);
+        if (entry.State == EntityState.Detached)
+        {
+            _db.PromptActivityEvents.Update(activityEvent);
+        }
+
         return Task.CompletedTask;
     }
 
@@ -70,7 +76,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         return await SqliteDateTimeQuery.MaterializeAsync(
             query,
             e => e.TimestampUtc >= from && e.TimestampUtc <= to,
-            items => items.OrderBy(e => e.TimestampUtc),
+            items => items.OrderByDescending(e => e.TimestampUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
@@ -80,7 +86,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         CancellationToken cancellationToken = default)
         => await SqliteDateTimeQuery.MaterializeAsync(
             _db.PromptActivityEvents.AsNoTracking().Where(e => e.EditorSessionId == editorSessionId),
-            orderBy: items => items.OrderBy(e => e.TimestampUtc),
+            orderBy: items => items.OrderByDescending(e => e.TimestampUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
@@ -102,6 +108,36 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             take: 1,
             cancellationToken: cancellationToken).ConfigureAwait(false);
         return matches.FirstOrDefault();
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Does not exclude prompts that already have usage attributions.
+    /// </remarks>
+    public async Task<PromptActivityEvent?> FindClosestPriorPromptWithProjectAsync(
+        DateTimeOffset timestampUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var at = TimestampPrecision.RoundToSecond(timestampUtc);
+        // Scan far enough back for long gaps between prompt and later usage rows.
+        var from = at - PromptActiveWindow.MaxLookback;
+        var to = at.AddSeconds(1);
+
+        var candidates = await SqliteDateTimeQuery.MaterializeAsync(
+            _db.PromptActivityEvents.AsNoTracking()
+                .Where(e =>
+                    e.EventType == ActivityEventType.PromptSubmitted &&
+                    e.ProjectId != null),
+            e => e.TimestampUtc >= from && e.TimestampUtc <= to,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        return candidates
+            .Select(e => (Event: e, Second: TimestampPrecision.RoundToSecond(e.TimestampUtc)))
+            .Where(x => x.Second <= at)
+            .OrderByDescending(x => x.Second)
+            .ThenBy(x => x.Event.Id)
+            .Select(x => x.Event)
+            .FirstOrDefault();
     }
 
     /// <inheritdoc />

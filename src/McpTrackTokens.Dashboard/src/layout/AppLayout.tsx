@@ -9,6 +9,7 @@ const navItems = [
   { to: '/', label: 'Overview', end: true },
   { to: '/projects', label: 'Projects' },
   { to: '/imports', label: 'Imports' },
+  { to: '/imported-usage', label: 'Imported usage' },
   { to: '/reconciliation', label: 'Reconciliation' },
   { to: '/settings', label: 'Settings' },
 ];
@@ -22,8 +23,12 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
       return { title: 'Projects', subtitle: 'Tracked repositories and cost rollups' };
     case '/imports':
       return { title: 'Imports', subtitle: 'Upload and map Cursor usage exports' };
+    case '/imported-usage':
+      return { title: 'Imported usage', subtitle: 'All rows imported from Cursor usage exports' };
     case '/reconciliation':
       return { title: 'Reconciliation', subtitle: 'Allocate unassigned usage with confidence review' };
+    case '/unallocated':
+      return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
     case '/settings':
       return { title: 'Settings', subtitle: 'Tracking preferences, privacy, and API keys' };
     default:

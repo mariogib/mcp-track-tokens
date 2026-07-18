@@ -8,7 +8,6 @@ import {
   useStatusQuery,
   useUnallocatedQuery,
 } from '../api/hooks';
-import type { UnallocatedItemDto, UnallocatedUsageReport } from '../api/types';
 import {
   formatCurrency,
   formatDateTime,
@@ -18,12 +17,6 @@ import {
   lastDaysRange,
 } from '../utils/format';
 import { Page } from '../layout/AppLayout';
-
-function asItems(data: UnallocatedItemDto[] | UnallocatedUsageReport | undefined): UnallocatedItemDto[] {
-  if (!data) return [];
-  if (Array.isArray(data)) return data;
-  return data.items ?? [];
-}
 
 export function OverviewPage() {
   const now = new Date();
@@ -58,9 +51,10 @@ export function OverviewPage() {
 
   const activity = summary.data?.activity;
   const cost = summary.data?.cost;
-  const items = asItems(unallocated.data);
-  const unallocatedUsage = items.filter((i) => i.kind.toLowerCase().includes('usage'));
-  const unallocatedActivity = items.filter((i) => !i.kind.toLowerCase().includes('usage'));
+  const unallocatedActivityCount =
+    status.data?.unallocatedEventCount ?? unallocated.data?.activity?.length ?? 0;
+  const unallocatedUsageCount =
+    status.data?.unallocatedUsageCount ?? unallocated.data?.usage?.count ?? 0;
   const healthy =
     health.data?.healthy === true ||
     health.data?.status === 'Healthy' ||
@@ -121,13 +115,15 @@ export function OverviewPage() {
           />
           <MetricCard
             label="Unallocated activity"
-            value={formatNumber(status.data?.unallocatedEventCount ?? unallocatedActivity.length)}
-            hint="Events awaiting project mapping"
+            value={formatNumber(unallocatedActivityCount)}
+            hint="Click to assign events to projects"
+            to="/unallocated"
           />
           <MetricCard
             label="Unallocated usage"
-            value={formatNumber(status.data?.unallocatedUsageCount ?? unallocatedUsage.length)}
+            value={formatNumber(unallocatedUsageCount)}
             hint={formatCurrency(cost?.unallocatedCost, cost?.currency)}
+            to="/reconciliation"
           />
         </div>
       </section>

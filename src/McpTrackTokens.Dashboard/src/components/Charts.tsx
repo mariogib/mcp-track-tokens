@@ -23,6 +23,16 @@ const COLORS = [
   'var(--chart-5)',
 ];
 
+const tooltipContentStyle = {
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+  borderRadius: 8,
+  color: 'var(--text-primary)',
+};
+
+const tooltipLabelStyle = { color: 'var(--text-primary)' };
+const tooltipItemStyle = { color: 'var(--text-primary)' };
+
 export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="chart-card" aria-label={title}>
@@ -52,12 +62,9 @@ export function DailyLineChart({
         <XAxis dataKey={xKey} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
         <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} width={48} />
         <Tooltip
-          contentStyle={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-          }}
-          labelStyle={{ color: 'var(--text-primary)' }}
+          contentStyle={tooltipContentStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
         <Line
           type="monotone"
@@ -90,11 +97,9 @@ export function NamedBarChart({
         <XAxis dataKey={nameKey} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
         <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} width={48} />
         <Tooltip
-          contentStyle={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-          }}
+          contentStyle={tooltipContentStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
         <Bar dataKey={valueKey} name={valueLabel ?? valueKey} fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
       </BarChart>
@@ -120,11 +125,9 @@ export function NamedPieChart({
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-          }}
+          contentStyle={tooltipContentStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
         <Legend />
       </PieChart>

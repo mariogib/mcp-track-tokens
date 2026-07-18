@@ -206,6 +206,54 @@ public sealed class PromptActivityEvent : EntityBase
     }
 
     /// <summary>
+    /// Applies terminal agent outcome onto a <see cref="ActivityEventType.PromptSubmitted"/> row.
+    /// </summary>
+    public void ApplyCompletion(
+        ActivityStatus status,
+        DateTimeOffset completedAtUtc,
+        long? durationMilliseconds = null,
+        string? model = null)
+    {
+        if (EventType != ActivityEventType.PromptSubmitted)
+        {
+            throw new InvalidOperationException(
+                "Only PromptSubmitted events can receive completion updates.");
+        }
+
+        var completed = completedAtUtc.ToUniversalTime();
+        ResponseCompletedAtUtc = completed;
+
+        if (status != ActivityStatus.Unknown || Status == ActivityStatus.Unknown)
+        {
+            Status = status;
+        }
+
+        var resolvedDuration = durationMilliseconds;
+        if (resolvedDuration is null)
+        {
+            var delta = (long)(completed - TimestampUtc).TotalMilliseconds;
+            if (delta >= 0)
+            {
+                resolvedDuration = delta;
+            }
+        }
+
+        if (resolvedDuration is not null)
+        {
+            Guard.AgainstNegative(resolvedDuration.Value);
+            if (DurationMilliseconds is null || resolvedDuration.Value >= DurationMilliseconds.Value)
+            {
+                DurationMilliseconds = resolvedDuration;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(model) && string.IsNullOrWhiteSpace(Model))
+        {
+            Model = model.Trim();
+        }
+    }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="PromptActivityEvent"/> class.
     /// </summary>
     public PromptActivityEvent()

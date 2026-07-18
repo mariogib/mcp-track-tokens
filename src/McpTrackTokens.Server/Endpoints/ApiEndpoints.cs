@@ -27,6 +27,8 @@ public static class ApiEndpoints
         api.MapPost("/imports/cursor", ImportCursorAsync);
         api.MapPost("/imports/cursor/upload", UploadCursorAsync).DisableAntiforgery();
         api.MapPost("/reconciliation/run", RunReconciliationAsync);
+        api.MapPost("/usage/allocate", AllocateUsageAsync);
+        api.MapPost("/usage/{id:guid}/allocate-to-prompt", AllocateUsageToClosestPromptAsync);
 
         api.MapGet("/projects", ListProjectsAsync);
         api.MapGet("/projects/{id:guid}", GetProjectAsync);
@@ -35,11 +37,16 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/activity", GetProjectActivityAsync);
         api.MapGet("/projects/{id:guid}/usage", GetProjectUsageAsync);
         api.MapGet("/projects/{id:guid}/cost", GetProjectCostAsync);
+        api.MapGet("/projects/{id:guid}/token-cost", GetProjectTokenCostAsync);
         api.MapGet("/projects/{id:guid}/sessions", GetProjectSessionsAsync);
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
         api.MapGet("/unallocated", GetUnallocatedAsync);
+        api.MapGet("/unallocated/activity", GetUnallocatedActivityAsync);
+        api.MapGet("/unallocated/usage", GetUnallocatedUsageAsync);
+        api.MapGet("/usage/imported", GetImportedUsageAsync);
+        api.MapPost("/activity/assign", AssignActivityAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
 
         return app;
@@ -179,10 +186,12 @@ public static class ApiEndpoints
             return Results.BadRequest(new { error = "A non-empty file upload is required." });
         }
 
-        var dryRun = bool.TryParse(form["dryRun"], out var dry) && dry;
-        var force = bool.TryParse(form["force"], out var forceValue) && forceValue;
-        var format = form["format"].ToString();
-        var timezone = form["timezone"].ToString();
+        var preview = ReadFormOrQueryBool(httpRequest, form, "preview");
+        var dryRun = ReadFormOrQueryBool(httpRequest, form, "dryRun");
+        var force = ReadFormOrQueryBool(httpRequest, form, "force");
+        var format = FirstNonEmpty(form["format"].ToString(), httpRequest.Query["format"].ToString());
+        var timezone = FirstNonEmpty(form["timezone"].ToString(), httpRequest.Query["timezone"].ToString());
+        var columnMappings = ParseColumnMappings(form["columnMappings"].ToString());
 
         var tempDirectory = Path.Combine(Path.GetTempPath(), "mcp-track-tokens-uploads");
         Directory.CreateDirectory(tempDirectory);
@@ -195,17 +204,27 @@ public static class ApiEndpoints
                 await file.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
             }
 
-            var result = await importer.ImportAsync(
-                new ImportCursorUsageRequestDto
-                {
-                    FilePath = tempPath,
-                    Format = string.IsNullOrWhiteSpace(format) ? null : format,
-                    Timezone = string.IsNullOrWhiteSpace(timezone) ? null : timezone,
-                    DryRun = dryRun,
-                    Force = force
-                },
-                cancellationToken).ConfigureAwait(false);
+            var request = new ImportCursorUsageRequestDto
+            {
+                FilePath = tempPath,
+                Format = string.IsNullOrWhiteSpace(format) ? null : format,
+                Timezone = string.IsNullOrWhiteSpace(timezone) ? null : timezone,
+                DryRun = dryRun,
+                Force = force,
+                ColumnMappings = columnMappings
+            };
 
+            if (preview)
+            {
+                var previewResult = await importer.PreviewAsync(request, cancellationToken).ConfigureAwait(false);
+                // Dashboard expects source column → canonical field.
+                return Results.Ok(previewResult with
+                {
+                    ColumnMappings = InvertColumnMappings(previewResult.ColumnMappings)
+                });
+            }
+
+            var result = await importer.ImportAsync(request, cancellationToken).ConfigureAwait(false);
             return Results.Ok(result);
         }
         catch (Exception ex)
@@ -228,6 +247,55 @@ public static class ApiEndpoints
         }
     }
 
+    private static bool ReadFormOrQueryBool(HttpRequest request, IFormCollection form, string key)
+    {
+        if (bool.TryParse(form[key], out var fromForm))
+        {
+            return fromForm;
+        }
+
+        return bool.TryParse(request.Query[key], out var fromQuery) && fromQuery;
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+    private static IReadOnlyDictionary<string, string>? ParseColumnMappings(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> InvertColumnMappings(
+        IReadOnlyDictionary<string, string> mappings)
+    {
+        var inverted = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (canonical, source) in mappings)
+        {
+            if (string.IsNullOrWhiteSpace(canonical) ||
+                string.IsNullOrWhiteSpace(source) ||
+                string.Equals(source, "ignore", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            inverted[source] = canonical;
+        }
+
+        return inverted;
+    }
+
     private static async Task<IResult> RunReconciliationAsync(
         ReconciliationRequestDto request,
         IReconciliationService reconciliation,
@@ -242,6 +310,84 @@ public static class ApiEndpoints
         {
             return MapException(ex);
         }
+    }
+
+    private static async Task<IResult> AllocateUsageAsync(
+        AllocationRequestDto request,
+        IAttributionEngine attribution,
+        IExternalUsageRepository usage,
+        IProjectRepository projects,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var rows = await attribution.AttributeManualAsync(request, cancellationToken).ConfigureAwait(false);
+            var record = await usage.GetByIdAsync(request.UsageRecordId, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(await MapAttributionRowsAsync(rows, record, projects, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> AllocateUsageToClosestPromptAsync(
+        Guid id,
+        IAttributionEngine attribution,
+        IExternalUsageRepository usage,
+        IProjectRepository projects,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var record = await usage.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+            if (record is null)
+            {
+                return Results.NotFound();
+            }
+
+            var rows = await attribution.AttributeAsync(record, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(await MapAttributionRowsAsync(rows, record, projects, cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<List<UsageAttributionRow>> MapAttributionRowsAsync(
+        IReadOnlyList<UsageAttribution> rows,
+        ExternalUsageRecord? record,
+        IProjectRepository projects,
+        CancellationToken cancellationToken)
+    {
+        var projectNames = new Dictionary<Guid, string>();
+        foreach (var projectId in rows.Select(r => r.ProjectId).Where(id => id is not null).Select(id => id!.Value).Distinct())
+        {
+            var project = await projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false);
+            if (project is not null)
+            {
+                projectNames[projectId] = project.Name;
+            }
+        }
+
+        return rows.Select(row => new UsageAttributionRow
+        {
+            UsageRecordId = row.ExternalUsageRecordId,
+            AttributionId = row.Id,
+            ProjectId = row.ProjectId,
+            ProjectName = row.ProjectId is Guid pid && projectNames.TryGetValue(pid, out var name) ? name : null,
+            ActivityEventId = row.ActivityEventId,
+            TimestampUtc = record?.TimestampUtc ?? row.CreatedAtUtc,
+            Model = record?.Model,
+            Provider = record?.Provider?.ToString(),
+            AllocatedCost = row.AllocatedCost,
+            AllocationPercentage = row.AllocationPercentage,
+            AllocatedTotalTokens = row.AllocatedTotalTokens,
+            AttributionMethod = row.AttributionMethod.ToString(),
+            Confidence = row.Confidence.ToString(),
+            Reason = row.Reason
+        }).ToList();
     }
 
     private static async Task<IResult> ListProjectsAsync(
@@ -304,17 +450,11 @@ public static class ApiEndpoints
         var repositories = await projects.GetRepositoriesAsync(id, cancellationToken).ConfigureAwait(false);
         var aliases = await projects.GetAliasesAsync(id, cancellationToken).ConfigureAwait(false);
         var activity = await reports.GetActivitySummaryAsync(id, from, to, cancellationToken).ConfigureAwait(false);
+        var usage = await reports.GetProjectUsageSummaryAsync(id, from, to, cancellationToken).ConfigureAwait(false);
         var cost = await reports.GetProjectCostAsync(id, from, to, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        return Results.Ok(ProjectMapper.ToDetailDto(project, repositories, aliases, activity, new UsageSummaryDto
-        {
-            TotalTokens = cost.ImportedTotalTokens,
-            ReportedCost = cost.UsageBasedCursorCost,
-            Currency = cost.Currency,
-            FromUtc = from,
-            ToUtc = to
-        }, new CostSummaryDto
+        return Results.Ok(ProjectMapper.ToDetailDto(project, repositories, aliases, activity, usage, new CostSummaryDto
         {
             UsageBasedCost = cost.UsageBasedCursorCost,
             SubscriptionAllocation = cost.SubscriptionAllocation,
@@ -356,27 +496,9 @@ public static class ApiEndpoints
         try
         {
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var cost = await reports.GetProjectCostAsync(id, from, to, cancellationToken: cancellationToken)
+            var usage = await reports.GetProjectUsageSummaryAsync(id, from, to, cancellationToken)
                 .ConfigureAwait(false);
-            var attribution = await reports.GetUsageAttributionAsync(from, to, id, cancellationToken)
-                .ConfigureAwait(false);
-
-            return Results.Ok(new
-            {
-                projectId = id,
-                fromUtc = from,
-                toUtc = to,
-                summary = new UsageSummaryDto
-                {
-                    TotalTokens = cost.ImportedTotalTokens,
-                    ReportedCost = cost.UsageBasedCursorCost,
-                    Currency = cost.Currency,
-                    RequestCount = attribution.Rows.Count,
-                    FromUtc = from,
-                    ToUtc = to
-                },
-                attribution
-            });
+            return Results.Ok(usage);
         }
         catch (Exception ex)
         {
@@ -397,6 +519,27 @@ public static class ApiEndpoints
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
             var report = await reports
                 .GetProjectCostAsync(id, from, to, includeSubscriptionAllocation, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetProjectTokenCostAsync(
+        Guid id,
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports
+                .GetProjectTokenCostEstimateAsync(id, from, to, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
         }
@@ -429,6 +572,8 @@ public static class ApiEndpoints
         Guid id,
         IProjectRepository projects,
         IActivityEventRepository events,
+        IUsageAttributionRepository attributions,
+        IExternalUsageRepository usage,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
         CancellationToken cancellationToken)
@@ -442,17 +587,74 @@ public static class ApiEndpoints
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var list = await events.ListAsync(from, to, id, unallocatedOnly: null, cancellationToken)
             .ConfigureAwait(false);
-        return Results.Ok(list.Select(e => new
+        var prompts = list
+            .Where(e => e.EventType == ActivityEventType.PromptSubmitted)
+            .OrderByDescending(e => e.TimestampUtc)
+            .ToList();
+
+        var linked = await attributions
+            .ListByActivityEventIdsAsync(prompts.Select(p => p.Id).ToList(), cancellationToken)
+            .ConfigureAwait(false);
+        var usageIds = linked.Select(a => a.ExternalUsageRecordId).Distinct().ToList();
+        var usageById = new Dictionary<Guid, ExternalUsageRecord>();
+        foreach (var usageId in usageIds)
         {
-            e.Id,
-            e.TimestampUtc,
-            eventType = e.EventType.ToString(),
-            editor = e.Editor.ToString(),
-            e.Model,
-            e.Branch,
-            status = e.Status.ToString(),
-            e.DurationMilliseconds,
-            e.RepositoryPath
+            var record = await usage.GetByIdAsync(usageId, cancellationToken).ConfigureAwait(false);
+            if (record is not null)
+            {
+                usageById[record.Id] = record;
+            }
+        }
+
+        var usageByPrompt = linked
+            .Where(a => a.ActivityEventId is Guid)
+            .GroupBy(a => a.ActivityEventId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    long tokens = 0;
+                    decimal cost = 0m;
+                    foreach (var attr in g)
+                    {
+                        if (attr.AllocatedTotalTokens > 0 || attr.AllocatedCost > 0)
+                        {
+                            tokens += attr.AllocatedTotalTokens;
+                            cost += attr.AllocatedCost;
+                            continue;
+                        }
+
+                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record))
+                        {
+                            tokens += record.TotalTokens
+                                ?? ((record.InputTokens ?? 0) + (record.OutputTokens ?? 0)
+                                    + (record.CachedInputTokens ?? 0) + (record.ReasoningTokens ?? 0));
+                            cost += record.ReportedCost ?? 0m;
+                        }
+                    }
+
+                    return (Tokens: tokens, Cost: cost, Count: g.Count(), Linked: true);
+                });
+
+        return Results.Ok(prompts.Select(e =>
+        {
+            usageByPrompt.TryGetValue(e.Id, out var linkedUsage);
+            return new
+            {
+                e.Id,
+                e.TimestampUtc,
+                eventType = e.EventType.ToString(),
+                editor = e.Editor.ToString(),
+                e.Model,
+                e.Branch,
+                status = e.Status.ToString(),
+                e.DurationMilliseconds,
+                e.RepositoryPath,
+                totalTokens = linkedUsage.Linked ? linkedUsage.Tokens : (long?)null,
+                reportedCost = linkedUsage.Linked ? linkedUsage.Cost : (decimal?)null,
+                linkedUsageCount = linkedUsage.Linked ? linkedUsage.Count : 0,
+                hasLinkedUsage = linkedUsage.Linked
+            };
         }).ToList());
     }
 
@@ -477,6 +679,79 @@ public static class ApiEndpoints
         var usage = await reports.GetUnallocatedUsageAsync(from, to, limit, cancellationToken)
             .ConfigureAwait(false);
         return Results.Ok(new { activity, usage });
+    }
+
+    private static async Task<IResult> GetUnallocatedActivityAsync(
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var activity = await reports.GetUnallocatedActivityAsync(from, to, limit, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(activity);
+    }
+
+    private static async Task<IResult> GetUnallocatedUsageAsync(
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var usage = await reports.GetUnallocatedUsageAsync(from, to, limit, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(usage);
+    }
+
+    private static async Task<IResult> GetImportedUsageAsync(
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        int? limit,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var usage = await reports.GetImportedUsageAsync(from, to, limit, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(usage);
+    }
+
+    private static async Task<IResult> AssignActivityAsync(
+        AssignActivityRequestDto request,
+        IProjectRepository projects,
+        IActivityEventRepository events,
+        IUnitOfWork unitOfWork,
+        CancellationToken cancellationToken)
+    {
+        if (request.EventIds is null || request.EventIds.Count == 0)
+        {
+            return Results.BadRequest(new { error = "At least one event id is required." });
+        }
+
+        var project = await projects.GetByIdAsync(request.ProjectId, cancellationToken).ConfigureAwait(false);
+        if (project is null || !project.IsActive)
+        {
+            return Results.NotFound(new { error = "Project not found or inactive." });
+        }
+
+        await events.AssignProjectAsync(
+                request.EventIds,
+                request.ProjectId,
+                AttributionMethod.Manual,
+                AttributionConfidence.High,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return Results.Ok(new AssignActivityResultDto
+        {
+            ProjectId = request.ProjectId,
+            Assigned = request.EventIds.Count
+        });
     }
 
     private static async Task<IResult> GetSummaryAsync(

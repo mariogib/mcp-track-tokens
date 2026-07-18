@@ -49,7 +49,7 @@ public sealed class ExternalUsageNormalizer : IExternalUsageNormalizer
                 record.CachedInputTokens,
                 record.ReasoningTokens,
                 totalTokens,
-                record.ReportedCost,
+                record.ReportedCost ?? 0m,
                 record.Currency,
                 record.RequestCount,
                 record.MetadataJson,

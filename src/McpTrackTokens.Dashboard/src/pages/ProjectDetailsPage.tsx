@@ -5,6 +5,7 @@ import {
   useExportMutation,
   useProjectActivityQuery,
   useProjectCostQuery,
+  useProjectTokenCostQuery,
   useProjectPromptsQuery,
   useProjectQuery,
   useProjectSessionsQuery,
@@ -38,6 +39,7 @@ const TABS = [
   'Sessions',
   'Usage',
   'Cost',
+  'Token Costs',
   'Repositories',
   'Exports',
   'Settings',
@@ -55,6 +57,7 @@ export function ProjectDetailsPage() {
   const activity = useProjectActivityQuery(projectId, range.fromUtc, range.toUtc);
   const usage = useProjectUsageQuery(projectId, range.fromUtc, range.toUtc);
   const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
+  const tokenCost = useProjectTokenCostQuery(projectId, range.fromUtc, range.toUtc);
   const prompts = useProjectPromptsQuery(projectId, range.fromUtc, range.toUtc);
   const sessions = useProjectSessionsQuery(projectId, range.fromUtc, range.toUtc);
   const exportMutation = useExportMutation();
@@ -83,15 +86,18 @@ export function ProjectDetailsPage() {
 
   const detail = project.data;
   const byDay = activity.data?.byDay ?? [];
-  const daySeries = byDay.map((row) => ({
+  // Charts stay chronological (oldest → newest); grids use byDay as returned (newest first).
+  const byDayChronological = [...byDay].sort((a, b) => a.day.localeCompare(b.day));
+  const daySeries = byDayChronological.map((row) => ({
     day: formatDay(row.day),
     prompts: row.promptCount,
     activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
     agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
+    tokens: row.totalTokens ?? 0,
   }));
 
-  const costByDay = byDay.map((row) => {
-    const modelShare = (cost.data?.totalAiCost ?? 0) / Math.max(byDay.length, 1);
+  const costByDay = byDayChronological.map((row) => {
+    const modelShare = (cost.data?.totalAiCost ?? 0) / Math.max(byDayChronological.length, 1);
     return {
       day: formatDay(row.day),
       cost: Number(modelShare.toFixed(2)),
@@ -106,11 +112,6 @@ export function ProjectDetailsPage() {
   const branchSeries = (activity.data?.byBranch ?? []).map((b) => ({
     name: b.name || '(none)',
     prompts: b.promptCount,
-  }));
-
-  const editorSeries = (activity.data?.byEditor ?? []).map((e) => ({
-    name: e.name || 'Unknown',
-    prompts: e.promptCount,
   }));
 
   return (
@@ -177,6 +178,12 @@ export function ProjectDetailsPage() {
               )}
             />
             <MetricCard
+              label="Total tokens"
+              value={formatNumber(
+                cost.data?.importedTotalTokens ?? usage.data?.totalTokens ?? 0,
+              )}
+            />
+            <MetricCard
               label="Total AI cost"
               value={formatCurrency(
                 cost.data?.totalAiCost ?? detail.cost?.totalAiCost,
@@ -197,6 +204,9 @@ export function ProjectDetailsPage() {
             <ChartCard title="Cost / day">
               <DailyLineChart data={costByDay} xKey="day" yKey="cost" yLabel="Cost" />
             </ChartCard>
+            <ChartCard title="Tokens / day">
+              <DailyLineChart data={daySeries} xKey="day" yKey="tokens" yLabel="Tokens" />
+            </ChartCard>
             <ChartCard title="Cost by model">
               {modelSeries.length ? (
                 <NamedPieChart data={modelSeries} valueKey="cost" />
@@ -209,13 +219,6 @@ export function ProjectDetailsPage() {
                 <NamedBarChart data={branchSeries} valueKey="prompts" valueLabel="Prompts" />
               ) : (
                 <EmptyState message="No branch activity in range." />
-              )}
-            </ChartCard>
-            <ChartCard title="Activity by editor">
-              {editorSeries.length ? (
-                <NamedBarChart data={editorSeries} valueKey="prompts" valueLabel="Prompts" />
-              ) : (
-                <EmptyState message="No editor activity in range." />
               )}
             </ChartCard>
           </div>
@@ -279,6 +282,9 @@ export function ProjectDetailsPage() {
                     <th>Branch</th>
                     <th>Status</th>
                     <th>Duration</th>
+                    <th>Linked usages</th>
+                    <th>Total Tokens</th>
+                    <th>Cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -291,6 +297,21 @@ export function ProjectDetailsPage() {
                       <td>{p.branch ?? '—'}</td>
                       <td>{p.status ?? '—'}</td>
                       <td>{formatDurationMs(p.durationMilliseconds)}</td>
+                      <td>
+                        {p.hasLinkedUsage || (p.linkedUsageCount ?? 0) > 0
+                          ? formatNumber(p.linkedUsageCount ?? 0)
+                          : '—'}
+                      </td>
+                      <td>
+                        {p.hasLinkedUsage || p.totalTokens != null
+                          ? formatNumber(p.totalTokens ?? 0)
+                          : '—'}
+                      </td>
+                      <td>
+                        {p.hasLinkedUsage || p.reportedCost != null
+                          ? formatCurrency(p.reportedCost ?? 0)
+                          : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -419,6 +440,113 @@ export function ProjectDetailsPage() {
                   </tbody>
                 </table>
               </div>
+            </>
+          )}
+        </section>
+      )}
+
+      {tab === 'Token Costs' && (
+        <section className="page-section">
+          {tokenCost.isLoading ? (
+            <LoadingState label="Calculating token costs…" />
+          ) : tokenCost.error ? (
+            <ErrorState
+              message={
+                tokenCost.error instanceof Error
+                  ? tokenCost.error.message
+                  : 'Failed to load token costs'
+              }
+            />
+          ) : (
+            <>
+              <p className="muted" style={{ marginBottom: '1rem' }}>
+                Estimated from attributed tokens using the Cursor rate card in Settings. Cached
+                tokens use the cache-read rate. Reported cost is the imported dollar amount when
+                present.
+              </p>
+              <div className="metric-grid">
+                <MetricCard
+                  label="Estimated cost"
+                  value={formatCurrency(
+                    tokenCost.data?.estimatedCost,
+                    tokenCost.data?.currency,
+                  )}
+                />
+                <MetricCard
+                  label="Reported cost"
+                  value={formatCurrency(
+                    tokenCost.data?.reportedCost,
+                    tokenCost.data?.currency,
+                  )}
+                />
+                <MetricCard
+                  label="Total tokens"
+                  value={formatNumber(tokenCost.data?.totalTokens)}
+                />
+                <MetricCard
+                  label="Input tokens"
+                  value={formatNumber(tokenCost.data?.inputTokens)}
+                />
+                <MetricCard
+                  label="Output tokens"
+                  value={formatNumber(tokenCost.data?.outputTokens)}
+                />
+                <MetricCard
+                  label="Cached input"
+                  value={formatNumber(tokenCost.data?.cachedInputTokens)}
+                />
+                <MetricCard
+                  label="Reasoning"
+                  value={formatNumber(tokenCost.data?.reasoningTokens)}
+                />
+                <MetricCard
+                  label="Rate card models"
+                  value={formatNumber(tokenCost.data?.rateCardModelCount)}
+                />
+              </div>
+              {!(tokenCost.data?.byModel?.length) ? (
+                <EmptyState message="No attributed usage in this range to price." />
+              ) : (
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>Model</th>
+                        <th>Rate used</th>
+                        <th>Input</th>
+                        <th>Output</th>
+                        <th>Cached</th>
+                        <th>Reasoning</th>
+                        <th>Total tokens</th>
+                        <th>Estimated</th>
+                        <th>Reported</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tokenCost.data.byModel.map((row) => (
+                        <tr key={row.model}>
+                          <td>{row.model}</td>
+                          <td className="mono">{row.rateSource}</td>
+                          <td>{formatNumber(row.inputTokens)}</td>
+                          <td>{formatNumber(row.outputTokens)}</td>
+                          <td>{formatNumber(row.cachedInputTokens)}</td>
+                          <td>{formatNumber(row.reasoningTokens)}</td>
+                          <td>{formatNumber(row.totalTokens)}</td>
+                          <td>
+                            {formatCurrency(row.estimatedCost, tokenCost.data?.currency)}
+                          </td>
+                          <td>
+                            {formatCurrency(row.reportedCost, tokenCost.data?.currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <p className="muted" style={{ marginTop: '0.75rem' }}>
+                <Link to="/settings">Edit Cursor token rates in Settings</Link>
+              </p>
             </>
           )}
         </section>

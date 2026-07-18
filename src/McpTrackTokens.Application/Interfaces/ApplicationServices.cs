@@ -132,6 +132,18 @@ public interface IReportService
         bool includeSubscriptionAllocation = true,
         CancellationToken cancellationToken = default);
 
+    Task<ProjectTokenCostEstimate> GetProjectTokenCostEstimateAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<UsageSummaryDto> GetProjectUsageSummaryAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
     Task<ClientCostReport> GetClientCostAsync(
         string clientName,
         DateTimeOffset fromUtc,
@@ -145,6 +157,12 @@ public interface IReportService
         CancellationToken cancellationToken = default);
 
     Task<UnallocatedUsageReport> GetUnallocatedUsageAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        int? limit = null,
+        CancellationToken cancellationToken = default);
+
+    Task<ImportedUsageReport> GetImportedUsageAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         int? limit = null,

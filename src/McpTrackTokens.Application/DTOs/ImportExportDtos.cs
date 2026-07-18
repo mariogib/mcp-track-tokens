@@ -70,7 +70,10 @@ public sealed record ImportResultDto
 /// </summary>
 public sealed record NormalizedUsageRecordDto
 {
-    public string? ExternalRecordId { get; init; }
+    /// <summary>
+    /// Stable external identity used for import deduplication. Set during parse when absent from the file.
+    /// </summary>
+    public string? ExternalRecordId { get; set; }
 
     public DateTimeOffset TimestampUtc { get; init; }
 
@@ -276,6 +279,11 @@ public sealed record ReconciliationResultDto
     public int SkippedCount { get; init; }
 
     public IReadOnlyList<UsageAttributionRow> Attributions { get; init; } = [];
+
+    /// <summary>
+    /// Usage rows that could not be linked to a prior prompt (or otherwise stayed unallocated).
+    /// </summary>
+    public IReadOnlyList<UsageAttributionRow> Unallocated { get; init; } = [];
 }
 
 /// <summary>

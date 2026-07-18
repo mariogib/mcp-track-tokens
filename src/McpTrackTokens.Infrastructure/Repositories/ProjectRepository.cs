@@ -60,19 +60,33 @@ public sealed class ProjectRepository : IProjectRepository
         }
 
         var path = normalizedPath.Trim();
-        var repo = await _db.ProjectRepositories.AsNoTracking()
-            .Where(r => r.IsActive && r.NormalizedPath == path)
-            .Select(r => r.ProjectId)
-            .FirstOrDefaultAsync(cancellationToken)
+        var repoMatches = await _db.ProjectRepositories.AsNoTracking()
+            .Where(r => r.IsActive)
+            .Select(r => new { r.ProjectId, r.NormalizedPath })
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (repo != Guid.Empty)
+        var matchingProjectIds = repoMatches
+            .Where(r => string.Equals(r.NormalizedPath, path, StringComparison.OrdinalIgnoreCase))
+            .Select(r => r.ProjectId)
+            .Distinct()
+            .ToList();
+
+        if (matchingProjectIds.Count > 0)
         {
-            return await GetByIdAsync(repo, cancellationToken).ConfigureAwait(false);
+            var activeProjects = await _db.Projects.AsNoTracking()
+                .Where(p => matchingProjectIds.Contains(p.Id) && p.IsActive)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var active = activeProjects.OrderBy(p => p.CreatedAtUtc).FirstOrDefault();
+            if (active is not null)
+            {
+                return await GetByIdAsync(active.Id, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         var candidates = await _db.Projects.AsNoTracking()
-            .Where(p => p.PrimaryRepositoryPath != null)
+            .Where(p => p.IsActive && p.PrimaryRepositoryPath != null)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

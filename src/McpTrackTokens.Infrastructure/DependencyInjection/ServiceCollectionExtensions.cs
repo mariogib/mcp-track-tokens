@@ -58,6 +58,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IGitRepositoryResolver, GitRepositoryResolver>();
         services.TryAddSingleton<ICursorUsageFormatDetector, CursorUsageFormatDetector>();
         services.TryAddSingleton<ICursorUsageColumnMapper, CursorUsageColumnMapper>();
+        services.TryAddSingleton<ICursorTokenRateStore, CursorTokenRateStore>();
         services.TryAddScoped<IExternalUsageNormalizer, ExternalUsageNormalizer>();
         services.TryAddScoped<ICursorUsageImporter, CursorUsageImporter>();
         services.TryAddScoped<IReportExporter, ReportExporter>();

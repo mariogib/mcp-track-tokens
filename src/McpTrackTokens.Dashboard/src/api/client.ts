@@ -9,10 +9,12 @@ import type {
   HealthDto,
   ImportPreviewDto,
   ImportResultDto,
+  ImportedUsageReport,
   IntegrationStatusDto,
   MonthlySummaryReport,
   ProjectActivityReport,
   ProjectCostReport,
+  ProjectTokenCostEstimate,
   ProjectDetailDto,
   ProjectDto,
   PromptEventDto,
@@ -21,6 +23,9 @@ import type {
   SessionDto,
   SettingsDto,
   TrackingStatusDto,
+  AssignActivityRequestDto,
+  AssignActivityResultDto,
+  UnallocatedBundle,
   UnallocatedItemDto,
   UnallocatedUsageReport,
   UpdateProjectRequest,
@@ -208,6 +213,12 @@ export const api = {
       signal,
     }),
 
+  getProjectTokenCost: (id: string, fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<ProjectTokenCostEstimate>(`/api/v1/projects/${id}/token-cost`, {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
   getProjectPrompts: (id: string, fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<PromptEventDto[]>(`/api/v1/projects/${id}/prompts`, {
       query: { fromUtc, toUtc },
@@ -237,7 +248,7 @@ export const api = {
     apiRequest<ActiveSessionDto | null>('/api/v1/sessions/active', { signal }),
 
   unallocated: (fromUtc?: string, toUtc?: string, signal?: AbortSignal) =>
-    apiRequest<UnallocatedItemDto[] | UnallocatedUsageReport>('/api/v1/unallocated', {
+    apiRequest<UnallocatedBundle>('/api/v1/unallocated', {
       query: { fromUtc, toUtc },
       signal,
     }),
@@ -248,9 +259,22 @@ export const api = {
       signal,
     }),
 
+  importedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<ImportedUsageReport>('/api/v1/usage/imported', {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
   unallocatedActivity: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<UnallocatedItemDto[]>('/api/v1/unallocated/activity', {
       query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  assignActivity: (body: AssignActivityRequestDto, signal?: AbortSignal) =>
+    apiRequest<AssignActivityResultDto>('/api/v1/activity/assign', {
+      method: 'POST',
+      body,
       signal,
     }),
 
@@ -322,6 +346,12 @@ export const api = {
     apiRequest<UsageAttributionRow[]>('/api/v1/usage/allocate', {
       method: 'POST',
       body,
+      signal,
+    }),
+
+  allocateUsageToClosestPrompt: (usageRecordId: string, signal?: AbortSignal) =>
+    apiRequest<UsageAttributionRow[]>(`/api/v1/usage/${usageRecordId}/allocate-to-prompt`, {
+      method: 'POST',
       signal,
     }),
 

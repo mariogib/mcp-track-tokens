@@ -6,7 +6,9 @@ using McpTrackTokens.Domain.Enums;
 namespace McpTrackTokens.Application.Services;
 
 /// <summary>
-/// Runs attribution over a date range with optional dry-run.
+/// Runs attribution over imported usage rows with Total Tokens &gt; 0.
+/// Each eligible row is linked to the closest prompt at or before its timestamp
+/// (second precision); the same prompt may receive many usage attributions.
 /// </summary>
 public sealed class ReconciliationService : IReconciliationService
 {
@@ -39,6 +41,13 @@ public sealed class ReconciliationService : IReconciliationService
 
         foreach (var record in records)
         {
+            // Only reconcile rows with Total Tokens > 0 (Included/Free cost may be 0).
+            if (AttributionEngine.ResolveTotalTokens(record) <= 0)
+            {
+                skipped++;
+                continue;
+            }
+
             var proposed = await _engine.ProposeAsync(record, cancellationToken).ConfigureAwait(false);
             var toPersist = new List<UsageAttribution>();
 
@@ -62,6 +71,8 @@ public sealed class ReconciliationService : IReconciliationService
                     AttributionMethod.Unallocated,
                     AttributionConfidence.Unallocated,
                     0m,
+                    allocatedCost: 0m,
+                    allocatedTotalTokens: AttributionEngine.ResolveTotalTokens(record),
                     reason: "Low-confidence attributions excluded by reconciliation settings."));
             }
 
@@ -85,16 +96,25 @@ public sealed class ReconciliationService : IReconciliationService
             }
         }
 
+        var eligible = records.Count(r => AttributionEngine.ResolveTotalTokens(r) > 0);
+        var stillUnallocated = attributions
+            .Where(a =>
+                a.ProjectId is null ||
+                string.Equals(a.AttributionMethod, nameof(AttributionMethod.Unallocated), StringComparison.Ordinal))
+            .OrderByDescending(a => a.TimestampUtc)
+            .ToList();
+
         return new ReconciliationResultDto
         {
             DryRun = request.DryRun,
             FromUtc = request.FromUtc,
             ToUtc = request.ToUtc,
-            ProcessedCount = records.Count,
+            ProcessedCount = eligible,
             AllocatedCount = allocated,
             UnallocatedCount = unallocated,
             SkippedCount = skipped,
-            Attributions = attributions
+            Attributions = attributions,
+            Unallocated = stillUnallocated
         };
     }
 
@@ -108,6 +128,7 @@ public sealed class ReconciliationService : IReconciliationService
             UsageRecordId = attribution.ExternalUsageRecordId,
             AttributionId = attribution.Id,
             ProjectId = attribution.ProjectId,
+            ActivityEventId = attribution.ActivityEventId,
             TimestampUtc = timestampUtc,
             Model = model,
             Provider = provider,

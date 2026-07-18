@@ -61,25 +61,34 @@ public sealed class ReportService : IReportService
         var windows = await _windows.ListAsync(fromUtc, toUtc, projectId, cancellationToken)
             .ConfigureAwait(false);
         var merged = _windowService.MergeOverlappingSameProjectWindows(windows);
+        var tokensByDay = await GetAttributedTokensByDayAsync(fromUtc, toUtc, projectId, cancellationToken)
+            .ConfigureAwait(false);
 
-        var rows = events
-            .GroupBy(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime))
-            .OrderBy(g => g.Key)
-            .Select(g =>
+        var dayKeys = events
+            .Select(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime))
+            .Concat(tokensByDay.Keys)
+            .Distinct()
+            .OrderByDescending(d => d)
+            .ToList();
+
+        var rows = dayKeys
+            .Select(day =>
             {
-                var dayStart = g.Key.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-                var dayEnd = g.Key.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
+                var dayEvents = events.Where(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime) == day);
+                var dayStart = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+                var dayEnd = day.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
                 var dayWindows = merged.Where(w =>
                     w.StartedAtUtc < dayEnd && w.EndedAtUtc > dayStart);
                 return new DailyActivityRow
                 {
-                    Day = g.Key,
+                    Day = day,
                     ProjectId = projectId,
-                    PromptCount = g.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
-                    AgentRuns = g.Count(e => e.EventType == ActivityEventType.AgentStarted),
-                    AgentDurationMilliseconds = SumAgentDuration(g),
+                    PromptCount = dayEvents.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
+                    AgentRuns = dayEvents.Count(e => e.EventType == ActivityEventType.AgentStarted),
+                    AgentDurationMilliseconds = SumAgentDuration(dayEvents),
                     ActiveProjectTimeSeconds = dayWindows.Sum(w => OverlapSeconds(w, dayStart, dayEnd)),
-                    SessionCount = g.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count()
+                    SessionCount = dayEvents.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
+                    TotalTokens = tokensByDay.GetValueOrDefault(day)
                 };
             })
             .ToList();
@@ -165,10 +174,30 @@ public sealed class ReportService : IReportService
             .ListAsync(fromUtc, toUtc, projectId, cancellationToken)
             .ConfigureAwait(false);
 
-        var usageBased = attributions
+        var allocated = attributions
             .Where(a => a.AttributionMethod != AttributionMethod.Unallocated)
-            .Sum(a => a.AllocatedCost);
+            .ToList();
         var tokens = attributions.Sum(a => a.AllocatedTotalTokens);
+
+        var usageById = await LoadUsageByIdsAsync(
+                allocated.Select(a => a.ExternalUsageRecordId),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        decimal usageBasedCursor = 0m;
+        decimal otherProvider = 0m;
+        foreach (var attribution in allocated)
+        {
+            usageById.TryGetValue(attribution.ExternalUsageRecordId, out var usage);
+            if (IsCursorProvider(usage?.Provider))
+            {
+                usageBasedCursor += attribution.AllocatedCost;
+            }
+            else
+            {
+                otherProvider += attribution.AllocatedCost;
+            }
+        }
 
         decimal subscription = 0m;
         if (includeSubscriptionAllocation)
@@ -186,10 +215,9 @@ public sealed class ReportService : IReportService
             }
         }
 
-        var currency = project.Currency;
-        var otherProvider = attributions
-            .Where(a => a.AttributionMethod != AttributionMethod.Unallocated)
-            .Sum(a => 0m); // provider split is available via model report
+        var unallocatedCost = await GetProjectUnallocatedCostAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
+        var byModel = BuildProjectModelCostRows(allocated, usageById, subscription);
 
         return new ProjectCostReport
         {
@@ -198,17 +226,173 @@ public sealed class ReportService : IReportService
             ClientName = project.ClientName,
             FromUtc = fromUtc,
             ToUtc = toUtc,
-            Currency = currency,
+            Currency = project.Currency,
             ActiveProjectTimeSeconds = activity.ActiveProjectTimeSeconds,
             AgentDurationMilliseconds = activity.AgentDurationMilliseconds,
             PromptCount = activity.PromptCount,
             ImportedTotalTokens = tokens,
-            UsageBasedCursorCost = usageBased,
+            UsageBasedCursorCost = usageBasedCursor,
             SubscriptionAllocation = subscription,
             OtherProviderCost = otherProvider,
-            UnallocatedCost = 0m,
-            TotalAiCost = usageBased + subscription + otherProvider,
-            ByModel = []
+            UnallocatedCost = unallocatedCost,
+            TotalAiCost = usageBasedCursor + subscription + otherProvider,
+            ByModel = byModel
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<ProjectTokenCostEstimate> GetProjectTokenCostEstimateAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await RequireProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
+        var attributions = await _attributions
+            .ListAsync(fromUtc, toUtc, projectId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var allocated = attributions
+            .Where(a => a.AttributionMethod != AttributionMethod.Unallocated)
+            .ToList();
+
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
+
+        var usageById = await LoadUsageByIdsAsync(
+                allocated.Select(a => a.ExternalUsageRecordId),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var aggregates = new Dictionary<string, TokenCostAggregate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var attribution in allocated)
+        {
+            if (!usageById.TryGetValue(attribution.ExternalUsageRecordId, out var usage))
+            {
+                continue;
+            }
+
+            var modelName = string.IsNullOrWhiteSpace(usage.Model) ? "unknown" : usage.Model.Trim();
+            var rate = CursorTokenCostCalculator.ResolveRate(rates, modelName);
+            if (rate is null)
+            {
+                continue;
+            }
+
+            if (!aggregates.TryGetValue(modelName, out var agg))
+            {
+                agg = new TokenCostAggregate(modelName, rate);
+                aggregates[modelName] = agg;
+            }
+
+            var input = ScaleByAllocation(usage.InputTokens ?? 0, attribution.AllocationPercentage);
+            var output = ScaleByAllocation(usage.OutputTokens ?? 0, attribution.AllocationPercentage);
+            var cached = ScaleByAllocation(usage.CachedInputTokens ?? 0, attribution.AllocationPercentage);
+            var reasoning = ScaleByAllocation(usage.ReasoningTokens ?? 0, attribution.AllocationPercentage);
+            var total = ScaleByAllocation(usage.TotalTokens ?? 0, attribution.AllocationPercentage);
+            var accounted = input + output + cached + reasoning;
+            if (total > accounted)
+            {
+                input += total - accounted;
+            }
+
+            agg.InputTokens += input;
+            agg.OutputTokens += output;
+            agg.CachedInputTokens += cached;
+            agg.ReasoningTokens += reasoning;
+            agg.TotalTokens += total > 0 ? total : accounted;
+            agg.ReportedCost += attribution.AllocatedCost;
+            agg.EstimatedCost += CursorTokenCostCalculator.Estimate(
+                usage,
+                attribution.AllocationPercentage,
+                rate);
+        }
+
+        var byModel = aggregates.Values
+            .Select(a => new TokenCostModelRow
+            {
+                Model = a.Model,
+                RateSource = a.Rate.Model,
+                InputTokens = a.InputTokens,
+                OutputTokens = a.OutputTokens,
+                CachedInputTokens = a.CachedInputTokens,
+                ReasoningTokens = a.ReasoningTokens,
+                TotalTokens = a.TotalTokens,
+                EstimatedCost = Math.Round(a.EstimatedCost, 4, MidpointRounding.AwayFromZero),
+                ReportedCost = Math.Round(a.ReportedCost, 4, MidpointRounding.AwayFromZero),
+                InputPerMillion = a.Rate.InputPerMillion,
+                OutputPerMillion = a.Rate.OutputPerMillion,
+                CacheReadPerMillion = a.Rate.CacheReadPerMillion,
+                ReasoningPerMillion = a.Rate.ReasoningPerMillion
+            })
+            .OrderByDescending(r => r.EstimatedCost)
+            .ThenBy(r => r.Model, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new ProjectTokenCostEstimate
+        {
+            ProjectId = project.Id,
+            ProjectName = project.Name,
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            Currency = project.Currency,
+            InputTokens = byModel.Sum(r => r.InputTokens),
+            OutputTokens = byModel.Sum(r => r.OutputTokens),
+            CachedInputTokens = byModel.Sum(r => r.CachedInputTokens),
+            ReasoningTokens = byModel.Sum(r => r.ReasoningTokens),
+            TotalTokens = byModel.Sum(r => r.TotalTokens),
+            EstimatedCost = Math.Round(byModel.Sum(r => r.EstimatedCost), 4, MidpointRounding.AwayFromZero),
+            ReportedCost = Math.Round(byModel.Sum(r => r.ReportedCost), 4, MidpointRounding.AwayFromZero),
+            RateCardModelCount = rates.Count,
+            HasRateCard = rates.Count > 0,
+            ByModel = byModel
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<UsageSummaryDto> GetProjectUsageSummaryAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var project = await RequireProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
+        var attributions = await _attributions
+            .ListAsync(fromUtc, toUtc, projectId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var allocated = attributions
+            .Where(a => a.AttributionMethod != AttributionMethod.Unallocated && a.ProjectId == projectId)
+            .ToList();
+
+        long cachedInputTokens = 0;
+        long reasoningTokens = 0;
+        foreach (var attribution in allocated)
+        {
+            var usage = await _usage.GetByIdAsync(attribution.ExternalUsageRecordId, cancellationToken)
+                .ConfigureAwait(false);
+            if (usage is null)
+            {
+                continue;
+            }
+
+            cachedInputTokens += ScaleByAllocation(usage.CachedInputTokens ?? 0, attribution.AllocationPercentage);
+            reasoningTokens += ScaleByAllocation(usage.ReasoningTokens ?? 0, attribution.AllocationPercentage);
+        }
+
+        return new UsageSummaryDto
+        {
+            InputTokens = allocated.Sum(a => a.AllocatedInputTokens),
+            OutputTokens = allocated.Sum(a => a.AllocatedOutputTokens),
+            CachedInputTokens = cachedInputTokens,
+            ReasoningTokens = reasoningTokens,
+            TotalTokens = allocated.Sum(a => a.AllocatedTotalTokens),
+            RequestCount = allocated.Select(a => a.ExternalUsageRecordId).Distinct().Count(),
+            ReportedCost = allocated.Sum(a => a.AllocatedCost),
+            Currency = project.Currency,
+            FromUtc = fromUtc,
+            ToUtc = toUtc
         };
     }
 
@@ -271,6 +455,7 @@ public sealed class ReportService : IReportService
                 AttributionId = attribution.Id,
                 ProjectId = attribution.ProjectId,
                 ProjectName = project?.Name,
+                ActivityEventId = attribution.ActivityEventId,
                 TimestampUtc = usage?.TimestampUtc ?? attribution.CreatedAtUtc,
                 Model = usage?.Model,
                 Provider = usage?.Provider?.ToString(),
@@ -282,6 +467,8 @@ public sealed class ReportService : IReportService
                 Reason = attribution.Reason
             });
         }
+
+        rows.Sort((a, b) => b.TimestampUtc.CompareTo(a.TimestampUtc));
 
         var unallocated = await _usage.ListUnallocatedAsync(fromUtc, toUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
@@ -313,7 +500,8 @@ public sealed class ReportService : IReportService
             TimestampUtc = r.TimestampUtc,
             Model = r.Model,
             Provider = r.Provider?.ToString(),
-            ReportedCost = r.ReportedCost,
+            TotalTokens = AttributionEngine.ResolveTotalTokens(r),
+            ReportedCost = r.ReportedCost ?? 0m,
             Currency = r.Currency ?? _options.DefaultCurrency,
             Reason = "No attribution row with a project."
         }).ToList();
@@ -324,6 +512,74 @@ public sealed class ReportService : IReportService
             ToUtc = toUtc,
             Count = items.Count,
             TotalCost = items.Sum(i => i.ReportedCost ?? 0m),
+            Currency = _options.DefaultCurrency,
+            Items = items
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<ImportedUsageReport> GetImportedUsageAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        int? limit = null,
+        CancellationToken cancellationToken = default)
+    {
+        var records = await _usage
+            .ListAsync(fromUtc, toUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        var attributions = await _attributions
+            .ListByUsageRecordIdsAsync(records.Select(r => r.Id).ToList(), cancellationToken)
+            .ConfigureAwait(false);
+        var attributionByUsage = attributions
+            .Where(a => a.AttributionMethod != AttributionMethod.Unallocated && a.ProjectId is not null)
+            .GroupBy(a => a.ExternalUsageRecordId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.AllocationPercentage).First());
+
+        var projects = (await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false))
+            .ToDictionary(p => p.Id);
+
+        IEnumerable<ExternalUsageRecord> ordered = records.OrderByDescending(r => r.TimestampUtc);
+        if (limit is > 0)
+        {
+            ordered = ordered.Take(limit.Value);
+        }
+
+        var items = ordered.Select(r =>
+        {
+            attributionByUsage.TryGetValue(r.Id, out var attribution);
+            projects.TryGetValue(attribution?.ProjectId ?? Guid.Empty, out var project);
+            return new ImportedUsageItemDto
+            {
+                Id = r.Id,
+                TimestampUtc = r.TimestampUtc,
+                Source = r.Source.ToString(),
+                ExternalRecordId = r.ExternalRecordId,
+                Model = r.Model,
+                Provider = r.Provider?.ToString(),
+                InputTokens = r.InputTokens,
+                OutputTokens = r.OutputTokens,
+                CachedInputTokens = r.CachedInputTokens,
+                TotalTokens = AttributionEngine.ResolveTotalTokens(r),
+                ReportedCost = r.ReportedCost ?? 0m,
+                Currency = r.Currency ?? _options.DefaultCurrency,
+                RequestCount = r.RequestCount,
+                ImportBatchId = r.ImportBatchId,
+                ImportedAtUtc = r.ImportedAtUtc,
+                ProjectId = attribution?.ProjectId,
+                ProjectName = project?.Name,
+                ActivityEventId = attribution?.ActivityEventId,
+                AttributionMethod = attribution?.AttributionMethod.ToString()
+            };
+        }).ToList();
+
+        return new ImportedUsageReport
+        {
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            Count = items.Count,
+            TotalTokens = items.Sum(i => i.TotalTokens),
+            TotalCost = items.Sum(i => i.ReportedCost),
             Currency = _options.DefaultCurrency,
             Items = items
         };
@@ -542,16 +798,206 @@ public sealed class ReportService : IReportService
             Editor = e.Editor.ToString(),
             Model = e.Model,
             Provider = e.Provider?.ToString(),
-            RepositoryPath = e.RepositoryPath,
+            RepositoryPath = e.RepositoryPath ?? e.WorkspacePath,
             RemoteUrl = e.RemoteUrl,
             ExternalRequestId = e.ExternalRequestId,
+            WorkspacePath = e.WorkspacePath,
+            EventType = e.EventType.ToString(),
+            DurationMilliseconds = e.DurationMilliseconds,
             Reason = "Activity event has no project attribution."
         }).ToList();
     }
 
+    private async Task<Dictionary<DateOnly, long>> GetAttributedTokensByDayAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        Guid? projectId,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<DateOnly, long>();
+        var usageRecords = await _usage
+            .ListAsync(fromUtc, toUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (usageRecords.Count == 0)
+        {
+            return result;
+        }
+
+        var attributions = await _attributions
+            .ListByUsageRecordIdsAsync(usageRecords.Select(u => u.Id).ToList(), cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var record in usageRecords)
+        {
+            var dayAttrs = attributions
+                .Where(a =>
+                    a.ExternalUsageRecordId == record.Id &&
+                    a.AttributionMethod != AttributionMethod.Unallocated &&
+                    a.ProjectId is not null &&
+                    (projectId is null || a.ProjectId == projectId))
+                .ToList();
+            if (dayAttrs.Count == 0)
+            {
+                continue;
+            }
+
+            var tokens = dayAttrs.Sum(a => a.AllocatedTotalTokens);
+            if (tokens <= 0)
+            {
+                tokens = AttributionEngine.ResolveTotalTokens(record);
+            }
+
+            if (tokens <= 0)
+            {
+                continue;
+            }
+
+            var day = DateOnly.FromDateTime(record.TimestampUtc.UtcDateTime);
+            result[day] = result.GetValueOrDefault(day) + tokens;
+        }
+
+        return result;
+    }
+
+    private async Task<Dictionary<Guid, ExternalUsageRecord>> LoadUsageByIdsAsync(
+        IEnumerable<Guid> usageIds,
+        CancellationToken cancellationToken)
+    {
+        var result = new Dictionary<Guid, ExternalUsageRecord>();
+        foreach (var id in usageIds.Distinct())
+        {
+            var usage = await _usage.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+            if (usage is not null)
+            {
+                result[id] = usage;
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<decimal> GetProjectUnallocatedCostAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken)
+    {
+        var windows = await _windows.ListAsync(fromUtc, toUtc, projectId, cancellationToken)
+            .ConfigureAwait(false);
+        var merged = _windowService.MergeOverlappingSameProjectWindows(windows);
+        if (merged.Count == 0)
+        {
+            return 0m;
+        }
+
+        var unallocated = await _usage
+            .ListUnallocatedAsync(fromUtc, toUtc, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        return unallocated
+            .Where(u => merged.Any(w =>
+                u.TimestampUtc >= w.StartedAtUtc && u.TimestampUtc <= w.EndedAtUtc))
+            .Sum(u => u.ReportedCost ?? 0m);
+    }
+
+    private static IReadOnlyList<NamedMetricRow> BuildProjectModelCostRows(
+        IReadOnlyList<UsageAttribution> allocated,
+        IReadOnlyDictionary<Guid, ExternalUsageRecord> usageById,
+        decimal subscriptionAllocation)
+    {
+        if (allocated.Count == 0)
+        {
+            return [];
+        }
+
+        var groups = allocated
+            .GroupBy(a =>
+            {
+                usageById.TryGetValue(a.ExternalUsageRecordId, out var usage);
+                return string.IsNullOrWhiteSpace(usage?.Model) ? "unknown" : usage!.Model!;
+            })
+            .ToList();
+
+        var weights = groups
+            .Select(g =>
+            {
+                var cost = g.Sum(a => a.AllocatedCost);
+                var tokens = g.Sum(a => a.AllocatedTotalTokens);
+                // Prefer cost weights; fall back to tokens when Included/Free rows are $0.
+                var weight = cost > 0m ? cost : tokens;
+                return (Group: g, Cost: cost, Tokens: tokens, Weight: weight);
+            })
+            .ToList();
+
+        var totalWeight = weights.Sum(w => w.Weight);
+        var remainingSubscription = subscriptionAllocation;
+        var rows = new List<NamedMetricRow>(weights.Count);
+
+        for (var i = 0; i < weights.Count; i++)
+        {
+            var entry = weights[i];
+            decimal modelSubscription;
+            if (subscriptionAllocation <= 0m || totalWeight <= 0m)
+            {
+                modelSubscription = 0m;
+            }
+            else if (i == weights.Count - 1)
+            {
+                modelSubscription = remainingSubscription;
+            }
+            else
+            {
+                modelSubscription = Math.Round(
+                    subscriptionAllocation * (entry.Weight / totalWeight),
+                    2,
+                    MidpointRounding.AwayFromZero);
+                remainingSubscription -= modelSubscription;
+            }
+
+            var promptCount = entry.Group.Sum(a =>
+            {
+                usageById.TryGetValue(a.ExternalUsageRecordId, out var usage);
+                var requests = usage?.RequestCount ?? 1;
+                return Math.Max(1, ScaleByAllocation(requests, a.AllocationPercentage));
+            });
+
+            rows.Add(new NamedMetricRow
+            {
+                Name = entry.Group.Key,
+                PromptCount = (int)Math.Min(int.MaxValue, promptCount),
+                UsageBasedCost = entry.Cost,
+                SubscriptionAllocation = modelSubscription
+            });
+        }
+
+        return rows
+            .OrderByDescending(r => r.UsageBasedCost)
+            .ThenByDescending(r => r.SubscriptionAllocation)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool IsCursorProvider(AIProvider? provider)
+        => provider is null or AIProvider.Cursor;
+
     private async Task<Project> RequireProjectAsync(Guid projectId, CancellationToken cancellationToken)
         => await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
            ?? throw new EntityNotFoundException(nameof(Project), projectId);
+
+    private static long ScaleByAllocation(long value, decimal allocationPercentage)
+    {
+        if (value <= 0 || allocationPercentage <= 0m)
+        {
+            return 0;
+        }
+
+        if (allocationPercentage >= 100m)
+        {
+            return value;
+        }
+
+        return (long)Math.Round(value * (allocationPercentage / 100m), MidpointRounding.AwayFromZero);
+    }
 
     private static ActivitySummaryDto BuildActivitySummary(
         IReadOnlyList<PromptActivityEvent> events,
@@ -604,4 +1050,31 @@ public sealed class ReportService : IReportService
         CreatedAtUtc = project.CreatedAtUtc,
         UpdatedAtUtc = project.UpdatedAtUtc
     };
+
+    private sealed class TokenCostAggregate
+    {
+        public TokenCostAggregate(string model, CursorModelTokenRate rate)
+        {
+            Model = model;
+            Rate = rate;
+        }
+
+        public string Model { get; }
+
+        public CursorModelTokenRate Rate { get; }
+
+        public long InputTokens { get; set; }
+
+        public long OutputTokens { get; set; }
+
+        public long CachedInputTokens { get; set; }
+
+        public long ReasoningTokens { get; set; }
+
+        public long TotalTokens { get; set; }
+
+        public decimal EstimatedCost { get; set; }
+
+        public decimal ReportedCost { get; set; }
+    }
 }

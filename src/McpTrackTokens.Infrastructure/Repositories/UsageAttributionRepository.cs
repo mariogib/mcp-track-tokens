@@ -44,6 +44,43 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async Task<IReadOnlyList<UsageAttribution>> ListByUsageRecordIdsAsync(
+        IReadOnlyCollection<Guid> externalUsageRecordIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (externalUsageRecordIds.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = externalUsageRecordIds as HashSet<Guid> ?? externalUsageRecordIds.ToHashSet();
+        // SQLite cannot ORDER BY DateTimeOffset in SQL — sort in memory.
+        var items = await _db.UsageAttributions.AsNoTracking()
+            .Where(a => ids.Contains(a.ExternalUsageRecordId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return items.OrderByDescending(a => a.CreatedAtUtc).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<UsageAttribution>> ListByActivityEventIdsAsync(
+        IReadOnlyCollection<Guid> activityEventIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (activityEventIds.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = activityEventIds as HashSet<Guid> ?? activityEventIds.ToHashSet();
+        var items = await _db.UsageAttributions.AsNoTracking()
+            .Where(a => a.ActivityEventId != null && ids.Contains(a.ActivityEventId.Value))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return items;
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<UsageAttribution>> ListAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
@@ -61,7 +98,7 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
         return await SqliteDateTimeQuery.MaterializeAsync(
             query,
             a => a.CreatedAtUtc >= from && a.CreatedAtUtc <= to,
-            items => items.OrderBy(a => a.CreatedAtUtc),
+            items => items.OrderByDescending(a => a.CreatedAtUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 

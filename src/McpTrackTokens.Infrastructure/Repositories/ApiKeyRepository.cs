@@ -50,7 +50,12 @@ public sealed class ApiKeyRepository : IApiKeyRepository
     /// <inheritdoc />
     public Task UpdateAsync(TrackingApiKey apiKey, CancellationToken cancellationToken = default)
     {
-        _db.TrackingApiKeys.Update(apiKey);
+        var entry = _db.Entry(apiKey);
+        if (entry.State == EntityState.Detached)
+        {
+            _db.TrackingApiKeys.Update(apiKey);
+        }
+
         return Task.CompletedTask;
     }
 }
