@@ -11,6 +11,9 @@ import type {
   ImportResultDto,
   ImportedUsageReport,
   IntegrationStatusDto,
+  DatabaseBackupInfoDto,
+  DatabaseBackupResultDto,
+  DatabaseRestoreResultDto,
   MonthlySummaryReport,
   ProjectActivityReport,
   ProjectCostReport,
@@ -390,4 +393,71 @@ export const api = {
 
   integrationStatus: (signal?: AbortSignal) =>
     apiRequest<IntegrationStatusDto>('/api/v1/integrations/status', { signal }),
+
+  databaseBackupInfo: (destinationDirectory?: string, signal?: AbortSignal) =>
+    apiRequest<DatabaseBackupInfoDto>('/api/v1/database/backup-info', {
+      query: { destinationDirectory },
+      signal,
+    }),
+
+  backupDatabase: (destinationDirectory?: string, signal?: AbortSignal) =>
+    apiRequest<DatabaseBackupResultDto>('/api/v1/database/backup', {
+      method: 'POST',
+      body: { destinationDirectory: destinationDirectory || null },
+      signal,
+    }),
+
+  downloadDatabaseBackup: async (
+    signal?: AbortSignal,
+  ): Promise<{ fileName: string; bytes: ArrayBuffer }> => {
+    const headers: Record<string, string> = { Accept: 'application/x-sqlite3' };
+    const key = getStoredApiKey();
+    if (key) {
+      headers.Authorization = `Bearer ${key}`;
+    }
+
+    const response = await fetch(buildUrl('/api/v1/database/backup-download'), {
+      method: 'GET',
+      headers,
+      signal,
+    });
+
+    if (!response.ok) {
+      let message = `Backup download failed (${response.status})`;
+      try {
+        const payload = await response.json();
+        if (payload && typeof payload === 'object' && 'error' in payload) {
+          message = String((payload as { error: unknown }).error);
+        }
+      } catch {
+        /* ignore */
+      }
+      throw new ApiError(response.status, message);
+    }
+
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+    const fileName = match
+      ? decodeURIComponent(match[1].replace(/"/g, ''))
+      : `mcp-track-tokens-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.db`;
+    const bytes = await response.arrayBuffer();
+    return { fileName, bytes };
+  },
+
+  restoreDatabase: (sourceFilePath: string, signal?: AbortSignal) =>
+    apiRequest<DatabaseRestoreResultDto>('/api/v1/database/restore', {
+      method: 'POST',
+      body: { sourceFilePath },
+      signal,
+    }),
+
+  restoreDatabaseUpload: (file: File, signal?: AbortSignal) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<DatabaseRestoreResultDto>('/api/v1/database/restore-upload', {
+      method: 'POST',
+      formData,
+      signal,
+    });
+  },
 };

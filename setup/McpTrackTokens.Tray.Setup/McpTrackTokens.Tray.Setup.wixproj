@@ -1,0 +1,30 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>MCP-Track-Tokens-Setup</OutputName>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- Published payloads harvested into the MSI -->
+    <PublishDir>$(MSBuildThisFileDirectory)..\..\artifacts\tray-publish\</PublishDir>
+    <DesktopPublishDir>$(MSBuildThisFileDirectory)..\..\artifacts\desktop-publish\</DesktopPublishDir>
+    <IntegrationsContentDir>$(MSBuildThisFileDirectory)..\..\artifacts\integrations-content\</IntegrationsContentDir>
+    <IntegrationsHelperDir>$(MSBuildThisFileDirectory)..\..\artifacts\integrations-helper\</IntegrationsHelperDir>
+    <DefineConstants>PublishDir=$(PublishDir);DesktopPublishDir=$(DesktopPublishDir);IntegrationsContentDir=$(IntegrationsContentDir);IntegrationsHelperDir=$(IntegrationsHelperDir)</DefineConstants>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <!-- Dashboard JS assets are versionless; ICE60 is noisy for web UI payloads. -->
+    <SuppressIces>ICE60</SuppressIces>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" />
+    <PackageReference Include="WixToolset.Util.wixext" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <BindPath Include="$(PublishDir)" BindName="PublishDir" />
+    <BindPath Include="$(DesktopPublishDir)" BindName="DesktopPublishDir" />
+    <BindPath Include="$(IntegrationsContentDir)" BindName="IntegrationsContentDir" />
+    <BindPath Include="$(IntegrationsHelperDir)" BindName="IntegrationsHelperDir" />
+  </ItemGroup>
+
+</Project>

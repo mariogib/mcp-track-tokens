@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>McpTrackTokens.Tray</RootNamespace>
+    <AssemblyName>mcp-track-tokens-tray</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Description>Windows system tray host for MCP Track Tokens (API, database, MCP, dashboard).</Description>
+    <!-- Server and tray both ship appsettings.json; keep the tray file. -->
+    <ErrorOnDuplicatePublishOutputFiles>false</ErrorOnDuplicatePublishOutputFiles>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\McpTrackTokens.Server\McpTrackTokens.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <!-- Prefer tray appsettings over the referenced Server copies during publish. -->
+    <Content Update="..\McpTrackTokens.Server\appsettings.json" CopyToPublishDirectory="Never" CopyToOutputDirectory="Never" />
+    <Content Update="..\McpTrackTokens.Server\appsettings.*.json" CopyToPublishDirectory="Never" CopyToOutputDirectory="Never" />
+  </ItemGroup>
+
+  <!-- Dev convenience: copy desktop shell next to tray so "Open dashboard" works from bin/. -->
+  <Target Name="CopyDesktopAppBesideTray" AfterTargets="Build">
+    <PropertyGroup>
+      <_DesktopOut>$(MSBuildThisFileDirectory)..\McpTrackTokens.Desktop\bin\$(Configuration)\net8.0-windows\</_DesktopOut>
+      <_DesktopDest>$(OutputPath)Desktop\</_DesktopDest>
+    </PropertyGroup>
+    <ItemGroup Condition="Exists('$(_DesktopOut)mcp-track-tokens-desktop.exe')">
+      <_DesktopFiles Include="$(_DesktopOut)**\*" Exclude="$(_DesktopOut)**\*.pdb" />
+    </ItemGroup>
+    <MakeDir Directories="$(_DesktopDest)" Condition="'@(_DesktopFiles)' != ''" />
+    <Copy
+      SourceFiles="@(_DesktopFiles)"
+      DestinationFiles="@(_DesktopFiles->'$(_DesktopDest)%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Condition="'@(_DesktopFiles)' != ''" />
+  </Target>
+
+  <!-- Prefer a locally built dashboard; fall back to any published CLI wwwroot. -->
+  <Target Name="CopyDashboardWwwRoot" AfterTargets="Build;Publish">
+    <PropertyGroup>
+      <_DashboardDist>$(MSBuildThisFileDirectory)..\McpTrackTokens.Dashboard\dist</_DashboardDist>
+      <_CliWwwRoot>$(MSBuildThisFileDirectory)..\McpTrackTokens.Cli\bin\$(Configuration)\net8.0\wwwroot</_CliWwwRoot>
+      <_WwwSource Condition="Exists('$(_DashboardDist)\index.html')">$(_DashboardDist)</_WwwSource>
+      <_WwwSource Condition="'$(_WwwSource)' == '' and Exists('$(_CliWwwRoot)\index.html')">$(_CliWwwRoot)</_WwwSource>
+      <_WwwDest Condition="'$(PublishDir)' != ''">$(PublishDir)wwwroot</_WwwDest>
+      <_WwwDest Condition="'$(_WwwDest)' == ''">$(OutputPath)wwwroot</_WwwDest>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(_WwwSource)' != ''">
+      <_WwwFiles Include="$(_WwwSource)\**\*" />
+    </ItemGroup>
+    <MakeDir Directories="$(_WwwDest)" Condition="'$(_WwwSource)' != ''" />
+    <Copy
+      SourceFiles="@(_WwwFiles)"
+      DestinationFiles="@(_WwwFiles->'$(_WwwDest)\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true"
+      Condition="'$(_WwwSource)' != ''" />
+    <Warning
+      Text="Dashboard wwwroot was not found. Build src/McpTrackTokens.Dashboard (npm run build) so the tray can serve the UI."
+      Condition="'$(_WwwSource)' == ''" />
+  </Target>
+
+</Project>

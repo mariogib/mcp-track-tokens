@@ -1,8 +1,9 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import { useThemeState, type ThemeMode } from './themeState';
+import { useThemeState, type ThemeMode, type ThemePreference } from './themeState';
 
 type ThemeContextValue = {
   theme: ThemeMode;
+  preference: ThemePreference;
   toggleTheme: () => void;
   setTheme: (theme: ThemeMode) => void;
 };
@@ -22,4 +23,4 @@ export function useTheme(): ThemeContextValue {
   return ctx;
 }
 
-export type { ThemeMode };
+export type { ThemeMode, ThemePreference };

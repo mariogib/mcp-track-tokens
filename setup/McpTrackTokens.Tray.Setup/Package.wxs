@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package
+      Name="MCP Track Tokens"
+      Manufacturer="MCP Track Tokens"
+      Version="1.0.0.0"
+      UpgradeCode="A7C4E2B1-6D8F-4A19-9E3C-2B5F8D1A4C70"
+      Scope="perMachine"
+      Compressed="yes">
+
+    <SummaryInformation
+        Description="Installs the MCP Track Tokens Windows tray host, desktop dashboard, Cursor hooks, and VS Code/Cursor extension."
+        Manufacturer="MCP Track Tokens" />
+
+    <MajorUpgrade
+        DowngradeErrorMessage="A newer version of MCP Track Tokens is already installed."
+        Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="assets\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/mariogib/mcp-track-tokens" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/mariogib/mcp-track-tokens" />
+
+    <!-- Defaults: all options ON -->
+    <Property Id="STARTWITHWINDOWS" Value="1" Secure="yes" />
+    <Property Id="INSTALLHOOKS" Value="1" Secure="yes" />
+    <Property Id="INSTALLEXTENSION" Value="1" Secure="yes" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start MCP Track Tokens now" />
+
+    <!-- Resolve install path after costing (cannot embed [INSTALLFOLDER] in a static Property). -->
+    <SetProperty Id="WixShellExecTarget"
+                 Value="[INSTALLFOLDER]mcp-track-tokens-tray.exe"
+                 After="CostFinalize"
+                 Sequence="ui" />
+
+    <!-- Deferred quiet-exec payload: property Id must match the CustomAction Id. -->
+    <SetProperty Id="InstallIntegrations"
+                 Value="&quot;[ToolsFolder]mcp-track-tokens-setup-integrations.exe&quot; --install-dir &quot;[INSTALLFOLDER]&quot; --hooks [INSTALLHOOKS] --extension [INSTALLEXTENSION]"
+                 Before="InstallIntegrations"
+                 Sequence="execute" />
+
+    <CustomAction Id="LaunchApplication"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes" />
+
+    <CustomAction Id="InstallIntegrations"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="InstallIntegrations" After="InstallFiles"
+              Condition="NOT REMOVE AND (INSTALLHOOKS = 1 OR INSTALLEXTENSION = 1)" />
+    </InstallExecuteSequence>
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="assets\License.rtf" />
+
+    <UI>
+      <Publish Dialog="ExitDialog"
+               Control="Finish"
+               Event="DoAction"
+               Value="LaunchApplication"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+    </UI>
+
+    <Feature Id="ProductFeature" Title="MCP Track Tokens" Level="1">
+      <ComponentGroupRef Id="TrayAppFiles" />
+      <ComponentGroupRef Id="DesktopAppFiles" />
+      <ComponentGroupRef Id="IntegrationsFiles" />
+      <ComponentGroupRef Id="ToolsFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="StartMenuTrayShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+      <ComponentRef Id="StartupShortcut" />
+      <ComponentRef Id="InstallFolderCleanup" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="MCP Track Tokens">
+        <!-- Separate folder so desktop appsettings.json does not clash with the tray host. -->
+        <Directory Id="DesktopAppFolder" Name="Desktop" />
+        <Directory Id="IntegrationsFolder" Name="integrations" />
+        <Directory Id="ToolsFolder" Name="tools" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="MCP Track Tokens" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+    <StandardDirectory Id="StartupFolder" />
+  </Fragment>
+
+  <Fragment>
+    <!-- Harvest published self-contained tray output -->
+    <ComponentGroup Id="TrayAppFiles" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.PublishDir)**">
+        <Exclude Files="**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Harvest published self-contained desktop WebView shell -->
+    <ComponentGroup Id="DesktopAppFiles" Directory="DesktopAppFolder">
+      <Files Include="!(bindpath.DesktopPublishDir)**">
+        <Exclude Files="**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Cursor hooks package + VSIX -->
+    <ComponentGroup Id="IntegrationsFiles" Directory="IntegrationsFolder">
+      <Files Include="!(bindpath.IntegrationsContentDir)**">
+        <Exclude Files="**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+
+    <!-- Post-install helper -->
+    <ComponentGroup Id="ToolsFiles" Directory="ToolsFolder">
+      <Files Include="!(bindpath.IntegrationsHelperDir)**">
+        <Exclude Files="**\*.pdb" />
+      </Files>
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="StartMenuShortcut" Directory="ApplicationProgramsFolder" Guid="B2E8F5A1-3C7D-4E9B-A0F2-1D6C8E4B9A35">
+      <Shortcut Id="StartMenuAppShortcut"
+                Name="MCP Track Tokens"
+                Description="Open the MCP Track Tokens desktop dashboard"
+                Target="[DesktopAppFolder]mcp-track-tokens-desktop.exe"
+                WorkingDirectory="DesktopAppFolder"
+                Icon="AppIcon" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\MCP Track Tokens"
+                     Name="StartMenuShortcut"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="StartMenuTrayShortcut" Directory="ApplicationProgramsFolder" Guid="F6C2D9E5-7A1B-423F-E4D6-5B0A2C8F3E79">
+      <Shortcut Id="StartMenuTrayAppShortcut"
+                Name="MCP Track Tokens Host"
+                Description="Start the MCP Track Tokens tray host (API, database, MCP)"
+                Target="[INSTALLFOLDER]mcp-track-tokens-tray.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\MCP Track Tokens"
+                     Name="StartMenuTrayShortcut"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="DesktopShortcut" Directory="DesktopFolder" Guid="C3F9A6B2-4D8E-4F0C-B1A3-2E7D9F5C0B46">
+      <Shortcut Id="DesktopAppShortcut"
+                Name="MCP Track Tokens"
+                Description="Open the MCP Track Tokens desktop dashboard"
+                Target="[DesktopAppFolder]mcp-track-tokens-desktop.exe"
+                WorkingDirectory="DesktopAppFolder"
+                Icon="AppIcon" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\MCP Track Tokens"
+                     Name="DesktopShortcut"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- Installed only when STARTWITHWINDOWS=1 (default). -->
+    <Component Id="StartupShortcut" Directory="StartupFolder" Guid="E5B1C8D4-6F0A-412E-D3C5-4A9F1B7E2D68" Condition="STARTWITHWINDOWS = 1">
+      <Shortcut Id="StartupAppShortcut"
+                Name="MCP Track Tokens"
+                Description="Start MCP Track Tokens with Windows"
+                Target="[INSTALLFOLDER]mcp-track-tokens-tray.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="AppIcon" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\MCP Track Tokens"
+                     Name="StartWithWindows"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="InstallFolderCleanup" Directory="INSTALLFOLDER" Guid="D4A0B7C3-5E9F-401D-C2B4-3F8E0A6D1C57">
+      <RegistryValue Root="HKCU"
+                     Key="Software\MCP Track Tokens"
+                     Name="InstallFolder"
+                     Type="string"
+                     Value="[INSTALLFOLDER]"
+                     KeyPath="yes" />
+      <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+    </Component>
+  </Fragment>
+
+</Wix>

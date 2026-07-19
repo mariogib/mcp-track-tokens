@@ -26,6 +26,11 @@ public static class DashboardAdminEndpoints
         api.MapPost("/api-keys", CreateApiKeyAsync);
         api.MapDelete("/api-keys/{id:guid}", RevokeApiKeyAsync);
         api.MapGet("/integrations/status", GetIntegrationsAsync);
+        api.MapGet("/database/backup-info", GetDatabaseBackupInfo);
+        api.MapPost("/database/backup", BackupDatabaseAsync);
+        api.MapGet("/database/backup-download", DownloadDatabaseBackupAsync);
+        api.MapPost("/database/restore", RestoreDatabaseAsync);
+        api.MapPost("/database/restore-upload", RestoreDatabaseUploadAsync);
 
         return app;
     }
@@ -261,6 +266,131 @@ public static class DashboardAdminEndpoints
             lastIngestAtUtc = status.LastEventAtUtc,
             notes
         });
+    }
+
+    private static IResult GetDatabaseBackupInfo(
+        IDatabaseBackupService backups,
+        [Microsoft.AspNetCore.Mvc.FromQuery] string? destinationDirectory)
+    {
+        try
+        {
+            return Results.Ok(backups.GetInfo(destinationDirectory));
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> BackupDatabaseAsync(
+        DatabaseBackupRequestDto? request,
+        IDatabaseBackupService backups,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await backups
+                .BackupAsync(request?.DestinationDirectory, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> DownloadDatabaseBackupAsync(
+        IDatabaseBackupService backups,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (stream, fileName) = await backups
+                .CreateDownloadableBackupAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return Results.File(stream, "application/x-sqlite3", fileName);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> RestoreDatabaseAsync(
+        DatabaseRestoreRequestDto request,
+        IDatabaseBackupService backups,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.SourceFilePath))
+        {
+            return Results.BadRequest(new { error = "SourceFilePath is required." });
+        }
+
+        try
+        {
+            var result = await backups
+                .RestoreAsync(request.SourceFilePath, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> RestoreDatabaseUploadAsync(
+        HttpRequest httpRequest,
+        IDatabaseBackupService backups,
+        CancellationToken cancellationToken)
+    {
+        if (!httpRequest.HasFormContentType)
+        {
+            return Results.BadRequest(new { error = "Expected multipart form upload with a 'file' field." });
+        }
+
+        var form = await httpRequest.ReadFormAsync(cancellationToken).ConfigureAwait(false);
+        var file = form.Files.GetFile("file");
+        if (file is null || file.Length <= 0)
+        {
+            return Results.BadRequest(new { error = "Upload a SQLite .db backup file." });
+        }
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mcp-track-tokens-restore-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var stream = File.Create(tempPath))
+            {
+                await file.CopyToAsync(stream, cancellationToken).ConfigureAwait(false);
+            }
+
+            var result = await backups.RestoreAsync(tempPath, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(result with
+            {
+                RestoredFromPath = file.FileName,
+                Message = result.Message + " (restored from uploaded file)."
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch
+            {
+                // ignore temp cleanup failures
+            }
+        }
     }
 
     private static object ToSettingsDto(TrackingOptions options) => new

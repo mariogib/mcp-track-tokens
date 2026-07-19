@@ -229,3 +229,26 @@ public interface IApiKeyService
 
     Task<IReadOnlyList<TrackingApiKey>> ListAsync(bool activeOnly = true, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Backs up and restores the local SQLite tracking database.
+/// </summary>
+public interface IDatabaseBackupService
+{
+    DatabaseBackupInfoDto GetInfo(string? destinationDirectory = null);
+
+    Task<DatabaseBackupResultDto> BackupAsync(
+        string? destinationDirectory = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Creates a temporary backup file for download. Caller must dispose the stream
+    /// (DeleteOnClose removes the temp file).
+    /// </summary>
+    Task<(Stream Stream, string FileName)> CreateDownloadableBackupAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<DatabaseRestoreResultDto> RestoreAsync(
+        string sourceFilePath,
+        CancellationToken cancellationToken = default);
+}

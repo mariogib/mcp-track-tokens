@@ -557,3 +557,33 @@ export interface IntegrationStatusDto {
   lastIngestAtUtc?: string | null;
   notes?: string[];
 }
+
+export interface DatabaseBackupFileDto {
+  fileName: string;
+  fullPath: string;
+  sizeBytes: number;
+  createdAtUtc: string;
+}
+
+export interface DatabaseBackupInfoDto {
+  databasePath: string;
+  databaseProvider: string;
+  supportsBackup: boolean;
+  defaultFolder: string;
+  destinationFolder: string;
+  backups: DatabaseBackupFileDto[];
+}
+
+export interface DatabaseBackupResultDto {
+  filePath: string;
+  sizeBytes: number;
+  createdAtUtc: string;
+  message: string;
+}
+
+export interface DatabaseRestoreResultDto {
+  restoredFromPath: string;
+  safetyBackupPath?: string | null;
+  restartRecommended: boolean;
+  message: string;
+}

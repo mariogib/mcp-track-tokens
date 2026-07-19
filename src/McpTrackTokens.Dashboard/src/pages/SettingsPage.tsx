@@ -7,12 +7,15 @@ import {
 import {
   useApiKeysQuery,
   useCreateApiKeyMutation,
+  useDatabaseBackupInfoQuery,
   useIntegrationsQuery,
+  useRestoreDatabaseUploadMutation,
   useRevokeApiKeyMutation,
   useSettingsQuery,
   useStatusQuery,
   useUpdateSettingsMutation,
 } from '../api/hooks';
+import { api } from '../api/client';
 import type {
   CursorModelTokenRateDto,
   SettingsDto,
@@ -21,6 +24,17 @@ import type {
 import { ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
+import {
+  deleteLocalBackupFile,
+  getStoredBackupFolder,
+  listLocalBackupFiles,
+  pickBackupFolder,
+  readLocalBackupFile,
+  resolveLastBackupFolder,
+  saveBackupToFolder,
+  type BackupFolderRef,
+  type LocalBackupFile,
+} from '../utils/backupFolder';
 import { formatDateTime } from '../utils/format';
 
 function SettingHelp({ text }: { text: string }) {
@@ -95,8 +109,22 @@ const SETTINGS_TABS = [
   'Tracking',
   'Cursor token costs',
   'API keys',
+  'Backup & restore',
   'Integrations',
 ] as const;
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) {
+    return '—';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
 
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
@@ -175,6 +203,7 @@ export function SettingsPage() {
   const updateSettings = useUpdateSettingsMutation();
   const createKey = useCreateApiKeyMutation();
   const revokeKey = useRevokeApiKeyMutation();
+  const restoreUpload = useRestoreDatabaseUploadMutation();
 
   const [tab, setTab] = useState<SettingsTab>('Connection');
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
@@ -182,12 +211,61 @@ export function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState('Dashboard');
   const [createdPlaintext, setCreatedPlaintext] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [backupFolderLabel, setBackupFolderLabel] = useState(
+    () => getStoredBackupFolder() ?? '',
+  );
+  const [selectedFolder, setSelectedFolder] = useState<BackupFolderRef | null>(null);
+  const [localBackups, setLocalBackups] = useState<LocalBackupFile[]>([]);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [backupListReady, setBackupListReady] = useState(false);
+
+  const backupInfo = useDatabaseBackupInfoQuery(undefined, true);
 
   useEffect(() => {
     if (settings.data) {
       setDraft(toDraft(settings.data));
     }
   }, [settings.data]);
+
+  // Load the last backup folder (or desktop default Documents\MCP Track Tokens) on first open.
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const folder = await resolveLastBackupFolder({
+          serverDefaultPath: backupInfo.data?.defaultFolder,
+        });
+        if (cancelled || !folder) {
+          if (!cancelled) {
+            setBackupListReady(true);
+          }
+          return;
+        }
+
+        const label = folder.path ?? getStoredBackupFolder() ?? 'MCP Track Tokens';
+        const files = await listLocalBackupFiles(folder);
+        if (cancelled) {
+          return;
+        }
+
+        setSelectedFolder(folder);
+        setBackupFolderLabel(label);
+        setLocalBackups(files);
+      } catch {
+        /* keep empty list until the user picks a folder */
+      } finally {
+        if (!cancelled) {
+          setBackupListReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [backupInfo.data?.defaultFolder]);
 
   const saveDraft = (next?: SettingsDraft) => {
     const payload = next ?? draft;
@@ -890,6 +968,268 @@ export function SettingsPage() {
               </div>
             )}
           </div>
+        </section>
+      )}
+
+      {tab === 'Backup & restore' && (
+        <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Backup & restore</h2>
+              <p>
+                Choose a folder to save or load SQLite backups. Defaults to{' '}
+                <span className="mono">Documents\MCP Track Tokens</span> (created automatically).
+              </p>
+            </div>
+          </div>
+
+          {backupInfo.isLoading && !backupInfo.data ? (
+            <LoadingState label="Loading backup info…" />
+          ) : null}
+          {backupInfo.error ? (
+            <ErrorState
+              message={
+                backupInfo.error instanceof Error
+                  ? backupInfo.error.message
+                  : 'Failed to load backup info'
+              }
+              error={backupInfo.error}
+            />
+          ) : null}
+
+          {backupInfo.data ? (
+            <div className="panel stack">
+              {!backupInfo.data.supportsBackup ? (
+                <div className="warning-banner" role="status">
+                  Backup and restore are only available when the database provider is Sqlite (current:{' '}
+                  {backupInfo.data.databaseProvider}).
+                </div>
+              ) : null}
+
+              <div className="field">
+                <div
+                  className="label setting-label"
+                  title="Live SQLite database file used by the tracking host."
+                >
+                  Live database{' '}
+                  <SettingHelp text="Live SQLite database file used by the tracking host." />
+                </div>
+                <strong className="mono">{backupInfo.data.databasePath || '—'}</strong>
+              </div>
+
+              <div className="field">
+                <div
+                  className="label setting-label"
+                  title="Last folder selected for backups. Backup now opens a folder picker defaulting here."
+                >
+                  Backup folder{' '}
+                  <SettingHelp text="Last folder selected for backups. Backup now opens a folder picker defaulting to Documents\MCP Track Tokens, then remembers your choice for Restore." />
+                </div>
+                <strong className="mono">
+                  {backupFolderLabel || backupInfo.data.defaultFolder || 'Documents\\MCP Track Tokens'}
+                </strong>
+              </div>
+
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={!backupInfo.data.supportsBackup || backupBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setBackupMessage(null);
+                      setBackupBusy(true);
+                      try {
+                        const folder = await pickBackupFolder({
+                          defaultPath: backupInfo.data.defaultFolder,
+                          preferLast: false,
+                        });
+                        const label = folder.path ?? 'MCP Track Tokens';
+                        setBackupFolderLabel(label);
+                        setSelectedFolder(folder);
+
+                        const { fileName, bytes } = await api.downloadDatabaseBackup();
+                        const saved = await saveBackupToFolder(folder, fileName, bytes);
+                        const files = await listLocalBackupFiles(folder);
+                        setLocalBackups(files);
+                        setBackupMessage(`Backup saved to ${saved}`);
+                      } catch (err) {
+                        if (err instanceof Error && err.message.includes('cancelled')) {
+                          setBackupMessage(null);
+                        } else {
+                          setBackupMessage(
+                            err instanceof Error ? err.message : 'Backup failed',
+                          );
+                        }
+                      } finally {
+                        setBackupBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  {backupBusy ? 'Backing up…' : 'Backup now'}
+                </button>
+              </div>
+
+              {backupMessage ? <p>{backupMessage}</p> : null}
+
+              <div className="section-header" style={{ marginTop: '1rem' }}>
+                <div>
+                  <h3>Restore</h3>
+                  <p>
+                    Opens a folder selector (defaults to the last Backup now folder), lists backup
+                    files there, then restores the one you choose. A safety copy of the current
+                    database is saved first. Restart the tracking host afterward.
+                  </p>
+                </div>
+              </div>
+
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={!backupInfo.data.supportsBackup || backupBusy || restoreUpload.isPending}
+                  onClick={() => {
+                    void (async () => {
+                      setBackupMessage(null);
+                      setBackupBusy(true);
+                      try {
+                        const folder = await pickBackupFolder({
+                          defaultPath:
+                            getStoredBackupFolder() || backupInfo.data.defaultFolder,
+                          preferLast: true,
+                        });
+                        const label = folder.path ?? getStoredBackupFolder() ?? 'MCP Track Tokens';
+                        setBackupFolderLabel(label);
+                        setSelectedFolder(folder);
+                        const files = await listLocalBackupFiles(folder);
+                        setLocalBackups(files);
+                        setBackupMessage(
+                          files.length
+                            ? `Found ${files.length} backup file(s). Choose Restore on a row below.`
+                            : 'No mcp-track-tokens-backup-*.db files in that folder.',
+                        );
+                      } catch (err) {
+                        if (err instanceof Error && err.message.includes('cancelled')) {
+                          setBackupMessage(null);
+                        } else {
+                          setBackupMessage(
+                            err instanceof Error ? err.message : 'Could not open folder',
+                          );
+                        }
+                      } finally {
+                        setBackupBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  Restore
+                </button>
+              </div>
+
+              {!backupListReady ? (
+                <p className="hint">Loading backups from the last folder…</p>
+              ) : null}
+              {backupListReady && localBackups.length === 0 ? (
+                <p className="hint">
+                  {selectedFolder
+                    ? 'No backups found in this folder yet.'
+                    : 'Use Backup now or Restore to choose a folder. After the first selection, that folder opens automatically next time.'}
+                </p>
+              ) : null}
+              {backupListReady && localBackups.length > 0 ? (
+                <div className="table-wrap">
+                  <table className="data">
+                    <thead>
+                      <tr>
+                        <th>File</th>
+                        <th>Created</th>
+                        <th>Size</th>
+                        <th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {localBackups.map((item) => (
+                        <tr key={item.fullPath ?? item.fileName}>
+                          <td className="mono">{item.fileName}</td>
+                          <td>{formatDateTime(item.createdAtUtc)}</td>
+                          <td>{formatBytes(item.sizeBytes)}</td>
+                          <td>
+                            <div className="row">
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                disabled={restoreUpload.isPending || backupBusy}
+                                onClick={() => {
+                                  void (async () => {
+                                    if (
+                                      !window.confirm(
+                                        `Restore from “${item.fileName}”? A safety copy of the current database will be saved first.`,
+                                      )
+                                    ) {
+                                      return;
+                                    }
+                                    setBackupMessage(null);
+                                    try {
+                                      const file = await readLocalBackupFile(item);
+                                      restoreUpload.mutate(file, {
+                                        onSuccess: (result) => setBackupMessage(result.message),
+                                        onError: (err) =>
+                                          setBackupMessage(
+                                            err instanceof Error ? err.message : 'Restore failed',
+                                          ),
+                                      });
+                                    } catch (err) {
+                                      setBackupMessage(
+                                        err instanceof Error ? err.message : 'Restore failed',
+                                      );
+                                    }
+                                  })();
+                                }}
+                              >
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-danger"
+                                disabled={restoreUpload.isPending || backupBusy || !selectedFolder}
+                                onClick={() => {
+                                  void (async () => {
+                                    if (
+                                      !selectedFolder ||
+                                      !window.confirm(`Delete backup “${item.fileName}”?`)
+                                    ) {
+                                      return;
+                                    }
+                                    setBackupMessage(null);
+                                    setBackupBusy(true);
+                                    try {
+                                      await deleteLocalBackupFile(selectedFolder, item);
+                                      const files = await listLocalBackupFiles(selectedFolder);
+                                      setLocalBackups(files);
+                                      setBackupMessage(`Deleted ${item.fileName}`);
+                                    } catch (err) {
+                                      setBackupMessage(
+                                        err instanceof Error ? err.message : 'Delete failed',
+                                      );
+                                    } finally {
+                                      setBackupBusy(false);
+                                    }
+                                  })();
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </section>
       )}
 

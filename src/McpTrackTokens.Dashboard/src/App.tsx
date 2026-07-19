@@ -8,6 +8,7 @@ import { ImportedUsagePage } from './pages/ImportedUsagePage';
 import { ReconciliationPage } from './pages/ReconciliationPage';
 import { UnallocatedActivityPage } from './pages/UnallocatedActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { HelpPage } from './pages/HelpPage';
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="reconciliation" element={<ReconciliationPage />} />
         <Route path="unallocated" element={<UnallocatedActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

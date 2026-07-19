@@ -4,6 +4,7 @@ import { ThemeToggle } from '../components/ThemeToggle';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
+import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
 
 const navItems = [
   { to: '/', label: 'Overview', end: true },
@@ -12,6 +13,7 @@ const navItems = [
   { to: '/imported-usage', label: 'Imported usage' },
   { to: '/reconciliation', label: 'Reconciliation' },
   { to: '/settings', label: 'Settings' },
+  { to: '/help', label: 'Help' },
 ];
 
 function titleForPath(pathname: string): { title: string; subtitle: string } {
@@ -31,6 +33,8 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
       return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
     case '/settings':
       return { title: 'Settings', subtitle: 'Tracking preferences, privacy, and API keys' };
+    case '/help':
+      return { title: 'Help', subtitle: 'Windows install and Cursor setup' };
     default:
       return { title: 'Overview', subtitle: 'Live tracking health and today’s activity' };
   }
@@ -39,6 +43,7 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
 export function AppLayout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();
   const page = titleForPath(location.pathname);
@@ -113,11 +118,10 @@ export function AppLayout() {
           </div>
         </header>
         <main className="content">
-          {!hasApiKey && location.pathname !== '/settings' ? (
+          {!hasApiKey && location.pathname !== '/settings' && location.pathname !== '/help' ? (
             <div className="warning-banner" role="status">
-              No API key in this browser. Open <Link to="/settings">Settings</Link> and save your
-              tracking Bearer key (for Docker Compose, use the value of{' '}
-              <code>MCP_TRACK_TOKENS_API_KEY</code>).
+              No API key saved yet. Open <Link to="/settings">Settings</Link> and save your tracking
+              Bearer key (default for the Windows install is <code>OverTheMoon</code>).
             </div>
           ) : null}
           <Outlet />

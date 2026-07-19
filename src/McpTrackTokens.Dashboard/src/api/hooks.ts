@@ -35,6 +35,8 @@ export const queryKeys = {
   settings: ['settings'] as const,
   apiKeys: ['api-keys'] as const,
   integrations: ['integrations'] as const,
+  databaseBackupInfo: (destinationDirectory?: string) =>
+    ['database-backup-info', destinationDirectory ?? ''] as const,
 };
 
 export function useHealthQuery() {
@@ -189,6 +191,52 @@ export function useIntegrationsQuery() {
   return useQuery({
     queryKey: queryKeys.integrations,
     queryFn: ({ signal }) => api.integrationStatus(signal),
+  });
+}
+
+export function useDatabaseBackupInfoQuery(destinationDirectory?: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.databaseBackupInfo(destinationDirectory),
+    queryFn: ({ signal }) => api.databaseBackupInfo(destinationDirectory, signal),
+    enabled,
+  });
+}
+
+export function useBackupDatabaseMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (destinationDirectory?: string) => api.backupDatabase(destinationDirectory),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['database-backup-info'] });
+    },
+  });
+}
+
+export function useRestoreDatabaseMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceFilePath: string) => api.restoreDatabase(sourceFilePath),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['database-backup-info'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.settings });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useRestoreDatabaseUploadMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => api.restoreDatabaseUpload(file),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['database-backup-info'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.settings });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 }
 

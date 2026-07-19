@@ -63,6 +63,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ICursorUsageImporter, CursorUsageImporter>();
         services.TryAddScoped<IReportExporter, ReportExporter>();
         services.TryAddSingleton<IContentEncryptionService, ContentEncryptionService>();
+        services.TryAddSingleton<IDatabaseBackupService, DatabaseBackupService>();
 
         services.AddHostedService<QueuedEventFlushService>();
         services.AddHostedService<ReconciliationBackgroundService>();

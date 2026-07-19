@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <UI>
+      <Dialog Id="OptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Setup options" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="20" Transparent="yes" NoPrefix="yes" Text="Choose startup and editor integrations." />
+        <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
+
+        <Control Id="AutostartCheck"
+                 Type="CheckBox"
+                 X="25"
+                 Y="60"
+                 Width="320"
+                 Height="17"
+                 Property="STARTWITHWINDOWS"
+                 CheckBoxValue="1"
+                 Text="Start MCP Track Tokens when Windows starts" />
+
+        <Control Id="HooksCheck"
+                 Type="CheckBox"
+                 X="25"
+                 Y="90"
+                 Width="320"
+                 Height="17"
+                 Property="INSTALLHOOKS"
+                 CheckBoxValue="1"
+                 Text="Install Cursor hooks" />
+
+        <Control Id="ExtensionCheck"
+                 Type="CheckBox"
+                 X="25"
+                 Y="120"
+                 Width="320"
+                 Height="17"
+                 Property="INSTALLEXTENSION"
+                 CheckBoxValue="1"
+                 Text="Install VS Code / Cursor extension" />
+
+        <Control Id="OptionsHelp"
+                 Type="Text"
+                 X="25"
+                 Y="150"
+                 Width="320"
+                 Height="70"
+                 Text="Hooks copy scripts into ~/.cursor and write an example config (merge into Cursor hooks manually). The extension installs from the bundled VSIX when cursor or code is on PATH." />
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="Back" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="Cancel">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+      </Dialog>
+
+      <!-- Insert OptionsDlg between InstallDir and VerifyReady (higher Order overrides WixUI defaults). -->
+      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="OptionsDlg" Order="5" />
+      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
+      <Publish Dialog="OptionsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OptionsDlg" Order="5" />
+    </UI>
+  </Fragment>
+</Wix>
