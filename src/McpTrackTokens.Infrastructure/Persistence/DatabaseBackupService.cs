@@ -141,10 +141,9 @@ public sealed class DatabaseBackupService : IDatabaseBackupService
         await Task.Run(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            SqliteConnection.ClearAllPools();
-            CopySqliteDatabase(sourcePath, livePath);
-            DeleteSidecarFiles(livePath);
-            SqliteConnection.ClearAllPools();
+            // Do not File.Delete the live DB — EF/SQLite may still hold handles.
+            // Online Backup into the existing file replaces its contents safely.
+            RestoreSqliteDatabase(sourcePath, livePath);
         }, cancellationToken).ConfigureAwait(false);
 
         return new DatabaseRestoreResultDto
@@ -257,6 +256,50 @@ public sealed class DatabaseBackupService : IDatabaseBackupService
         destination.Open();
 
         source.BackupDatabase(destination);
+    }
+
+    private static void RestoreSqliteDatabase(string sourcePath, string livePath)
+    {
+        var liveDir = Path.GetDirectoryName(livePath);
+        if (!string.IsNullOrWhiteSpace(liveDir))
+        {
+            Directory.CreateDirectory(liveDir);
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        using var source = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = sourcePath,
+            Mode = SqliteOpenMode.ReadOnly
+        }.ToString());
+        source.Open();
+
+        using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = livePath,
+            Mode = SqliteOpenMode.ReadWriteCreate
+        }.ToString());
+        destination.Open();
+
+        using (var checkpoint = destination.CreateCommand())
+        {
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            checkpoint.ExecuteNonQuery();
+        }
+
+        source.BackupDatabase(destination);
+
+        using (var checkpoint = destination.CreateCommand())
+        {
+            checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            checkpoint.ExecuteNonQuery();
+        }
+
+        destination.Close();
+        source.Close();
+        SqliteConnection.ClearAllPools();
+        DeleteSidecarFiles(livePath);
     }
 
     private static void DeleteSidecarFiles(string databasePath)

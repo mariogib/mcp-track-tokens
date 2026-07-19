@@ -536,11 +536,51 @@ export interface SessionDto {
   id: string;
   projectId?: string | null;
   editor?: string | null;
+  editorVersion?: string | null;
+  machineName?: string | null;
+  userName?: string | null;
+  workspacePath?: string | null;
+  repositoryPath?: string | null;
+  remoteUrl?: string | null;
   startedAtUtc: string;
   endedAtUtc?: string | null;
+  lastActivityAtUtc?: string | null;
   lastHeartbeatAtUtc?: string | null;
   branch?: string | null;
+  externalSessionId?: string | null;
+  status?: string | null;
   isActive: boolean;
+}
+
+export interface CreateProjectSessionRequest {
+  editor: string;
+  editorVersion?: string | null;
+  machineName?: string | null;
+  userName?: string | null;
+  workspacePath?: string | null;
+  repositoryPath?: string | null;
+  remoteUrl?: string | null;
+  branch?: string | null;
+  externalSessionId?: string | null;
+  startedAtUtc?: string | null;
+  endedAtUtc?: string | null;
+  status?: string | null;
+}
+
+export interface UpdateSessionRequest {
+  projectId?: string | null;
+  editor: string;
+  editorVersion?: string | null;
+  machineName?: string | null;
+  userName?: string | null;
+  workspacePath?: string | null;
+  repositoryPath?: string | null;
+  remoteUrl?: string | null;
+  branch?: string | null;
+  externalSessionId?: string | null;
+  startedAtUtc: string;
+  endedAtUtc?: string | null;
+  status: string;
 }
 
 export interface DateRangeParams {

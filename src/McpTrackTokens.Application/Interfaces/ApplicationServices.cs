@@ -109,6 +109,24 @@ public interface IProjectDetectionService
 }
 
 /// <summary>
+/// Dashboard admin CRUD for editor sessions.
+/// </summary>
+public interface ISessionManagementService
+{
+    Task<EditorSession> CreateForProjectAsync(
+        Guid projectId,
+        CreateProjectSessionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<EditorSession> UpdateAsync(
+        Guid sessionId,
+        UpdateSessionRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Guid sessionId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Builds deterministic report DTOs.
 /// </summary>
 public interface IReportService

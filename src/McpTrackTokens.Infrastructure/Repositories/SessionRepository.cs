@@ -120,6 +120,20 @@ public sealed class SessionRepository : ISessionRepository
     }
 
     /// <inheritdoc />
+    public Task DeleteAsync(EditorSession session, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        var entry = _db.Entry(session);
+        if (entry.State == EntityState.Detached)
+        {
+            _db.EditorSessions.Attach(session);
+        }
+
+        _db.EditorSessions.Remove(session);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
     public async Task TouchActivityAsync(
         Guid sessionId,
         DateTimeOffset activityAtUtc,

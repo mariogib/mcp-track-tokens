@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  useCreateProjectSessionMutation,
   useDeleteProjectMutation,
+  useDeleteSessionMutation,
   useExportMutation,
   useProjectActivityQuery,
   useProjectCostQuery,
@@ -11,13 +13,16 @@ import {
   useProjectSessionsQuery,
   useProjectUsageQuery,
   useUpdateProjectMutation,
+  useUpdateSessionMutation,
 } from '../api/hooks';
+import type { SessionDto } from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
+import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { MetricCard } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
@@ -47,6 +52,73 @@ const TABS = [
 
 type Tab = (typeof TABS)[number];
 
+const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
+const SESSION_EDITORS = ['Cursor', 'VisualStudioCode', 'Other'] as const;
+
+type SessionDraft = {
+  editor: string;
+  status: string;
+  startedAtLocal: string;
+  endedAtLocal: string;
+  branch: string;
+  workspacePath: string;
+  repositoryPath: string;
+  remoteUrl: string;
+  externalSessionId: string;
+  editorVersion: string;
+  machineName: string;
+  userName: string;
+};
+
+function toLocalInputValue(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fromLocalInputValue(local: string): string | null {
+  if (!local.trim()) return null;
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function emptySessionDraft(): SessionDraft {
+  return {
+    editor: 'Cursor',
+    status: 'Active',
+    startedAtLocal: toLocalInputValue(new Date().toISOString()),
+    endedAtLocal: '',
+    branch: '',
+    workspacePath: '',
+    repositoryPath: '',
+    remoteUrl: '',
+    externalSessionId: '',
+    editorVersion: '',
+    machineName: '',
+    userName: '',
+  };
+}
+
+function draftFromSession(session: SessionDto): SessionDraft {
+  return {
+    editor: session.editor || 'Cursor',
+    status: session.status || (session.isActive ? 'Active' : 'Ended'),
+    startedAtLocal: toLocalInputValue(session.startedAtUtc),
+    endedAtLocal: toLocalInputValue(session.endedAtUtc),
+    branch: session.branch ?? '',
+    workspacePath: session.workspacePath ?? '',
+    repositoryPath: session.repositoryPath ?? '',
+    remoteUrl: session.remoteUrl ?? '',
+    externalSessionId: session.externalSessionId ?? '',
+    editorVersion: session.editorVersion ?? '',
+    machineName: session.machineName ?? '',
+    userName: session.userName ?? '',
+  };
+}
+
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -59,10 +131,15 @@ export function ProjectDetailsPage() {
   const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
   const tokenCost = useProjectTokenCostQuery(projectId, range.fromUtc, range.toUtc);
   const prompts = useProjectPromptsQuery(projectId, range.fromUtc, range.toUtc);
-  const sessions = useProjectSessionsQuery(projectId, range.fromUtc, range.toUtc);
+  // Omit toUtc so the server uses "now" on each fetch — a frozen page-load toUtc
+  // was hiding newly created/edited sessions from the table.
+  const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
   const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
+  const createSessionMutation = useCreateProjectSessionMutation();
+  const updateSessionMutation = useUpdateSessionMutation();
+  const deleteSessionMutation = useDeleteSessionMutation();
   const [settingsDraft, setSettingsDraft] = useState({
     name: '',
     slug: '',
@@ -72,6 +149,10 @@ export function ProjectDetailsPage() {
     isActive: true,
   });
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
+  const [sessionEditorOpen, setSessionEditorOpen] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<SessionDraft>(emptySessionDraft);
+  const [sessionMessage, setSessionMessage] = useState<string | null>(null);
 
   if (project.isLoading) return <LoadingState label="Loading project…" />;
   if (project.error || !project.data) {
@@ -323,6 +404,225 @@ export function ProjectDetailsPage() {
 
       {tab === 'Sessions' && (
         <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Sessions</h2>
+              <p className="muted">Add, edit, or delete tracked editor sessions for this project.</p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setEditingSessionId(null);
+                setSessionDraft(emptySessionDraft());
+                setSessionMessage(null);
+                setSessionEditorOpen(true);
+              }}
+            >
+              Add session
+            </button>
+          </div>
+
+          {sessionEditorOpen ? (
+            <form
+              className="panel stack"
+              noValidate
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setSessionMessage(null);
+                if (!isCompleteLocalDateTime(sessionDraft.startedAtLocal)) {
+                  setSessionMessage('Started date and time are required.');
+                  return;
+                }
+                const startedAtUtc = fromLocalInputValue(sessionDraft.startedAtLocal);
+                if (!startedAtUtc) {
+                  setSessionMessage('Started date and time are invalid.');
+                  return;
+                }
+                if (
+                  sessionDraft.endedAtLocal.trim() &&
+                  !isCompleteLocalDateTime(sessionDraft.endedAtLocal)
+                ) {
+                  setSessionMessage('Ended date and time are incomplete.');
+                  return;
+                }
+                const endedAtUtc = fromLocalInputValue(sessionDraft.endedAtLocal);
+                if (
+                  endedAtUtc &&
+                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                ) {
+                  setSessionMessage('Ended time cannot be earlier than started time.');
+                  return;
+                }
+                const payload = {
+                  editor: sessionDraft.editor,
+                  status: sessionDraft.status,
+                  startedAtUtc,
+                  endedAtUtc,
+                  branch: sessionDraft.branch.trim() || null,
+                  workspacePath: sessionDraft.workspacePath.trim() || null,
+                  repositoryPath: sessionDraft.repositoryPath.trim() || null,
+                  remoteUrl: sessionDraft.remoteUrl.trim() || null,
+                  externalSessionId: sessionDraft.externalSessionId.trim() || null,
+                  editorVersion: sessionDraft.editorVersion.trim() || null,
+                  machineName: sessionDraft.machineName.trim() || null,
+                  userName: sessionDraft.userName.trim() || null,
+                };
+                try {
+                  if (editingSessionId) {
+                    await updateSessionMutation.mutateAsync({
+                      id: editingSessionId,
+                      body: {
+                        ...payload,
+                        projectId: detail.id,
+                        status: sessionDraft.status,
+                        startedAtUtc,
+                      },
+                    });
+                    setSessionMessage('Session updated.');
+                  } else {
+                    await createSessionMutation.mutateAsync({
+                      projectId: detail.id,
+                      body: payload,
+                    });
+                    setSessionMessage('Session created.');
+                  }
+                  setSessionEditorOpen(false);
+                  setEditingSessionId(null);
+                  await sessions.refetch();
+                } catch (err) {
+                  setSessionMessage(err instanceof Error ? err.message : 'Save failed');
+                }
+              }}
+            >
+              <h3>{editingSessionId ? 'Edit session' : 'New session'}</h3>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="session-editor">Editor</label>
+                  <select
+                    id="session-editor"
+                    value={sessionDraft.editor}
+                    onChange={(e) => setSessionDraft((s) => ({ ...s, editor: e.target.value }))}
+                  >
+                    {SESSION_EDITORS.map((editor) => (
+                      <option key={editor} value={editor}>
+                        {editor}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="session-status">Status</label>
+                  <select
+                    id="session-status"
+                    value={sessionDraft.status}
+                    onChange={(e) => setSessionDraft((s) => ({ ...s, status: e.target.value }))}
+                  >
+                    {SESSION_STATUSES.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <DateTimeField
+                  id="session-started"
+                  label="Started"
+                  required
+                  value={sessionDraft.startedAtLocal}
+                  onChange={(startedAtLocal) =>
+                    setSessionDraft((s) => ({ ...s, startedAtLocal }))
+                  }
+                />
+                <DateTimeField
+                  id="session-ended"
+                  label="Ended"
+                  value={sessionDraft.endedAtLocal}
+                  onChange={(endedAtLocal) => setSessionDraft((s) => ({ ...s, endedAtLocal }))}
+                />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="session-branch">Branch</label>
+                  <input
+                    id="session-branch"
+                    value={sessionDraft.branch}
+                    onChange={(e) => setSessionDraft((s) => ({ ...s, branch: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="session-workspace">Workspace path</label>
+                  <input
+                    id="session-workspace"
+                    value={sessionDraft.workspacePath}
+                    onChange={(e) =>
+                      setSessionDraft((s) => ({ ...s, workspacePath: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="session-repo">Repository path</label>
+                  <input
+                    id="session-repo"
+                    value={sessionDraft.repositoryPath}
+                    onChange={(e) =>
+                      setSessionDraft((s) => ({ ...s, repositoryPath: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="session-remote">Remote URL</label>
+                  <input
+                    id="session-remote"
+                    value={sessionDraft.remoteUrl}
+                    onChange={(e) => setSessionDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="session-external">External session id</label>
+                  <input
+                    id="session-external"
+                    value={sessionDraft.externalSessionId}
+                    onChange={(e) =>
+                      setSessionDraft((s) => ({ ...s, externalSessionId: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="row-actions">
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={createSessionMutation.isPending || updateSessionMutation.isPending}
+                >
+                  {createSessionMutation.isPending || updateSessionMutation.isPending
+                    ? 'Saving…'
+                    : editingSessionId
+                      ? 'Save session'
+                      : 'Create session'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setSessionEditorOpen(false);
+                    setEditingSessionId(null);
+                    setSessionMessage(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                {sessionMessage ? <span className="form-message">{sessionMessage}</span> : null}
+              </div>
+            </form>
+          ) : null}
+
+          {!sessionEditorOpen && sessionMessage ? (
+            <p className="form-message">{sessionMessage}</p>
+          ) : null}
+
           {sessions.isLoading ? (
             <LoadingState />
           ) : sessions.error ? (
@@ -340,6 +640,7 @@ export function ProjectDetailsPage() {
                     <th>Ended</th>
                     <th>Branch</th>
                     <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -352,9 +653,49 @@ export function ProjectDetailsPage() {
                       <td>{s.branch ?? '—'}</td>
                       <td>
                         <StatusBadge
-                          label={s.isActive ? 'Active' : 'Closed'}
-                          tone={s.isActive ? 'success' : 'neutral'}
+                          label={s.status || (s.isActive ? 'Active' : 'Closed')}
+                          tone={s.isActive || s.status === 'Active' ? 'success' : 'neutral'}
                         />
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-secondary"
+                            onClick={() => {
+                              setEditingSessionId(s.id);
+                              setSessionDraft(draftFromSession(s));
+                              setSessionMessage(null);
+                              setSessionEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-danger"
+                            disabled={deleteSessionMutation.isPending}
+                            onClick={() => {
+                              const ok = window.confirm(
+                                `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
+                              );
+                              if (!ok) return;
+                              void deleteSessionMutation
+                                .mutateAsync({ id: s.id, projectId: detail.id })
+                                .then(() => {
+                                  setSessionMessage(null);
+                                  return sessions.refetch();
+                                })
+                                .catch((err: unknown) => {
+                                  setSessionMessage(
+                                    err instanceof Error ? err.message : 'Delete failed',
+                                  );
+                                });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

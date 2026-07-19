@@ -103,10 +103,16 @@ public static class TrackingHost
         var bindAddress = trackingSection.GetValue<string>("BindAddress") ?? "http://127.0.0.1:5187";
         builder.WebHost.UseUrls(bindAddress);
 
-        var maxRequestBytes = trackingSection.GetValue<int?>("MaxRequestBytes") ?? 1_048_576;
+        var maxRequestBytes = trackingSection.GetValue<long?>("MaxRequestBytes") ?? 1_048_576L;
+        var maxBackupUploadBytes = trackingSection.GetValue<long?>("MaxBackupUploadBytes") ?? 104_857_600L;
+        var maxBodyBytes = Math.Max(maxRequestBytes, maxBackupUploadBytes);
         builder.WebHost.ConfigureKestrel(options =>
         {
-            options.Limits.MaxRequestBodySize = maxRequestBytes;
+            options.Limits.MaxRequestBodySize = maxBodyBytes;
+        });
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+        {
+            options.MultipartBodyLengthLimit = maxBodyBytes;
         });
 
         RegisterCoreServices(builder.Services, builder.Configuration);

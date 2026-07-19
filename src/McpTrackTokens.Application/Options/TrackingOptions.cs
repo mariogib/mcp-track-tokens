@@ -160,6 +160,11 @@ public sealed class TrackingOptions
     public int MaxRequestBytes { get; set; } = 1_048_576;
 
     /// <summary>
+    /// Maximum multipart upload size for database restore (bytes). Default 100 MiB.
+    /// </summary>
+    public long MaxBackupUploadBytes { get; set; } = 104_857_600;
+
+    /// <summary>
     /// When true, EF Core migrations are applied on host startup.
     /// </summary>
     public bool MigrateOnStartup { get; set; }

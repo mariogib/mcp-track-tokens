@@ -33,6 +33,7 @@ public static class TrackingEnvironmentVariables
         ("QUEUE_PATH", "QueuePath"),
         ("MAX_QUEUED_EVENTS", "MaxQueuedEvents"),
         ("MAX_REQUEST_BYTES", "MaxRequestBytes"),
+        ("MAX_BACKUP_UPLOAD_BYTES", "MaxBackupUploadBytes"),
         ("MIGRATE_ON_STARTUP", "MigrateOnStartup")
     ];
 

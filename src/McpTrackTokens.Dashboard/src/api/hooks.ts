@@ -4,10 +4,12 @@ import type {
   AllocationRequestDto,
   AssignActivityRequestDto,
   CreateApiKeyRequestDto,
+  CreateProjectSessionRequest,
   ExportRequestDto,
   ReconciliationRequestDto,
   UpdateSettingsRequest,
   UpdateProjectRequest,
+  UpdateSessionRequest,
 } from './types';
 
 export const queryKeys = {
@@ -148,6 +150,57 @@ export function useProjectSessionsQuery(id: string | undefined, fromUtc?: string
     queryKey: queryKeys.projectSessions(id ?? '', fromUtc, toUtc),
     queryFn: ({ signal }) => api.getProjectSessions(id!, fromUtc, toUtc, signal),
     enabled: Boolean(id),
+  });
+}
+
+export function useCreateProjectSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      body,
+    }: {
+      projectId: string;
+      body: CreateProjectSessionRequest;
+    }) => api.createProjectSession(projectId, body),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'sessions'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.activeSession });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useUpdateSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateSessionRequest }) =>
+      api.updateSession(id, body),
+    onSuccess: (data) => {
+      if (data.projectId) {
+        void qc.invalidateQueries({ queryKey: ['projects', data.projectId, 'sessions'] });
+      } else {
+        void qc.invalidateQueries({ queryKey: ['projects'] });
+      }
+      void qc.invalidateQueries({ queryKey: queryKeys.activeSession });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useDeleteSessionMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; projectId?: string | null }) => api.deleteSession(id),
+    onSuccess: (_data, variables) => {
+      if (variables.projectId) {
+        void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'sessions'] });
+      } else {
+        void qc.invalidateQueries({ queryKey: ['projects'] });
+      }
+      void qc.invalidateQueries({ queryKey: queryKeys.activeSession });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 }
 

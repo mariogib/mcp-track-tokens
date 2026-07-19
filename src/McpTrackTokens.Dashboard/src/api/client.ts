@@ -23,6 +23,7 @@ import type {
   PromptEventDto,
   ReconciliationRequestDto,
   ReconciliationResultDto,
+  CreateProjectSessionRequest,
   SessionDto,
   SettingsDto,
   TrackingStatusDto,
@@ -32,6 +33,7 @@ import type {
   UnallocatedItemDto,
   UnallocatedUsageReport,
   UpdateProjectRequest,
+  UpdateSessionRequest,
   UpdateSettingsRequest,
   UsageAttributionRow,
   UsageSummaryDto,
@@ -150,11 +152,30 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       (typeof payload === 'string' && payload) ||
       null;
 
-    let message = messageFromBody || `Request failed (${response.status})`;
+    const validationErrors =
+      payload &&
+      typeof payload === 'object' &&
+      'errors' in payload &&
+      payload.errors &&
+      typeof payload.errors === 'object'
+        ? Object.entries(payload.errors as Record<string, unknown>)
+            .flatMap(([key, value]) =>
+              Array.isArray(value) ? value.map((item) => `${key}: ${String(item)}`) : [`${key}: ${String(value)}`],
+            )
+            .join(' ')
+        : null;
+
+    let message =
+      validationErrors || messageFromBody || `Request failed (${response.status})`;
     if (response.status === 401) {
       message = getStoredApiKey()
         ? 'Unauthorized (401). The stored API key was rejected — update it under Settings.'
         : 'Unauthorized (401). Set a Bearer API key under Settings to call the tracking API.';
+    }
+    if (response.status === 413) {
+      message =
+        messageFromBody ||
+        'Upload too large (413). The backup file exceeds the server restore size limit.';
     }
 
     throw new ApiError(response.status, message, payload);
@@ -231,6 +252,30 @@ export const api = {
   getProjectSessions: (id: string, fromUtc?: string, toUtc?: string, signal?: AbortSignal) =>
     apiRequest<SessionDto[]>(`/api/v1/projects/${id}/sessions`, {
       query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  createProjectSession: (
+    projectId: string,
+    body: CreateProjectSessionRequest,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<SessionDto>(`/api/v1/projects/${projectId}/sessions`, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  updateSession: (id: string, body: UpdateSessionRequest, signal?: AbortSignal) =>
+    apiRequest<SessionDto>(`/api/v1/sessions/${id}`, {
+      method: 'PUT',
+      body,
+      signal,
+    }),
+
+  deleteSession: (id: string, signal?: AbortSignal) =>
+    apiRequest<void>(`/api/v1/sessions/${id}`, {
+      method: 'DELETE',
       signal,
     }),
 

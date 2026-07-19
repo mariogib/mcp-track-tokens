@@ -74,6 +74,8 @@ public interface ISessionRepository
 
     Task UpdateAsync(EditorSession session, CancellationToken cancellationToken = default);
 
+    Task DeleteAsync(EditorSession session, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Updates last-activity (and optionally assigns a project) without optimistic concurrency conflicts.
     /// </summary>

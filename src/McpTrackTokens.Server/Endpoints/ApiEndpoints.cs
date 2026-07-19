@@ -39,9 +39,12 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/cost", GetProjectCostAsync);
         api.MapGet("/projects/{id:guid}/token-cost", GetProjectTokenCostAsync);
         api.MapGet("/projects/{id:guid}/sessions", GetProjectSessionsAsync);
+        api.MapPost("/projects/{id:guid}/sessions", CreateProjectSessionAsync);
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
+        api.MapPut("/sessions/{id:guid}", UpdateSessionAsync);
+        api.MapDelete("/sessions/{id:guid}", DeleteSessionAsync);
         api.MapGet("/unallocated", GetUnallocatedAsync);
         api.MapGet("/unallocated/activity", GetUnallocatedActivityAsync);
         api.MapGet("/unallocated/usage", GetUnallocatedUsageAsync);
@@ -566,6 +569,56 @@ public static class ApiEndpoints
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var list = await sessions.ListByProjectAsync(id, from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
+    }
+
+    private static async Task<IResult> CreateProjectSessionAsync(
+        Guid id,
+        CreateProjectSessionRequest request,
+        ISessionManagementService sessions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await sessions.CreateForProjectAsync(id, request, cancellationToken).ConfigureAwait(false);
+            return Results.Created($"/api/v1/sessions/{session.Id}", SessionMapper.ToDto(session));
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> UpdateSessionAsync(
+        Guid id,
+        UpdateSessionRequest request,
+        ISessionManagementService sessions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var session = await sessions.UpdateAsync(id, request, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(SessionMapper.ToDto(session));
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> DeleteSessionAsync(
+        Guid id,
+        ISessionManagementService sessions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await sessions.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static async Task<IResult> GetProjectPromptsAsync(

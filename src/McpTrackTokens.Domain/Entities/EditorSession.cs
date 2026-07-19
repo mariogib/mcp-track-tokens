@@ -1,5 +1,6 @@
 using McpTrackTokens.Domain.Common;
 using McpTrackTokens.Domain.Enums;
+using McpTrackTokens.Domain.Exceptions;
 using McpTrackTokens.Domain.Validation;
 
 namespace McpTrackTokens.Domain.Entities;
@@ -153,6 +154,69 @@ public sealed class EditorSession : EntityBase, IAuditable
 
         UpdatedAtUtc = when;
     }
+
+    /// <summary>
+    /// Applies an administrative edit (dashboard CRUD). Allows setting status and times
+    /// without the normal lifecycle transition rules.
+    /// </summary>
+    public void ApplyAdminEdit(
+        Guid? projectId,
+        EditorType editor,
+        string? editorVersion,
+        string? machineName,
+        string? userName,
+        string? workspacePath,
+        string? repositoryPath,
+        string? remoteUrl,
+        string? branch,
+        string? externalSessionId,
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset? endedAtUtc,
+        SessionStatus status)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var started = startedAtUtc.ToUniversalTime();
+        DateTimeOffset? ended = endedAtUtc?.ToUniversalTime();
+
+        if (status is SessionStatus.Active or SessionStatus.Paused)
+        {
+            ended = null;
+        }
+        else
+        {
+            ended ??= now;
+        }
+
+        if (ended is DateTimeOffset end && end < started)
+        {
+            throw new ValidationException(
+                nameof(EndedAtUtc),
+                "EndedAtUtc cannot be earlier than StartedAtUtc.");
+        }
+
+        ProjectId = projectId;
+        Editor = editor;
+        EditorVersion = NormalizeOptional(editorVersion);
+        MachineName = NormalizeOptional(machineName);
+        UserName = NormalizeOptional(userName);
+        WorkspacePath = NormalizeOptional(workspacePath);
+        RepositoryPath = NormalizeOptional(repositoryPath);
+        RemoteUrl = NormalizeOptional(remoteUrl);
+        Branch = NormalizeOptional(branch);
+        ExternalSessionId = NormalizeOptional(externalSessionId);
+        StartedAtUtc = started;
+        EndedAtUtc = ended;
+        Status = status;
+        if (LastActivityAtUtc < started || (ended is DateTimeOffset e && LastActivityAtUtc > e))
+        {
+            LastActivityAtUtc = ended ?? started;
+        }
+
+        UpdatedAtUtc = now;
+    }
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EditorSession"/> class.

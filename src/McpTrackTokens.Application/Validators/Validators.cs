@@ -153,6 +153,69 @@ public sealed class UpdateProjectRequestValidator : AbstractValidator<UpdateProj
 }
 
 /// <summary>
+/// Validates dashboard create-session requests.
+/// </summary>
+public sealed class CreateProjectSessionRequestValidator : AbstractValidator<CreateProjectSessionRequest>
+{
+    public CreateProjectSessionRequestValidator()
+    {
+        RuleFor(x => x.Editor)
+            .NotEmpty()
+            .MaximumLength(64);
+
+        RuleFor(x => x.EditorVersion).MaximumLength(64).When(x => x.EditorVersion is not null);
+        RuleFor(x => x.MachineName).MaximumLength(200).When(x => x.MachineName is not null);
+        RuleFor(x => x.UserName).MaximumLength(200).When(x => x.UserName is not null);
+        RuleFor(x => x.WorkspacePath).MaximumLength(1024).When(x => x.WorkspacePath is not null);
+        RuleFor(x => x.RepositoryPath).MaximumLength(1024).When(x => x.RepositoryPath is not null);
+        RuleFor(x => x.RemoteUrl).MaximumLength(1024).When(x => x.RemoteUrl is not null);
+        RuleFor(x => x.Branch).MaximumLength(200).When(x => x.Branch is not null);
+        RuleFor(x => x.ExternalSessionId).MaximumLength(200).When(x => x.ExternalSessionId is not null);
+        RuleFor(x => x.Status).MaximumLength(32).When(x => x.Status is not null);
+
+        RuleFor(x => x.EndedAtUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc!.Value)
+            .When(x => x.StartedAtUtc.HasValue && x.EndedAtUtc.HasValue)
+            .WithMessage("endedAtUtc cannot be earlier than startedAtUtc.");
+    }
+}
+
+/// <summary>
+/// Validates dashboard update-session requests.
+/// </summary>
+public sealed class UpdateSessionRequestValidator : AbstractValidator<UpdateSessionRequest>
+{
+    public UpdateSessionRequestValidator()
+    {
+        RuleFor(x => x.Editor)
+            .NotEmpty()
+            .MaximumLength(64);
+
+        RuleFor(x => x.Status)
+            .NotEmpty()
+            .MaximumLength(32);
+
+        RuleFor(x => x.StartedAtUtc)
+            .Must(ts => ts != default)
+            .WithMessage("startedAtUtc is required.");
+
+        RuleFor(x => x.EditorVersion).MaximumLength(64).When(x => x.EditorVersion is not null);
+        RuleFor(x => x.MachineName).MaximumLength(200).When(x => x.MachineName is not null);
+        RuleFor(x => x.UserName).MaximumLength(200).When(x => x.UserName is not null);
+        RuleFor(x => x.WorkspacePath).MaximumLength(1024).When(x => x.WorkspacePath is not null);
+        RuleFor(x => x.RepositoryPath).MaximumLength(1024).When(x => x.RepositoryPath is not null);
+        RuleFor(x => x.RemoteUrl).MaximumLength(1024).When(x => x.RemoteUrl is not null);
+        RuleFor(x => x.Branch).MaximumLength(200).When(x => x.Branch is not null);
+        RuleFor(x => x.ExternalSessionId).MaximumLength(200).When(x => x.ExternalSessionId is not null);
+
+        RuleFor(x => x.EndedAtUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc)
+            .When(x => x.EndedAtUtc.HasValue)
+            .WithMessage("endedAtUtc cannot be earlier than startedAtUtc.");
+    }
+}
+
+/// <summary>
 /// Validates Cursor usage import requests.
 /// </summary>
 public sealed class ImportCursorUsageRequestDtoValidator : AbstractValidator<ImportCursorUsageRequestDto>
