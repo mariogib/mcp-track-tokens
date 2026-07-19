@@ -70,6 +70,24 @@ public static class ProjectMapper
 }
 
 /// <summary>
+/// Maps timesheet entries to API response shapes.
+/// </summary>
+public static class TimesheetMapper
+{
+    public static object ToDto(TimesheetEntry entry) => new
+    {
+        entry.Id,
+        entry.ProjectId,
+        entry.StartedAtUtc,
+        entry.EndedAtUtc,
+        entry.Notes,
+        isOpen = entry.EndedAtUtc is null,
+        entry.CreatedAtUtc,
+        entry.UpdatedAtUtc
+    };
+}
+
+/// <summary>
 /// Maps editor sessions to anonymous-safe response shapes.
 /// </summary>
 public static class SessionMapper

@@ -40,11 +40,17 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/token-cost", GetProjectTokenCostAsync);
         api.MapGet("/projects/{id:guid}/sessions", GetProjectSessionsAsync);
         api.MapPost("/projects/{id:guid}/sessions", CreateProjectSessionAsync);
+        api.MapGet("/projects/{id:guid}/timesheet-entries", GetProjectTimesheetEntriesAsync);
+        api.MapPost("/projects/{id:guid}/timesheet-entries", CreateProjectTimesheetEntryAsync);
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
         api.MapPut("/sessions/{id:guid}", UpdateSessionAsync);
         api.MapDelete("/sessions/{id:guid}", DeleteSessionAsync);
+        api.MapPost("/timesheet/start", StartTimesheetAsync);
+        api.MapPost("/timesheet/end", EndTimesheetAsync);
+        api.MapPut("/timesheet-entries/{id:guid}", UpdateTimesheetEntryAsync);
+        api.MapDelete("/timesheet-entries/{id:guid}", DeleteTimesheetEntryAsync);
         api.MapGet("/unallocated", GetUnallocatedAsync);
         api.MapGet("/unallocated/activity", GetUnallocatedActivityAsync);
         api.MapGet("/unallocated/usage", GetUnallocatedUsageAsync);
@@ -613,6 +619,108 @@ public static class ApiEndpoints
         try
         {
             await sessions.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetProjectTimesheetEntriesAsync(
+        Guid id,
+        ITimesheetManagementService timesheets,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var list = await timesheets.ListForProjectAsync(id, fromUtc, toUtc, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> CreateProjectTimesheetEntryAsync(
+        Guid id,
+        CreateTimesheetEntryRequest request,
+        ITimesheetManagementService timesheets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = await timesheets.CreateForProjectAsync(id, request, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Created($"/api/v1/timesheet-entries/{entry.Id}", entry);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> StartTimesheetAsync(
+        StartTimesheetRequest request,
+        ITimesheetManagementService timesheets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = await timesheets.StartAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(entry);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> EndTimesheetAsync(
+        EndTimesheetRequest request,
+        ITimesheetManagementService timesheets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = await timesheets.EndAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(entry);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> UpdateTimesheetEntryAsync(
+        Guid id,
+        UpdateTimesheetEntryRequest request,
+        ITimesheetManagementService timesheets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var entry = await timesheets.UpdateAsync(id, request, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(entry);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> DeleteTimesheetEntryAsync(
+        Guid id,
+        ITimesheetManagementService timesheets,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await timesheets.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
             return Results.NoContent();
         }
         catch (Exception ex)

@@ -21,6 +21,7 @@ public sealed class EventIngestionService : IEventIngestionService
     private readonly IProjectDetectionService _projectDetection;
     private readonly IActivityWindowService _activityWindows;
     private readonly IContentEncryptionService _encryption;
+    private readonly ITimesheetManagementService _timesheets;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<IngestEventDto> _validator;
     private readonly TrackingOptions _options;
@@ -32,6 +33,7 @@ public sealed class EventIngestionService : IEventIngestionService
         IProjectDetectionService projectDetection,
         IActivityWindowService activityWindows,
         IContentEncryptionService encryption,
+        ITimesheetManagementService timesheets,
         IUnitOfWork unitOfWork,
         IValidator<IngestEventDto> validator,
         IOptions<TrackingOptions> options)
@@ -42,6 +44,7 @@ public sealed class EventIngestionService : IEventIngestionService
         _projectDetection = projectDetection;
         _activityWindows = activityWindows;
         _encryption = encryption;
+        _timesheets = timesheets;
         _unitOfWork = unitOfWork;
         _validator = validator;
         _options = options.Value;
@@ -277,9 +280,13 @@ public sealed class EventIngestionService : IEventIngestionService
             }
         }
 
+        var started = dto.StartedAtUtc ?? DateTimeOffset.UtcNow;
+        await CloseOtherActiveSessionsAsync(keepSessionId: null, started, cancellationToken)
+            .ConfigureAwait(false);
+
         var session = EditorSession.Start(
             editor,
-            dto.StartedAtUtc ?? DateTimeOffset.UtcNow,
+            started,
             project?.Id,
             dto.EditorVersion,
             dto.MachineName,
@@ -291,6 +298,12 @@ public sealed class EventIngestionService : IEventIngestionService
             dto.ExternalSessionId);
 
         await _sessions.AddAsync(session, cancellationToken).ConfigureAwait(false);
+        if (project?.Id is Guid pid)
+        {
+            await _timesheets.EnsureAutocreatedOpenEntryAsync(pid, started, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return session;
     }
@@ -370,8 +383,7 @@ public sealed class EventIngestionService : IEventIngestionService
         Guid? projectId,
         CancellationToken cancellationToken)
     {
-        var active = await _sessions
-            .GetActiveForWorkspaceAsync(editor, dto.WorkspacePath, cancellationToken)
+        var active = await FindOpenSessionForPromptAsync(editor, dto.WorkspacePath, projectId, cancellationToken)
             .ConfigureAwait(false);
 
         if (active is not null)
@@ -399,9 +411,21 @@ public sealed class EventIngestionService : IEventIngestionService
                     await _sessions.UpdateAsync(tracked, cancellationToken).ConfigureAwait(false);
                 }
 
+                if (projectId is Guid ensureProjectId)
+                {
+                    await _timesheets.EnsureAutocreatedOpenEntryAsync(
+                            ensureProjectId,
+                            dto.TimestampUtc,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 return tracked;
             }
         }
+
+        await CloseOtherActiveSessionsAsync(keepSessionId: null, dto.TimestampUtc, cancellationToken)
+            .ConfigureAwait(false);
 
         var created = EditorSession.Start(
             editor,
@@ -416,7 +440,64 @@ public sealed class EventIngestionService : IEventIngestionService
             dto.Branch,
             dto.ExternalSessionId);
         await _sessions.AddAsync(created, cancellationToken).ConfigureAwait(false);
+        if (projectId is Guid pid)
+        {
+            await _timesheets.EnsureAutocreatedOpenEntryAsync(pid, dto.TimestampUtc, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         return created;
+    }
+
+    private async Task<EditorSession?> FindOpenSessionForPromptAsync(
+        EditorType editor,
+        string? workspacePath,
+        Guid? projectId,
+        CancellationToken cancellationToken)
+    {
+        var forWorkspace = await _sessions
+            .GetActiveForWorkspaceAsync(editor, workspacePath, cancellationToken)
+            .ConfigureAwait(false);
+        if (forWorkspace is not null)
+        {
+            return forWorkspace;
+        }
+
+        if (projectId is null)
+        {
+            return null;
+        }
+
+        var active = await _sessions.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        return active
+            .Where(s => s.ProjectId == projectId)
+            .OrderByDescending(s => s.LastActivityAtUtc)
+            .FirstOrDefault();
+    }
+
+    private async Task CloseOtherActiveSessionsAsync(
+        Guid? keepSessionId,
+        DateTimeOffset endedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var active = await _sessions.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        var at = endedAtUtc.ToUniversalTime();
+        foreach (var session in active)
+        {
+            if (keepSessionId is Guid keep && session.Id == keep)
+            {
+                continue;
+            }
+
+            var tracked = await _sessions.GetByIdAsync(session.Id, cancellationToken).ConfigureAwait(false);
+            if (tracked is null || tracked.Status != SessionStatus.Active)
+            {
+                continue;
+            }
+
+            tracked.TransitionTo(SessionStatus.Ended, at);
+            await _sessions.UpdateAsync(tracked, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private async Task<EditorSession> EnsureTrackedSessionAsync(

@@ -5,11 +5,13 @@ import type {
   AssignActivityRequestDto,
   CreateApiKeyRequestDto,
   CreateProjectSessionRequest,
+  CreateTimesheetEntryRequest,
   ExportRequestDto,
   ReconciliationRequestDto,
   UpdateSettingsRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
+  UpdateTimesheetEntryRequest,
 } from './types';
 
 export const queryKeys = {
@@ -31,6 +33,8 @@ export const queryKeys = {
     ['projects', id, 'prompts', from, to] as const,
   projectSessions: (id: string, from?: string, to?: string) =>
     ['projects', id, 'sessions', from, to] as const,
+  projectTimesheet: (id: string, from?: string, to?: string) =>
+    ['projects', id, 'timesheet', from, to] as const,
   activeSession: ['sessions', 'active'] as const,
   unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
   importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
@@ -200,6 +204,56 @@ export function useDeleteSessionMutation() {
       }
       void qc.invalidateQueries({ queryKey: queryKeys.activeSession });
       void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useProjectTimesheetQuery(id: string | undefined, fromUtc?: string, toUtc?: string) {
+  return useQuery({
+    queryKey: queryKeys.projectTimesheet(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectTimesheetEntries(id!, fromUtc, toUtc, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateTimesheetEntryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      body,
+    }: {
+      projectId: string;
+      body: CreateTimesheetEntryRequest;
+    }) => api.createProjectTimesheetEntry(projectId, body),
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'timesheet'] });
+    },
+  });
+}
+
+export function useUpdateTimesheetEntryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateTimesheetEntryRequest }) =>
+      api.updateTimesheetEntry(id, body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ['projects', data.projectId, 'timesheet'] });
+    },
+  });
+}
+
+export function useDeleteTimesheetEntryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: { id: string; projectId?: string | null }) =>
+      api.deleteTimesheetEntry(id),
+    onSuccess: (_data, variables) => {
+      if (variables.projectId) {
+        void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'timesheet'] });
+      } else {
+        void qc.invalidateQueries({ queryKey: ['projects'] });
+      }
     },
   });
 }

@@ -24,6 +24,8 @@ public sealed class TrackingDbContext : DbContext
 
     public DbSet<EditorSession> EditorSessions => Set<EditorSession>();
 
+    public DbSet<TimesheetEntry> TimesheetEntries => Set<TimesheetEntry>();
+
     public DbSet<PromptActivityEvent> PromptActivityEvents => Set<PromptActivityEvent>();
 
     public DbSet<ActivityWindow> ActivityWindows => Set<ActivityWindow>();

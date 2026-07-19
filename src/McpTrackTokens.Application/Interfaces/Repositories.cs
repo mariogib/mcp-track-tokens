@@ -87,6 +87,39 @@ public interface ISessionRepository
 }
 
 /// <summary>
+/// Persistence for manual timesheet entries.
+/// </summary>
+public interface ITimesheetEntryRepository
+{
+    Task<TimesheetEntry?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TimesheetEntry>> ListByProjectAsync(
+        Guid projectId,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TimesheetEntry>> ListOpenByProjectAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns all open timesheet entries (any project), tracked for updates.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetEntry>> ListOpenAsync(CancellationToken cancellationToken = default);
+
+    Task<TimesheetEntry?> GetLatestOpenByProjectAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+
+    Task AddAsync(TimesheetEntry entry, CancellationToken cancellationToken = default);
+
+    Task UpdateAsync(TimesheetEntry entry, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(TimesheetEntry entry, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Persistence for prompt activity events.
 /// </summary>
 public interface IActivityEventRepository

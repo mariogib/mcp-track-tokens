@@ -583,6 +583,29 @@ export interface UpdateSessionRequest {
   status: string;
 }
 
+export interface TimesheetEntryDto {
+  id: string;
+  projectId: string;
+  startedAtUtc: string;
+  endedAtUtc?: string | null;
+  notes?: string | null;
+  isOpen: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface CreateTimesheetEntryRequest {
+  startedAtUtc?: string | null;
+  endedAtUtc?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateTimesheetEntryRequest {
+  startedAtUtc: string;
+  endedAtUtc?: string | null;
+  notes?: string | null;
+}
+
 export interface DateRangeParams {
   fromUtc: string;
   toUtc: string;

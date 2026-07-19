@@ -115,6 +115,70 @@ public static class TrackingTools
     }
 
     /// <summary>
+    /// Starts a timesheet entry for the project open in Cursor. Defaults start time to now.
+    /// Any open timesheet entry on that project is ended first (end time = now).
+    /// </summary>
+    [McpServerTool(Name = "start_timesheet"), Description("Starts a timesheet entry for the current Cursor project. Defaults start time to now and closes any open entry first.")]
+    public static async Task<string> StartTimesheet(
+        ITimesheetManagementService timesheets,
+        [Description("Optional notes for the new timesheet entry")] string? notes = null,
+        [Description("Optional project id (otherwise detected from workspace)")] Guid? projectId = null,
+        [Description("Workspace path")] string? workspacePath = null,
+        [Description("Repository path")] string? repositoryPath = null,
+        [Description("Remote URL")] string? remoteUrl = null,
+        [Description("Active file path")] string? activeFilePath = null,
+        [Description("Optional start time UTC (defaults to now)")] DateTimeOffset? startedAtUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = await timesheets.StartAsync(
+            new StartTimesheetRequest
+            {
+                ProjectId = projectId,
+                WorkspacePath = workspacePath,
+                RepositoryPath = repositoryPath,
+                RemoteUrl = remoteUrl,
+                ActiveFilePath = activeFilePath,
+                StartedAtUtc = startedAtUtc,
+                Notes = notes
+            },
+            cancellationToken).ConfigureAwait(false);
+        return Serialize(entry);
+    }
+
+    /// <summary>
+    /// Ends the open timesheet entry for the current Cursor project. Defaults end time to now
+    /// and can append a note to the existing notes.
+    /// </summary>
+    [McpServerTool(Name = "end_timesheet"), Description("Ends the open timesheet entry for the current Cursor project. Defaults end time to now and can append a note.")]
+    public static async Task<string> EndTimesheet(
+        ITimesheetManagementService timesheets,
+        [Description("Optional note appended to the existing timesheet notes")] string? appendNotes = null,
+        [Description("Optional timesheet entry id")] Guid? timesheetEntryId = null,
+        [Description("Optional project id (otherwise detected from workspace)")] Guid? projectId = null,
+        [Description("Workspace path")] string? workspacePath = null,
+        [Description("Repository path")] string? repositoryPath = null,
+        [Description("Remote URL")] string? remoteUrl = null,
+        [Description("Active file path")] string? activeFilePath = null,
+        [Description("Optional end time UTC (defaults to now)")] DateTimeOffset? endedAtUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = await timesheets.EndAsync(
+            new EndTimesheetRequest
+            {
+                ProjectId = projectId,
+                TimesheetEntryId = timesheetEntryId,
+                WorkspacePath = workspacePath,
+                RepositoryPath = repositoryPath,
+                RemoteUrl = remoteUrl,
+                ActiveFilePath = activeFilePath,
+                EndedAtUtc = endedAtUtc,
+                AppendNotes = appendNotes
+            },
+            cancellationToken).ConfigureAwait(false);
+        return Serialize(entry);
+    }
+
+    /// <summary>
     /// Returns the current tracking status snapshot.
     /// </summary>
     [McpServerTool(Name = "get_tracking_status"), Description("Returns the current tracking status snapshot.")]

@@ -14,6 +14,7 @@ public sealed class SessionManagementService : ISessionManagementService
 {
     private readonly IProjectRepository _projects;
     private readonly ISessionRepository _sessions;
+    private readonly ITimesheetManagementService _timesheets;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<CreateProjectSessionRequest> _createValidator;
     private readonly IValidator<UpdateSessionRequest> _updateValidator;
@@ -21,12 +22,14 @@ public sealed class SessionManagementService : ISessionManagementService
     public SessionManagementService(
         IProjectRepository projects,
         ISessionRepository sessions,
+        ITimesheetManagementService timesheets,
         IUnitOfWork unitOfWork,
         IValidator<CreateProjectSessionRequest> createValidator,
         IValidator<UpdateSessionRequest> updateValidator)
     {
         _projects = projects;
         _sessions = sessions;
+        _timesheets = timesheets;
         _unitOfWork = unitOfWork;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
@@ -47,6 +50,11 @@ public sealed class SessionManagementService : ISessionManagementService
         var started = (request.StartedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
         var status = ParseStatus(request.Status, request.EndedAtUtc.HasValue ? SessionStatus.Ended : SessionStatus.Active);
         var editor = EnumParsing.ParseEditor(request.Editor);
+
+        if (status == SessionStatus.Active)
+        {
+            await CloseOtherActiveSessionsAsync(started, cancellationToken).ConfigureAwait(false);
+        }
 
         var session = EditorSession.Start(
             editor,
@@ -77,8 +85,29 @@ public sealed class SessionManagementService : ISessionManagementService
             status);
 
         await _sessions.AddAsync(session, cancellationToken).ConfigureAwait(false);
+        await _timesheets.EnsureAutocreatedOpenEntryAsync(projectId, started, cancellationToken)
+            .ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return session;
+    }
+
+    private async Task CloseOtherActiveSessionsAsync(
+        DateTimeOffset endedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var active = await _sessions.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        var at = endedAtUtc.ToUniversalTime();
+        foreach (var existing in active)
+        {
+            var tracked = await _sessions.GetByIdAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+            if (tracked is null || tracked.Status != SessionStatus.Active)
+            {
+                continue;
+            }
+
+            tracked.TransitionTo(SessionStatus.Ended, at);
+            await _sessions.UpdateAsync(tracked, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc />

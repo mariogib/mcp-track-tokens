@@ -24,8 +24,10 @@ import type {
   ReconciliationRequestDto,
   ReconciliationResultDto,
   CreateProjectSessionRequest,
+  CreateTimesheetEntryRequest,
   SessionDto,
   SettingsDto,
+  TimesheetEntryDto,
   TrackingStatusDto,
   AssignActivityRequestDto,
   AssignActivityResultDto,
@@ -35,6 +37,7 @@ import type {
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateSettingsRequest,
+  UpdateTimesheetEntryRequest,
   UsageAttributionRow,
   UsageSummaryDto,
 } from './types';
@@ -275,6 +278,41 @@ export const api = {
 
   deleteSession: (id: string, signal?: AbortSignal) =>
     apiRequest<void>(`/api/v1/sessions/${id}`, {
+      method: 'DELETE',
+      signal,
+    }),
+
+  getProjectTimesheetEntries: (
+    id: string,
+    fromUtc?: string,
+    toUtc?: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetEntryDto[]>(`/api/v1/projects/${id}/timesheet-entries`, {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  createProjectTimesheetEntry: (
+    projectId: string,
+    body: CreateTimesheetEntryRequest,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetEntryDto>(`/api/v1/projects/${projectId}/timesheet-entries`, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  updateTimesheetEntry: (id: string, body: UpdateTimesheetEntryRequest, signal?: AbortSignal) =>
+    apiRequest<TimesheetEntryDto>(`/api/v1/timesheet-entries/${id}`, {
+      method: 'PUT',
+      body,
+      signal,
+    }),
+
+  deleteTimesheetEntry: (id: string, signal?: AbortSignal) =>
+    apiRequest<void>(`/api/v1/timesheet-entries/${id}`, {
       method: 'DELETE',
       signal,
     }),

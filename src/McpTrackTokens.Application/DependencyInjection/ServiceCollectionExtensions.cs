@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ISubscriptionAllocationService, SubscriptionAllocationService>();
         services.TryAddScoped<IProjectDetectionService, ProjectDetectionService>();
         services.TryAddScoped<ISessionManagementService, SessionManagementService>();
+        services.TryAddScoped<ITimesheetManagementService, TimesheetManagementService>();
         services.TryAddScoped<IReportService, ReportService>();
         services.TryAddScoped<IReconciliationService, ReconciliationService>();
         services.TryAddScoped<IExportService, ExportService>();

@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
+  useCreateTimesheetEntryMutation,
   useDeleteProjectMutation,
   useDeleteSessionMutation,
+  useDeleteTimesheetEntryMutation,
   useExportMutation,
   useProjectActivityQuery,
   useProjectCostQuery,
@@ -11,11 +13,13 @@ import {
   useProjectPromptsQuery,
   useProjectQuery,
   useProjectSessionsQuery,
+  useProjectTimesheetQuery,
   useProjectUsageQuery,
   useUpdateProjectMutation,
   useUpdateSessionMutation,
+  useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
-import type { SessionDto } from '../api/types';
+import type { SessionDto, TimesheetEntryDto } from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
@@ -42,6 +46,7 @@ const TABS = [
   'Activity',
   'Prompts',
   'Sessions',
+  'Timesheet',
   'Usage',
   'Cost',
   'Token Costs',
@@ -119,6 +124,28 @@ function draftFromSession(session: SessionDto): SessionDraft {
   };
 }
 
+type TimesheetDraft = {
+  startedAtLocal: string;
+  endedAtLocal: string;
+  notes: string;
+};
+
+function emptyTimesheetDraft(): TimesheetDraft {
+  return {
+    startedAtLocal: toLocalInputValue(new Date().toISOString()),
+    endedAtLocal: '',
+    notes: '',
+  };
+}
+
+function draftFromTimesheet(entry: TimesheetEntryDto): TimesheetDraft {
+  return {
+    startedAtLocal: toLocalInputValue(entry.startedAtUtc),
+    endedAtLocal: toLocalInputValue(entry.endedAtUtc),
+    notes: entry.notes ?? '',
+  };
+}
+
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -134,12 +161,16 @@ export function ProjectDetailsPage() {
   // Omit toUtc so the server uses "now" on each fetch — a frozen page-load toUtc
   // was hiding newly created/edited sessions from the table.
   const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
+  const timesheet = useProjectTimesheetQuery(projectId, range.fromUtc);
   const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
   const createSessionMutation = useCreateProjectSessionMutation();
   const updateSessionMutation = useUpdateSessionMutation();
   const deleteSessionMutation = useDeleteSessionMutation();
+  const createTimesheetMutation = useCreateTimesheetEntryMutation();
+  const updateTimesheetMutation = useUpdateTimesheetEntryMutation();
+  const deleteTimesheetMutation = useDeleteTimesheetEntryMutation();
   const [settingsDraft, setSettingsDraft] = useState({
     name: '',
     slug: '',
@@ -153,6 +184,10 @@ export function ProjectDetailsPage() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SessionDraft>(emptySessionDraft);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
+  const [timesheetEditorOpen, setTimesheetEditorOpen] = useState(false);
+  const [editingTimesheetId, setEditingTimesheetId] = useState<string | null>(null);
+  const [timesheetDraft, setTimesheetDraft] = useState<TimesheetDraft>(emptyTimesheetDraft);
+  const [timesheetMessage, setTimesheetMessage] = useState<string | null>(null);
 
   if (project.isLoading) return <LoadingState label="Loading project…" />;
   if (project.error || !project.data) {
@@ -688,6 +723,231 @@ export function ProjectDetailsPage() {
                                 })
                                 .catch((err: unknown) => {
                                   setSessionMessage(
+                                    err instanceof Error ? err.message : 'Delete failed',
+                                  );
+                                });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {tab === 'Timesheet' && (
+        <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Timesheet</h2>
+              <p className="muted">
+                Capture billable time with start, end, and notes. MCP tools{' '}
+                <code>start_timesheet</code> / <code>end_timesheet</code> write here for the open
+                Cursor project.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setEditingTimesheetId(null);
+                setTimesheetDraft(emptyTimesheetDraft());
+                setTimesheetMessage(null);
+                setTimesheetEditorOpen(true);
+              }}
+            >
+              Add entry
+            </button>
+          </div>
+
+          {timesheetEditorOpen ? (
+            <form
+              className="panel stack"
+              noValidate
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setTimesheetMessage(null);
+                if (!isCompleteLocalDateTime(timesheetDraft.startedAtLocal)) {
+                  setTimesheetMessage('Started date and time are required.');
+                  return;
+                }
+                const startedAtUtc = fromLocalInputValue(timesheetDraft.startedAtLocal);
+                if (!startedAtUtc) {
+                  setTimesheetMessage('Started date and time are invalid.');
+                  return;
+                }
+                if (
+                  timesheetDraft.endedAtLocal.trim() &&
+                  !isCompleteLocalDateTime(timesheetDraft.endedAtLocal)
+                ) {
+                  setTimesheetMessage('Ended date and time are incomplete.');
+                  return;
+                }
+                const endedAtUtc = fromLocalInputValue(timesheetDraft.endedAtLocal);
+                if (
+                  endedAtUtc &&
+                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                ) {
+                  setTimesheetMessage('Ended time cannot be earlier than started time.');
+                  return;
+                }
+                const payload = {
+                  startedAtUtc,
+                  endedAtUtc,
+                  notes: timesheetDraft.notes.trim() || null,
+                };
+                try {
+                  if (editingTimesheetId) {
+                    await updateTimesheetMutation.mutateAsync({
+                      id: editingTimesheetId,
+                      body: {
+                        startedAtUtc,
+                        endedAtUtc,
+                        notes: payload.notes,
+                      },
+                    });
+                    setTimesheetMessage('Timesheet entry updated.');
+                  } else {
+                    await createTimesheetMutation.mutateAsync({
+                      projectId: detail.id,
+                      body: payload,
+                    });
+                    setTimesheetMessage('Timesheet entry created.');
+                  }
+                  setTimesheetEditorOpen(false);
+                  setEditingTimesheetId(null);
+                  await timesheet.refetch();
+                } catch (err) {
+                  setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
+                }
+              }}
+            >
+              <h3>{editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}</h3>
+              <div className="field-row">
+                <DateTimeField
+                  id="timesheet-started"
+                  label="Started"
+                  required
+                  value={timesheetDraft.startedAtLocal}
+                  onChange={(startedAtLocal) =>
+                    setTimesheetDraft((s) => ({ ...s, startedAtLocal }))
+                  }
+                />
+                <DateTimeField
+                  id="timesheet-ended"
+                  label="Ended"
+                  value={timesheetDraft.endedAtLocal}
+                  onChange={(endedAtLocal) => setTimesheetDraft((s) => ({ ...s, endedAtLocal }))}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="timesheet-notes">Notes</label>
+                <textarea
+                  id="timesheet-notes"
+                  value={timesheetDraft.notes}
+                  onChange={(e) => setTimesheetDraft((s) => ({ ...s, notes: e.target.value }))}
+                  rows={4}
+                />
+              </div>
+              <div className="row-actions">
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
+                >
+                  {createTimesheetMutation.isPending || updateTimesheetMutation.isPending
+                    ? 'Saving…'
+                    : editingTimesheetId
+                      ? 'Save entry'
+                      : 'Create entry'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setTimesheetEditorOpen(false);
+                    setEditingTimesheetId(null);
+                    setTimesheetMessage(null);
+                  }}
+                >
+                  Cancel
+                </button>
+                {timesheetMessage ? <span className="form-message">{timesheetMessage}</span> : null}
+              </div>
+            </form>
+          ) : null}
+
+          {!timesheetEditorOpen && timesheetMessage ? (
+            <p className="form-message">{timesheetMessage}</p>
+          ) : null}
+
+          {timesheet.isLoading ? (
+            <LoadingState />
+          ) : timesheet.error ? (
+            <ErrorState
+              message={timesheet.error instanceof Error ? timesheet.error.message : 'Failed'}
+            />
+          ) : !Array.isArray(timesheet.data) || timesheet.data.length === 0 ? (
+            <EmptyState message="No timesheet entries in the selected range." />
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Notes</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {timesheet.data.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{formatDateTime(entry.startedAtUtc)}</td>
+                      <td>{formatDateTime(entry.endedAtUtc)}</td>
+                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={entry.isOpen ? 'Open' : 'Closed'}
+                          tone={entry.isOpen ? 'success' : 'neutral'}
+                        />
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-secondary"
+                            onClick={() => {
+                              setEditingTimesheetId(entry.id);
+                              setTimesheetDraft(draftFromTimesheet(entry));
+                              setTimesheetMessage(null);
+                              setTimesheetEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-danger"
+                            disabled={deleteTimesheetMutation.isPending}
+                            onClick={() => {
+                              const ok = window.confirm('Delete this timesheet entry?');
+                              if (!ok) return;
+                              void deleteTimesheetMutation
+                                .mutateAsync({ id: entry.id, projectId: detail.id })
+                                .then(() => {
+                                  setTimesheetMessage(null);
+                                  return timesheet.refetch();
+                                })
+                                .catch((err: unknown) => {
+                                  setTimesheetMessage(
                                     err instanceof Error ? err.message : 'Delete failed',
                                   );
                                 });

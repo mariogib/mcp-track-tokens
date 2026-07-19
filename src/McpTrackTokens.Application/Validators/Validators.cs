@@ -216,6 +216,69 @@ public sealed class UpdateSessionRequestValidator : AbstractValidator<UpdateSess
 }
 
 /// <summary>
+/// Validates dashboard create-timesheet requests.
+/// </summary>
+public sealed class CreateTimesheetEntryRequestValidator : AbstractValidator<CreateTimesheetEntryRequest>
+{
+    public CreateTimesheetEntryRequestValidator()
+    {
+        RuleFor(x => x.Notes).MaximumLength(8000).When(x => x.Notes is not null);
+        RuleFor(x => x.EndedAtUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc!.Value)
+            .When(x => x.StartedAtUtc.HasValue && x.EndedAtUtc.HasValue)
+            .WithMessage("endedAtUtc cannot be earlier than startedAtUtc.");
+    }
+}
+
+/// <summary>
+/// Validates dashboard update-timesheet requests.
+/// </summary>
+public sealed class UpdateTimesheetEntryRequestValidator : AbstractValidator<UpdateTimesheetEntryRequest>
+{
+    public UpdateTimesheetEntryRequestValidator()
+    {
+        RuleFor(x => x.StartedAtUtc)
+            .Must(ts => ts != default)
+            .WithMessage("startedAtUtc is required.");
+        RuleFor(x => x.Notes).MaximumLength(8000).When(x => x.Notes is not null);
+        RuleFor(x => x.EndedAtUtc)
+            .GreaterThanOrEqualTo(x => x.StartedAtUtc)
+            .When(x => x.EndedAtUtc.HasValue)
+            .WithMessage("endedAtUtc cannot be earlier than startedAtUtc.");
+    }
+}
+
+/// <summary>
+/// Validates MCP/API start-timesheet requests.
+/// </summary>
+public sealed class StartTimesheetRequestValidator : AbstractValidator<StartTimesheetRequest>
+{
+    public StartTimesheetRequestValidator()
+    {
+        RuleFor(x => x.Notes).MaximumLength(8000).When(x => x.Notes is not null);
+        RuleFor(x => x.WorkspacePath).MaximumLength(1024).When(x => x.WorkspacePath is not null);
+        RuleFor(x => x.RepositoryPath).MaximumLength(1024).When(x => x.RepositoryPath is not null);
+        RuleFor(x => x.RemoteUrl).MaximumLength(1024).When(x => x.RemoteUrl is not null);
+        RuleFor(x => x.ActiveFilePath).MaximumLength(1024).When(x => x.ActiveFilePath is not null);
+    }
+}
+
+/// <summary>
+/// Validates MCP/API end-timesheet requests.
+/// </summary>
+public sealed class EndTimesheetRequestValidator : AbstractValidator<EndTimesheetRequest>
+{
+    public EndTimesheetRequestValidator()
+    {
+        RuleFor(x => x.AppendNotes).MaximumLength(8000).When(x => x.AppendNotes is not null);
+        RuleFor(x => x.WorkspacePath).MaximumLength(1024).When(x => x.WorkspacePath is not null);
+        RuleFor(x => x.RepositoryPath).MaximumLength(1024).When(x => x.RepositoryPath is not null);
+        RuleFor(x => x.RemoteUrl).MaximumLength(1024).When(x => x.RemoteUrl is not null);
+        RuleFor(x => x.ActiveFilePath).MaximumLength(1024).When(x => x.ActiveFilePath is not null);
+    }
+}
+
+/// <summary>
 /// Validates Cursor usage import requests.
 /// </summary>
 public sealed class ImportCursorUsageRequestDtoValidator : AbstractValidator<ImportCursorUsageRequestDto>

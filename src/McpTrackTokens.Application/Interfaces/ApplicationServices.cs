@@ -127,6 +127,49 @@ public interface ISessionManagementService
 }
 
 /// <summary>
+/// Manual timesheet start/end and dashboard CRUD.
+/// </summary>
+public interface ITimesheetManagementService
+{
+    Task<TimesheetEntryDto> StartAsync(
+        StartTimesheetRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetEntryDto> EndAsync(
+        EndTimesheetRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TimesheetEntryDto>> ListForProjectAsync(
+        Guid projectId,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetEntryDto> CreateForProjectAsync(
+        Guid projectId,
+        CreateTimesheetEntryRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetEntryDto> UpdateAsync(
+        Guid entryId,
+        UpdateTimesheetEntryRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Guid entryId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// When a new editor session is created: if the project has no open timesheet,
+    /// closes every other open timesheet (notes append <c>autoclosed</c>) and creates
+    /// one for this project (notes = <c>autocreated</c>).
+    /// Does not call <see cref="IUnitOfWork.SaveChangesAsync"/>.
+    /// </summary>
+    Task EnsureAutocreatedOpenEntryAsync(
+        Guid projectId,
+        DateTimeOffset? startedAtUtc = null,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Builds deterministic report DTOs.
 /// </summary>
 public interface IReportService
