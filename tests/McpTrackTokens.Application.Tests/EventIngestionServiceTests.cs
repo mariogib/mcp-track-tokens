@@ -19,6 +19,7 @@ public sealed class EventIngestionServiceTests
     private readonly IProjectDetectionService _projectDetection = Substitute.For<IProjectDetectionService>();
     private readonly IActivityWindowService _activityWindows = Substitute.For<IActivityWindowService>();
     private readonly IContentEncryptionService _encryption = Substitute.For<IContentEncryptionService>();
+    private readonly ITimesheetManagementService _timesheets = Substitute.For<ITimesheetManagementService>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
     private readonly TrackingOptions _options = new()
     {
@@ -35,6 +36,7 @@ public sealed class EventIngestionServiceTests
             _projectDetection,
             _activityWindows,
             _encryption,
+            _timesheets,
             _unitOfWork,
             new IngestEventDtoValidator(),
             Microsoft.Extensions.Options.Options.Create(_options));

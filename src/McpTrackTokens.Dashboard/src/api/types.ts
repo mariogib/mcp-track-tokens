@@ -234,6 +234,7 @@ export interface UnallocatedItemDto {
   externalRequestId?: string | null;
   totalTokens?: number | null;
   reportedCost?: number | null;
+  calculatedTokenCost?: number;
   currency?: string | null;
   suggestedProjectName?: string | null;
   suggestedProjectId?: string | null;
@@ -250,6 +251,7 @@ export interface UnallocatedUsageReport {
   toUtc: string;
   count: number;
   totalCost: number;
+  totalCalculatedTokenCost?: number;
   currency: string;
   items: UnallocatedItemDto[];
 }
@@ -266,6 +268,7 @@ export interface ImportedUsageItemDto {
   cachedInputTokens?: number | null;
   totalTokens: number;
   reportedCost: number;
+  calculatedTokenCost?: number;
   currency: string;
   requestCount?: number | null;
   importBatchId?: string | null;
@@ -282,6 +285,7 @@ export interface ImportedUsageReport {
   count: number;
   totalTokens: number;
   totalCost: number;
+  totalCalculatedTokenCost?: number;
   currency: string;
   items: ImportedUsageItemDto[];
 }
@@ -453,6 +457,7 @@ export interface UsageAttributionRow {
   model?: string | null;
   provider?: string | null;
   allocatedCost: number;
+  calculatedTokenCost?: number;
   allocationPercentage: number;
   allocatedTotalTokens: number;
   attributionMethod: string;

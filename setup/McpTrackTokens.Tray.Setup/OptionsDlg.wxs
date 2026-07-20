@@ -5,7 +5,7 @@
       <Dialog Id="OptionsDlg" Width="370" Height="270" Title="[ProductName] Setup">
         <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44" TabSkip="no" Text="WixUI_Bmp_Banner" />
         <Control Id="Title" Type="Text" X="15" Y="6" Width="340" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Setup options" />
-        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="20" Transparent="yes" NoPrefix="yes" Text="Choose startup and editor integrations." />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="20" Transparent="yes" NoPrefix="yes" Text="The host deploys API, MCP, and dashboard locally. Choose extras below." />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
 
         <Control Id="AutostartCheck"
@@ -16,7 +16,7 @@
                  Height="17"
                  Property="STARTWITHWINDOWS"
                  CheckBoxValue="1"
-                 Text="Start MCP Track Tokens when Windows starts" />
+                 Text="Start host (API + MCP + dashboard) when Windows starts" />
 
         <Control Id="HooksCheck"
                  Type="CheckBox"
@@ -44,7 +44,7 @@
                  Y="150"
                  Width="320"
                  Height="70"
-                 Text="Hooks copy scripts into ~/.cursor and write an example config (merge into Cursor hooks manually). The extension installs from the bundled VSIX when cursor or code is on PATH." />
+                 Text="Core install includes HTTP API, HTTP MCP (http://127.0.0.1:5187/mcp), SQLite, and the web/desktop dashboard. Setup also writes an MCP example config (merge into Cursor mcp.json manually). Hooks/extension are optional." />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />

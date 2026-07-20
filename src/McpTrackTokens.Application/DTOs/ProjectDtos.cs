@@ -288,6 +288,9 @@ public sealed record UnallocatedItemDto
 
     public decimal? ReportedCost { get; init; }
 
+    /// <summary>Rate-card calculated cost for this usage row.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
     public string? Currency { get; init; }
 
     public string? SuggestedProjectName { get; init; }

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { StatusBadge } from '../components/StatusBadge';
@@ -18,9 +18,14 @@ const navItems: NavEntry[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/projects', label: 'Projects' },
   { to: '/reports', label: 'Reports' },
-  { to: '/imports', label: 'Imports' },
-  { to: '/imported-usage', label: 'Imported usage' },
-  { to: '/reconciliation', label: 'Reconciliation' },
+  {
+    label: 'Imports',
+    children: [
+      { to: '/imports', label: 'Upload & map', end: true },
+      { to: '/imported-usage', label: 'Imported usage' },
+      { to: '/reconciliation', label: 'Reconciliation' },
+    ],
+  },
   { to: '/settings', label: 'Settings' },
   {
     label: 'Help',
@@ -30,6 +35,17 @@ const navItems: NavEntry[] = [
     ],
   },
 ];
+
+function pathMatchesLeaf(pathname: string, leaf: NavLeaf): boolean {
+  if (leaf.end) {
+    return pathname === leaf.to;
+  }
+  return pathname === leaf.to || pathname.startsWith(`${leaf.to}/`);
+}
+
+function groupHasActiveChild(pathname: string, group: NavGroup): boolean {
+  return group.children.some((child) => pathMatchesLeaf(pathname, child));
+}
 
 function titleForPath(pathname: string): { title: string; subtitle: string } {
   if (pathname.startsWith('/projects/')) {
@@ -59,6 +75,60 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
   }
 }
 
+function NavGroupItem({
+  group,
+  pathname,
+  onNavigate,
+}: {
+  group: NavGroup;
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  const childActive = groupHasActiveChild(pathname, group);
+  const [expanded, setExpanded] = useState(childActive);
+
+  useEffect(() => {
+    if (childActive) {
+      setExpanded(true);
+    }
+  }, [childActive]);
+
+  const panelId = `nav-group-${group.label.toLowerCase().replace(/\s+/g, '-')}`;
+
+  return (
+    <li className={`nav-group${expanded ? ' nav-group--open' : ''}${childActive ? ' nav-group--active' : ''}`}>
+      <button
+        type="button"
+        className="nav-group-toggle"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span>{group.label}</span>
+        <span className="nav-group-chevron" aria-hidden="true">
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+      {expanded ? (
+        <ul id={panelId} className="nav-sublist">
+          {group.children.map((child) => (
+            <li key={child.to}>
+              <NavLink
+                to={child.to}
+                end={child.end}
+                className={({ isActive }) => `nav-link nav-sublink${isActive ? ' active' : ''}`}
+                onClick={onNavigate}
+              >
+                {child.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
 export function AppLayout() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,30 +155,28 @@ export function AppLayout() {
 
       <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Primary">
         <div className="brand">
-          <span className="brand-mark">MCP Track Tokens</span>
-          <span className="brand-sub">Local AI activity & cost</span>
+          <img
+            className="brand-logo"
+            src="/brand-icon.png"
+            alt=""
+            width={40}
+            height={40}
+          />
+          <div className="brand-text">
+            <span className="brand-mark">MCP Track Tokens</span>
+            <span className="brand-sub">Local AI activity & cost</span>
+          </div>
         </div>
         <nav id="primary-nav">
           <ul className="nav-list">
             {navItems.map((item) =>
               isNavGroup(item) ? (
-                <li key={item.label} className="nav-group">
-                  <div className="nav-group-label">{item.label}</div>
-                  <ul className="nav-sublist">
-                    {item.children.map((child) => (
-                      <li key={child.to}>
-                        <NavLink
-                          to={child.to}
-                          end={child.end}
-                          className={({ isActive }) => `nav-link nav-sublink${isActive ? ' active' : ''}`}
-                          onClick={() => setMenuOpen(false)}
-                        >
-                          {child.label}
-                        </NavLink>
-                      </li>
-                    ))}
-                  </ul>
-                </li>
+                <NavGroupItem
+                  key={item.label}
+                  group={item}
+                  pathname={location.pathname}
+                  onNavigate={() => setMenuOpen(false)}
+                />
               ) : (
                 <li key={item.to}>
                   <NavLink

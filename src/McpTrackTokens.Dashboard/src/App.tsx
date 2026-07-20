@@ -3,6 +3,8 @@ import { AppLayout } from './layout/AppLayout';
 import { OverviewPage } from './pages/OverviewPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailsPage } from './pages/ProjectDetailsPage';
+import { ProjectChartDetailPage } from './pages/ProjectChartDetailPage';
+import { OverviewChartDetailPage } from './pages/OverviewChartDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ImportsPage } from './pages/ImportsPage';
 import { ImportedUsagePage } from './pages/ImportedUsagePage';
@@ -17,8 +19,13 @@ export default function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<OverviewPage />} />
+        <Route path="charts/:chartKey" element={<OverviewChartDetailPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailsPage />} />
+        <Route
+          path="projects/:projectId/charts/:chartKey"
+          element={<ProjectChartDetailPage />}
+        />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="imports" element={<ImportsPage />} />
         <Route path="imported-usage" element={<ImportedUsagePage />} />

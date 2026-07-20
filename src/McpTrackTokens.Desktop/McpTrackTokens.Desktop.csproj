@@ -9,6 +9,7 @@
     <RootNamespace>McpTrackTokens.Desktop</RootNamespace>
     <AssemblyName>mcp-track-tokens-desktop</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <Description>Desktop WebView shell for the MCP Track Tokens dashboard (no browser chrome).</Description>
     <WebView2EnableWpfSupport>false</WebView2EnableWpfSupport>
@@ -31,6 +32,10 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Content Include="Assets\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

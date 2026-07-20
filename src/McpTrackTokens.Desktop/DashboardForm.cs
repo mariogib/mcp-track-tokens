@@ -32,7 +32,7 @@ internal sealed class DashboardForm : Form
         Height = 800;
         MinimumSize = new Size(900, 600);
         ShowIcon = true;
-        Icon = SystemIcons.Application;
+        Icon = AppIconLoader.Load();
 
         Controls.Add(_webView);
         Controls.Add(_status);

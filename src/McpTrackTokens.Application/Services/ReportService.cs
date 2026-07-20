@@ -524,14 +524,20 @@ public sealed class ReportService : IReportService
             projects.TryGetValue(attribution.ProjectId ?? Guid.Empty, out var project);
             var usage = await _usage.GetByIdAsync(attribution.ExternalUsageRecordId, cancellationToken)
                 .ConfigureAwait(false);
+            decimal rowCalculated = 0m;
             if (usage is not null &&
-                attribution.AttributionMethod != AttributionMethod.Unallocated &&
                 CursorTokenCostCalculator.ResolveRate(rates, usage.Model) is { } rate)
             {
-                calculatedTokenCost += CursorTokenCostCalculator.Estimate(
+                rowCalculated = CursorTokenCostCalculator.Estimate(
                     usage,
-                    attribution.AllocationPercentage,
+                    attribution.AllocationPercentage > 0m
+                        ? attribution.AllocationPercentage
+                        : 100m,
                     rate);
+                if (attribution.AttributionMethod != AttributionMethod.Unallocated)
+                {
+                    calculatedTokenCost += rowCalculated;
+                }
             }
 
             rows.Add(new UsageAttributionRow
@@ -545,6 +551,7 @@ public sealed class ReportService : IReportService
                 Model = usage?.Model,
                 Provider = usage?.Provider?.ToString(),
                 AllocatedCost = attribution.AllocatedCost,
+                CalculatedTokenCost = rowCalculated,
                 AllocationPercentage = attribution.AllocationPercentage,
                 AllocatedTotalTokens = attribution.AllocatedTotalTokens,
                 AttributionMethod = attribution.AttributionMethod.ToString(),
@@ -582,30 +589,36 @@ public sealed class ReportService : IReportService
         var rates = _options.CursorTokenRates.Count > 0
             ? _options.CursorTokenRates
             : CursorTokenCostCalculator.CreateDefaultRates();
-        var items = records.Select(r => new UnallocatedItemDto
-        {
-            Id = r.Id,
-            Kind = "usage",
-            TimestampUtc = r.TimestampUtc,
-            Model = r.Model,
-            Provider = r.Provider?.ToString(),
-            TotalTokens = AttributionEngine.ResolveTotalTokens(r),
-            ReportedCost = r.ReportedCost ?? 0m,
-            Currency = r.Currency ?? _options.DefaultCurrency,
-            Reason = "No attribution row with a project."
-        }).ToList();
-        var calculatedTokenCost = records.Sum(r =>
+        var items = records.Select(r =>
         {
             var rate = CursorTokenCostCalculator.ResolveRate(rates, r.Model);
-            return rate is null ? 0m : CursorTokenCostCalculator.Estimate(r, 100m, rate);
-        });
+            var calculated = rate is null
+                ? 0m
+                : CursorTokenCostCalculator.Estimate(r, 100m, rate);
+            return new UnallocatedItemDto
+            {
+                Id = r.Id,
+                Kind = "usage",
+                TimestampUtc = r.TimestampUtc,
+                Model = r.Model,
+                Provider = r.Provider?.ToString(),
+                TotalTokens = AttributionEngine.ResolveTotalTokens(r),
+                ReportedCost = r.ReportedCost ?? 0m,
+                CalculatedTokenCost = calculated,
+                Currency = r.Currency ?? _options.DefaultCurrency,
+                Reason = "No attribution row with a project."
+            };
+        }).ToList();
 
         return new UnallocatedUsageReport
         {
             FromUtc = fromUtc,
             ToUtc = toUtc,
             Count = items.Count,
-            TotalCalculatedTokenCost = Math.Round(calculatedTokenCost, 4, MidpointRounding.AwayFromZero),
+            TotalCalculatedTokenCost = Math.Round(
+                items.Sum(i => i.CalculatedTokenCost),
+                4,
+                MidpointRounding.AwayFromZero),
             TotalCost = items.Sum(i => i.ReportedCost ?? 0m),
             Currency = _options.DefaultCurrency,
             Items = items
@@ -640,10 +653,18 @@ public sealed class ReportService : IReportService
             ordered = ordered.Take(limit.Value);
         }
 
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
+
         var items = ordered.Select(r =>
         {
             attributionByUsage.TryGetValue(r.Id, out var attribution);
             projects.TryGetValue(attribution?.ProjectId ?? Guid.Empty, out var project);
+            var rate = CursorTokenCostCalculator.ResolveRate(rates, r.Model);
+            var calculated = rate is null
+                ? 0m
+                : CursorTokenCostCalculator.Estimate(r, 100m, rate);
             return new ImportedUsageItemDto
             {
                 Id = r.Id,
@@ -657,6 +678,7 @@ public sealed class ReportService : IReportService
                 CachedInputTokens = r.CachedInputTokens,
                 TotalTokens = AttributionEngine.ResolveTotalTokens(r),
                 ReportedCost = r.ReportedCost ?? 0m,
+                CalculatedTokenCost = calculated,
                 Currency = r.Currency ?? _options.DefaultCurrency,
                 RequestCount = r.RequestCount,
                 ImportBatchId = r.ImportBatchId,
@@ -675,6 +697,10 @@ public sealed class ReportService : IReportService
             Count = items.Count,
             TotalTokens = items.Sum(i => i.TotalTokens),
             TotalCost = items.Sum(i => i.ReportedCost),
+            TotalCalculatedTokenCost = Math.Round(
+                items.Sum(i => i.CalculatedTokenCost),
+                4,
+                MidpointRounding.AwayFromZero),
             Currency = _options.DefaultCurrency,
             Items = items
         };

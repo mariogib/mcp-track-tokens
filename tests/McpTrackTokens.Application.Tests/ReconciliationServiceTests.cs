@@ -1,6 +1,8 @@
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
+using McpTrackTokens.Application.Options;
 using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
@@ -13,7 +15,8 @@ public sealed class ReconciliationServiceTests
     private readonly IExternalUsageRepository _usage = Substitute.For<IExternalUsageRepository>();
     private readonly IAttributionEngine _engine = Substitute.For<IAttributionEngine>();
 
-    private ReconciliationService CreateSut() => new(_usage, _engine);
+    private ReconciliationService CreateSut() =>
+        new(_usage, _engine, Microsoft.Extensions.Options.Options.Create(new TrackingOptions()));
 
     [Fact]
     public async Task RunAsync_LinksAllEligibleUsages_AllowingSamePrompt()

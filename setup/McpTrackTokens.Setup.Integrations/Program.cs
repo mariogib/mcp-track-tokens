@@ -5,9 +5,9 @@ namespace McpTrackTokens.Setup.Integrations;
 
 /// <summary>
 /// Per-user post-install helper invoked by the MSI (impersonated).
-/// Installs Cursor hooks scaffold and/or the VS Code/Cursor VSIX.
-/// Does not rewrite editor settings.json / hooks.json merges beyond the
-/// same scaffold the CLI install-cursor-hooks command writes.
+/// Always writes local-host / HTTP MCP example config for the tray-deployed
+/// API + MCP + dashboard stack. Optionally installs Cursor hooks scaffold
+/// and/or the VS Code/Cursor VSIX. Does not silently rewrite editor settings.
 /// </summary>
 internal static class Program
 {
@@ -21,6 +21,9 @@ internal static class Program
                 Console.Error.WriteLine("Missing or invalid --install-dir.");
                 return 0;
             }
+
+            WriteHostDeployNotes(options.InstallDir);
+            WriteHttpMcpExample(options.InstallDir);
 
             if (options.InstallHooks)
             {
@@ -41,6 +44,83 @@ internal static class Program
             TryWriteNote("integrations-error.txt", ex.ToString());
             return 0;
         }
+    }
+
+    private static void WriteHostDeployNotes(string installDir)
+    {
+        var text =
+            """
+            MCP Track Tokens — Windows host deploy
+            ======================================
+
+            The tray host (mcp-track-tokens-tray.exe) runs the full local stack:
+
+              • HTTP API          http://127.0.0.1:5187/api/v1
+              • HTTP MCP server   http://127.0.0.1:5187/mcp
+              • Web dashboard     http://127.0.0.1:5187/  (wwwroot)
+              • Desktop shell     Desktop\mcp-track-tokens-desktop.exe
+              • SQLite database   %USERPROFILE%\.mcp-track-tokens\mcp-track-tokens.db
+
+            Start "MCP Track Tokens Host" from the Start Menu (or enable Start with Windows).
+            Open the dashboard from the tray menu or the Desktop shortcut.
+
+            Point Cursor MCP at the HTTP endpoint (see mcp.http.example.json next to this
+            file under LocalAppData\MCP Track Tokens, and under integrations\ in the
+            install folder). Do not also run a separate stdio MCP against a different DB.
+            """;
+
+        var installNote = Path.Combine(installDir, "WINDOWS-HOST.txt");
+        try
+        {
+            File.WriteAllText(installNote, text.Replace("\n", Environment.NewLine), Encoding.UTF8);
+        }
+        catch
+        {
+            // best-effort
+        }
+
+        TryWriteNote("WINDOWS-HOST.txt", text);
+        Console.WriteLine($"Wrote host deploy notes for {installDir}");
+    }
+
+    private static void WriteHttpMcpExample(string installDir)
+    {
+        const string defaultKey = "OverTheMoon";
+        var json =
+            $$"""
+            {
+              "mcpServers": {
+                "mcp-track-tokens": {
+                  "url": "http://127.0.0.1:5187/mcp",
+                  "headers": {
+                    "Authorization": "Bearer {{defaultKey}}"
+                  }
+                }
+              }
+            }
+            """;
+
+        // Prefer bundled sample from the MSI integrations payload when present.
+        var bundled = Path.Combine(installDir, "integrations", "mcp.http.json");
+        var payload = File.Exists(bundled)
+            ? File.ReadAllText(bundled)
+            : json;
+
+        var cursorDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".cursor");
+        Directory.CreateDirectory(cursorDir);
+        var cursorExample = Path.Combine(cursorDir, "mcp-track-tokens.mcp.http.example.json");
+        File.WriteAllText(cursorExample, payload.Trim() + Environment.NewLine, Encoding.UTF8);
+
+        TryWriteNote("mcp.http.example.json", payload.Trim() + Environment.NewLine);
+        Console.WriteLine($"Wrote HTTP MCP example to {cursorExample}");
+        TryWriteNote(
+            "mcp-http-config.txt",
+            $"HTTP MCP example written to:{Environment.NewLine}{cursorExample}{Environment.NewLine}{Environment.NewLine}" +
+            "Merge into your Cursor mcp.json manually. Start the tray host first so " +
+            "http://127.0.0.1:5187/mcp is available. Default API key matches the tray host (OverTheMoon) " +
+            "unless you changed MCP_TRACK_TOKENS_API_KEY.");
     }
 
     private static void InstallHooks(string installDir)

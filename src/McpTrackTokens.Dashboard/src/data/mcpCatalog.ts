@@ -30,6 +30,11 @@ export const MCP_TOOLS: McpToolHelp[] = [
     group: 'Projects / sessions',
   },
   {
+    name: 'list_projects',
+    description: 'Lists all registered projects with the path to each project root.',
+    group: 'Projects / sessions',
+  },
+  {
     name: 'start_project_session',
     description: 'Starts a tracked editor session for a project.',
     group: 'Projects / sessions',

@@ -3,94 +3,97 @@
   --font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  --bg-base: #f3f1eb;
-  --bg-elevated: #fffcf7;
-  --bg-muted: #e8e4db;
-  --bg-sidebar: #1d2a24;
-  --bg-sidebar-hover: #274036;
-  --bg-overlay: rgba(20, 28, 24, 0.45);
+  /* Cool silver surfaces with midnight navy sidebar — matches LunarQ icon. */
+  --bg-base: #eef2f7;
+  --bg-elevated: #f7f9fc;
+  --bg-muted: #dde5f0;
+  --bg-sidebar: #05070a;
+  --bg-sidebar-hover: #121826;
+  --bg-overlay: rgba(5, 7, 10, 0.48);
 
-  --text-primary: #1a2420;
-  --text-secondary: #4d5a53;
-  --text-inverse: #f5f2ea;
-  --text-muted: #6e7a72;
+  --text-primary: #0c121c;
+  --text-secondary: #3d4a5c;
+  --text-inverse: #e8eef8;
+  --text-muted: #66768c;
 
-  --border: #d5d0c5;
-  --border-strong: #b8b2a4;
+  --border: #c8d2e0;
+  --border-strong: #9aabc0;
 
-  --accent: #1f6f5b;
-  --accent-hover: #185749;
-  --accent-soft: rgba(31, 111, 91, 0.12);
-  --accent-contrast: #ffffff;
+  --accent: #3d5f8a;
+  --accent-hover: #2f4c72;
+  --accent-soft: rgba(61, 95, 138, 0.14);
+  --accent-contrast: #f7f9fc;
 
-  --success: #2f7d4a;
-  --success-soft: rgba(47, 125, 74, 0.14);
+  --success: #2f7d5a;
+  --success-soft: rgba(47, 125, 90, 0.14);
   --warning: #9a6b12;
   --warning-soft: rgba(154, 107, 18, 0.16);
   --danger: #a33b2d;
   --danger-soft: rgba(163, 59, 45, 0.14);
-  --info: #2a5f7a;
-  --info-soft: rgba(42, 95, 122, 0.14);
+  --info: #4a6f98;
+  --info-soft: rgba(74, 111, 152, 0.14);
 
-  --shadow-sm: 0 1px 2px rgba(26, 36, 32, 0.06);
-  --shadow-md: 0 8px 24px rgba(26, 36, 32, 0.08);
+  --shadow-sm: 0 1px 2px rgba(12, 18, 28, 0.06);
+  --shadow-md: 0 8px 24px rgba(12, 18, 28, 0.1);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
 
-  --chart-1: #1f6f5b;
-  --chart-2: #2a5f7a;
-  --chart-3: #9a6b12;
+  --chart-1: #3d5f8a;
+  --chart-2: #6b849f;
+  --chart-3: #889bb3;
   --chart-4: #a33b2d;
-  --chart-5: #5b6b4a;
+  --chart-5: #4a7a68;
 
   --atmosphere:
-    radial-gradient(1200px 600px at 10% -10%, rgba(31, 111, 91, 0.14), transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, rgba(42, 95, 122, 0.12), transparent 50%),
-    linear-gradient(180deg, #f7f4ee 0%, #efebe3 100%);
+    radial-gradient(1100px 560px at 8% -8%, rgba(136, 155, 179, 0.22), transparent 55%),
+    radial-gradient(900px 480px at 100% 0%, rgba(61, 95, 138, 0.14), transparent 52%),
+    linear-gradient(180deg, #f4f7fb 0%, #e8eef6 100%);
 }
 
 [data-theme='dark'] {
-  --bg-base: #121816;
-  --bg-elevated: #1a221e;
-  --bg-muted: #24302a;
-  --bg-sidebar: #0d1210;
-  --bg-sidebar-hover: #17201c;
-  --bg-overlay: rgba(0, 0, 0, 0.55);
+  /* Midnight navy / near-black — same field as the icon background. */
+  --bg-base: #070a10;
+  --bg-elevated: #101722;
+  --bg-muted: #1a2332;
+  --bg-sidebar: #05070a;
+  --bg-sidebar-hover: #121826;
+  --bg-overlay: rgba(0, 0, 0, 0.6);
 
-  --text-primary: #eef2ef;
-  --text-secondary: #b4bfb8;
-  --text-inverse: #eef2ef;
-  --text-muted: #85928b;
+  --text-primary: #eef2f8;
+  --text-secondary: #a8b6c9;
+  --text-inverse: #eef2f8;
+  --text-muted: #7d8ea3;
 
-  --border: #2d3a34;
-  --border-strong: #405049;
+  --border: #243041;
+  --border-strong: #3a4d66;
 
-  --accent: #3fb89a;
-  --accent-hover: #56c9ac;
-  --accent-soft: rgba(63, 184, 154, 0.16);
-  --accent-contrast: #0d1210;
+  /* Icy moon-edge silver-blue accent. */
+  --accent: #9eb4d0;
+  --accent-hover: #c5d2e4;
+  --accent-soft: rgba(158, 180, 208, 0.16);
+  --accent-contrast: #05070a;
 
-  --success: #4fbf74;
-  --success-soft: rgba(79, 191, 116, 0.16);
+  --success: #5cb88a;
+  --success-soft: rgba(92, 184, 138, 0.16);
   --warning: #d4a84b;
   --warning-soft: rgba(212, 168, 75, 0.16);
   --danger: #e07263;
   --danger-soft: rgba(224, 114, 99, 0.16);
-  --info: #6aa8c8;
-  --info-soft: rgba(106, 168, 200, 0.16);
+  --info: #8aa6c6;
+  --info-soft: rgba(138, 166, 198, 0.16);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.45);
 
-  --chart-1: #3fb89a;
-  --chart-2: #6aa8c8;
-  --chart-3: #d4a84b;
+  --chart-1: #9eb4d0;
+  --chart-2: #6b849f;
+  --chart-3: #c5d2e4;
   --chart-4: #e07263;
-  --chart-5: #9bb07f;
+  --chart-5: #5cb88a;
 
   --atmosphere:
-    radial-gradient(1000px 560px at 0% 0%, rgba(63, 184, 154, 0.12), transparent 55%),
-    radial-gradient(800px 480px at 100% 10%, rgba(106, 168, 200, 0.1), transparent 50%),
-    linear-gradient(180deg, #141b18 0%, #101512 100%);
+    radial-gradient(1000px 560px at 0% 0%, rgba(158, 180, 208, 0.1), transparent 55%),
+    radial-gradient(800px 480px at 100% 8%, rgba(26, 35, 50, 0.9), transparent 50%),
+    linear-gradient(180deg, #0a0e16 0%, #05070a 100%);
 }

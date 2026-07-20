@@ -21,7 +21,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var openItem = new ToolStripMenuItem("Open dashboard", null, (_, _) => OpenDashboard());
         var exitItem = new ToolStripMenuItem("Exit", null, OnExitClicked);
 
-        var menu = new ContextMenuStrip();
+        var menu = new ThemedContextMenuStrip();
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(openItem);
@@ -29,10 +29,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_stopItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
+        menu.RefreshTheme();
 
         _tray = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = AppIconLoader.Load(),
             Visible = true,
             Text = "MCP Track Tokens",
             ContextMenuStrip = menu

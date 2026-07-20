@@ -87,6 +87,15 @@ export function ImportedUsagePage() {
               {formatCurrency(report?.totalCost ?? 0, report?.currency ?? 'USD')}
             </div>
           </article>
+          <article className="metric-card">
+            <div className="label">Calculated cost</div>
+            <div className="value">
+              {formatCurrency(
+                report?.totalCalculatedTokenCost ?? 0,
+                report?.currency ?? 'USD',
+              )}
+            </div>
+          </article>
         </div>
 
         {allocateAll.isError ? (
@@ -122,6 +131,7 @@ export function ImportedUsagePage() {
                     <th>Model</th>
                     <th>Total Tokens</th>
                     <th>Cost</th>
+                    <th>Calculated cost</th>
                     <th>Reason</th>
                   </tr>
                 </thead>
@@ -132,6 +142,7 @@ export function ImportedUsagePage() {
                       <td>{row.model ?? '—'}</td>
                       <td>{formatNumber(row.allocatedTotalTokens)}</td>
                       <td>{formatCurrency(row.allocatedCost)}</td>
+                      <td>{formatCurrency(row.calculatedTokenCost ?? 0)}</td>
                       <td>{row.reason ?? '—'}</td>
                     </tr>
                   ))}
@@ -156,6 +167,7 @@ export function ImportedUsagePage() {
                   <th>Model</th>
                   <th>Total Tokens</th>
                   <th>Cost</th>
+                  <th>Calculated cost</th>
                   <th>Project</th>
                   <th>Prompt link</th>
                   <th>Method</th>
@@ -169,6 +181,7 @@ export function ImportedUsagePage() {
                     <td>{item.model ?? '—'}</td>
                     <td>{formatNumber(item.totalTokens)}</td>
                     <td>{formatCurrency(item.reportedCost, item.currency)}</td>
+                    <td>{formatCurrency(item.calculatedTokenCost ?? 0, item.currency)}</td>
                     <td>
                       {item.projectId ? (
                         <Link to={`/projects/${item.projectId}`}>{item.projectName ?? item.projectId}</Link>

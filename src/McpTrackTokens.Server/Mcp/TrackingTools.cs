@@ -65,6 +65,31 @@ public static class TrackingTools
     }
 
     /// <summary>
+    /// Lists registered projects with their root repository path.
+    /// </summary>
+    [McpServerTool(Name = "list_projects"), Description("Lists all registered projects with the path to each project root.")]
+    public static async Task<string> ListProjects(
+        IProjectRepository projects,
+        [Description("When true, only active projects are returned. Defaults to true.")] bool activeOnly = true,
+        CancellationToken cancellationToken = default)
+    {
+        var list = await projects.ListAsync(activeOnly, cancellationToken).ConfigureAwait(false);
+        var rows = list
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(p => new
+            {
+                id = p.Id,
+                name = p.Name,
+                slug = p.Slug,
+                clientName = p.ClientName,
+                rootPath = p.PrimaryRepositoryPath,
+                isActive = p.IsActive
+            })
+            .ToList();
+        return Serialize(rows);
+    }
+
+    /// <summary>
     /// Starts a tracked editor session for a project.
     /// </summary>
     [McpServerTool(Name = "start_project_session"), Description("Starts a tracked editor session for a project.")]

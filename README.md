@@ -540,6 +540,7 @@ All tools are registered in `src/McpTrackTokens.Server/Mcp/TrackingTools.cs` (se
 | --- | --- |
 | `register_project` | Register a project for tracking |
 | `detect_current_project` | Detect project from workspace/repo context |
+| `list_projects` | List registered projects with root path |
 | `start_project_session` | Start an editor session |
 | `stop_project_session` | Stop a session |
 | `get_tracking_status` | Current tracking snapshot |

@@ -164,7 +164,9 @@ public static class TrackingHost
 
         if (enableHttpMcp)
         {
-            mcpBuilder.WithHttpTransport(options => options.Stateless = true);
+            // Stateful Streamable HTTP so Cursor can open GET /mcp as an SSE stream.
+            // Stateless mode has no server→client channel; Cursor then fails discovery.
+            mcpBuilder.WithHttpTransport(options => options.Stateless = false);
         }
 
         var app = builder.Build();

@@ -27,6 +27,7 @@ import {
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
+import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { MetricCard } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
@@ -217,18 +218,41 @@ export function ProjectDetailsPage() {
     tokens: row.totalTokens ?? 0,
   }));
 
+  // When Cursor exports are Included/Free, reported totalAiCost is $0 — use rate-card
+  // calculatedTokenCost so overview charts stay meaningful.
+  const reportedTotalCost = cost.data?.totalAiCost ?? 0;
+  const calculatedTotalCost = cost.data?.calculatedTokenCost ?? 0;
+  const displayTotalCost = reportedTotalCost > 0 ? reportedTotalCost : calculatedTotalCost;
+  const usingCalculatedCost = reportedTotalCost <= 0 && calculatedTotalCost > 0;
+
+  const tokenTotalForDays = byDayChronological.reduce(
+    (sum, row) => sum + (row.totalTokens ?? 0),
+    0,
+  );
   const costByDay = byDayChronological.map((row) => {
-    const modelShare = (cost.data?.totalAiCost ?? 0) / Math.max(byDayChronological.length, 1);
+    const share =
+      tokenTotalForDays > 0
+        ? ((row.totalTokens ?? 0) / tokenTotalForDays) * displayTotalCost
+        : displayTotalCost / Math.max(byDayChronological.length, 1);
     return {
       day: formatDay(row.day),
-      cost: Number(modelShare.toFixed(2)),
+      cost: Number(share.toFixed(2)),
     };
   });
 
-  const modelSeries = (cost.data?.byModel ?? []).map((m) => ({
-    name: m.name || 'Unknown',
-    cost: m.usageBasedCost + m.subscriptionAllocation,
-  }));
+  const modelCostSeries = (cost.data?.byModel ?? [])
+    .map((m) => ({
+      name: m.name || 'Unknown',
+      cost: m.usageBasedCost + m.subscriptionAllocation,
+    }))
+    .filter((m) => m.cost > 0);
+
+  const modelCalculatedSeries = (cost.data?.byModel ?? [])
+    .map((m) => ({
+      name: m.name || 'Unknown',
+      cost: m.calculatedTokenCost ?? 0,
+    }))
+    .filter((m) => m.cost > 0);
 
   const branchSeries = (activity.data?.byBranch ?? []).map((b) => ({
     name: b.name || '(none)',
@@ -305,37 +329,73 @@ export function ProjectDetailsPage() {
               )}
             />
             <MetricCard
-              label="Total AI cost"
+              label={usingCalculatedCost ? 'Calculated token cost' : 'Total AI cost'}
               value={formatCurrency(
-                cost.data?.totalAiCost ?? detail.cost?.totalAiCost,
+                displayTotalCost || (detail.cost?.totalAiCost ?? 0),
                 cost.data?.currency ?? detail.currency,
               )}
+              hint={
+                usingCalculatedCost
+                  ? 'Reported usage cost is $0 — showing Settings rate card × tokens'
+                  : undefined
+              }
             />
           </div>
           <div className="chart-grid">
-            <ChartCard title="Prompts / day">
+            <ChartCard
+              title="Prompts / day"
+              to={projectId ? projectChartPath(projectId, 'prompts-day') : undefined}
+            >
               <DailyLineChart data={daySeries} xKey="day" yKey="prompts" yLabel="Prompts" />
             </ChartCard>
-            <ChartCard title="Active time / day (minutes)">
+            <ChartCard
+              title="Active time / day (minutes)"
+              to={projectId ? projectChartPath(projectId, 'active-time-day') : undefined}
+            >
               <DailyLineChart data={daySeries} xKey="day" yKey="activeMinutes" yLabel="Minutes" />
             </ChartCard>
-            <ChartCard title="Agent duration / day (minutes)">
+            <ChartCard
+              title="Agent duration / day (minutes)"
+              to={projectId ? projectChartPath(projectId, 'agent-duration-day') : undefined}
+            >
               <DailyLineChart data={daySeries} xKey="day" yKey="agentMinutes" yLabel="Minutes" />
             </ChartCard>
-            <ChartCard title="Cost / day">
+            <ChartCard
+              title={usingCalculatedCost ? 'Calculated cost / day' : 'Cost / day'}
+              to={projectId ? projectChartPath(projectId, 'cost-day') : undefined}
+            >
               <DailyLineChart data={costByDay} xKey="day" yKey="cost" yLabel="Cost" />
             </ChartCard>
-            <ChartCard title="Tokens / day">
+            <ChartCard
+              title="Tokens / day"
+              to={projectId ? projectChartPath(projectId, 'tokens-day') : undefined}
+            >
               <DailyLineChart data={daySeries} xKey="day" yKey="tokens" yLabel="Tokens" />
             </ChartCard>
-            <ChartCard title="Cost by model">
-              {modelSeries.length ? (
-                <NamedPieChart data={modelSeries} valueKey="cost" />
+            <ChartCard
+              title="Cost by model"
+              to={projectId ? projectChartPath(projectId, 'cost-by-model') : undefined}
+            >
+              {modelCostSeries.length ? (
+                <NamedPieChart data={modelCostSeries} valueKey="cost" />
               ) : (
-                <EmptyState message="No model cost data in range." />
+                <EmptyState message="No reported model cost in range (usage/subscription)." />
               )}
             </ChartCard>
-            <ChartCard title="Activity by branch">
+            <ChartCard
+              title="Calculated cost by model"
+              to={projectId ? projectChartPath(projectId, 'calculated-cost-by-model') : undefined}
+            >
+              {modelCalculatedSeries.length ? (
+                <NamedPieChart data={modelCalculatedSeries} valueKey="cost" />
+              ) : (
+                <EmptyState message="No calculated token cost in range." />
+              )}
+            </ChartCard>
+            <ChartCard
+              title="Activity by branch"
+              to={projectId ? projectChartPath(projectId, 'activity-by-branch') : undefined}
+            >
               {branchSeries.length ? (
                 <NamedBarChart data={branchSeries} valueKey="prompts" valueLabel="Prompts" />
               ) : (

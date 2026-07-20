@@ -92,6 +92,16 @@ export function ImportsPage() {
               Tokens &gt; 0 is imported (cost may be Included / 0). Re-importing the same file adds
               any missing rows.
             </p>
+            <p>
+              <a
+                href="https://cursor.com/dashboard/usage"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open Cursor usage dashboard
+              </a>
+              {' '}to export your usage file.
+            </p>
           </div>
           <StatusBadge
             label={step === 'upload' ? 'Step 1' : step === 'map' ? 'Step 2' : 'Complete'}

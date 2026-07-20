@@ -132,6 +132,7 @@ export function ReconciliationPage() {
                     <th>Model</th>
                     <th>Total Tokens</th>
                     <th>Cost</th>
+                    <th>Calculated cost</th>
                     <th>Reason</th>
                   </tr>
                 </thead>
@@ -142,6 +143,7 @@ export function ReconciliationPage() {
                       <td>{row.model ?? '—'}</td>
                       <td>{formatNumber(row.allocatedTotalTokens)}</td>
                       <td>{formatCurrency(row.allocatedCost)}</td>
+                      <td>{formatCurrency(row.calculatedTokenCost ?? 0)}</td>
                       <td>{row.reason ?? '—'}</td>
                     </tr>
                   ))}
@@ -163,6 +165,7 @@ export function ReconciliationPage() {
                   <th>Model</th>
                   <th>Total Tokens</th>
                   <th>Cost</th>
+                  <th>Calculated cost</th>
                   <th>Candidate</th>
                   <th>Confidence</th>
                 </tr>
@@ -175,6 +178,9 @@ export function ReconciliationPage() {
                     <td>{item.model ?? '—'}</td>
                     <td>{formatNumber(item.totalTokens ?? 0)}</td>
                     <td>{formatCurrency(item.reportedCost ?? 0, item.currency ?? 'USD')}</td>
+                    <td>
+                      {formatCurrency(item.calculatedTokenCost ?? 0, item.currency ?? 'USD')}
+                    </td>
                     <td>{item.suggestedProjectName ?? '—'}</td>
                     <td>
                       <StatusBadge
@@ -210,6 +216,7 @@ export function ReconciliationPage() {
                   <th>Confidence</th>
                   <th>Total Tokens</th>
                   <th>Cost</th>
+                  <th>Calculated cost</th>
                   <th>Prompt</th>
                   <th>Reason</th>
                 </tr>
@@ -225,6 +232,7 @@ export function ReconciliationPage() {
                     </td>
                     <td>{formatNumber(row.allocatedTotalTokens)}</td>
                     <td>{formatCurrency(row.allocatedCost)}</td>
+                    <td>{formatCurrency(row.calculatedTokenCost ?? 0)}</td>
                     <td className="mono">{row.activityEventId ?? '—'}</td>
                     <td>{row.reason ?? '—'}</td>
                   </tr>

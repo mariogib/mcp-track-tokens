@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -33,11 +34,45 @@ const tooltipContentStyle = {
 const tooltipLabelStyle = { color: 'var(--text-primary)' };
 const tooltipItemStyle = { color: 'var(--text-primary)' };
 
-export function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+export function ChartCard({
+  title,
+  children,
+  to,
+  height = 220,
+}: {
+  title: string;
+  children: ReactNode;
+  to?: string;
+  height?: number;
+}) {
+  const body = (
+    <>
+      <div className="chart-card-header">
+        <h3>{title}</h3>
+        {to ? (
+          <span className="chart-card-open">
+            Open analysis
+            <span className="chart-card-open-arrow" aria-hidden="true">
+              →
+            </span>
+          </span>
+        ) : null}
+      </div>
+      <div style={{ width: '100%', height }}>{children}</div>
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className="chart-card chart-card--link" aria-label={`${title} — open analysis`}>
+        {body}
+      </Link>
+    );
+  }
+
   return (
     <section className="chart-card" aria-label={title}>
-      <h3>{title}</h3>
-      <div style={{ width: '100%', height: 220 }}>{children}</div>
+      {body}
     </section>
   );
 }
@@ -49,15 +84,24 @@ export function DailyLineChart({
   xKey,
   yKey,
   yLabel,
+  onPointClick,
 }: {
   data: SeriesPoint[];
   xKey: string;
   yKey: string;
   yLabel?: string;
+  onPointClick?: (point: SeriesPoint) => void;
 }) {
   return (
     <ResponsiveContainer>
-      <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <LineChart
+        data={data}
+        margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+        onClick={(state) => {
+          const payload = state?.activePayload?.[0]?.payload as SeriesPoint | undefined;
+          if (payload && onPointClick) onPointClick(payload);
+        }}
+      >
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
         <XAxis dataKey={xKey} tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
         <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} width={48} />
@@ -72,7 +116,8 @@ export function DailyLineChart({
           name={yLabel ?? yKey}
           stroke="var(--chart-1)"
           strokeWidth={2}
-          dot={false}
+          dot={!!onPointClick}
+          activeDot={onPointClick ? { r: 5 } : undefined}
         />
       </LineChart>
     </ResponsiveContainer>
@@ -84,11 +129,13 @@ export function NamedBarChart({
   nameKey = 'name',
   valueKey,
   valueLabel,
+  onItemClick,
 }: {
   data: SeriesPoint[];
   nameKey?: string;
   valueKey: string;
   valueLabel?: string;
+  onItemClick?: (name: string) => void;
 }) {
   return (
     <ResponsiveContainer>
@@ -101,7 +148,17 @@ export function NamedBarChart({
           labelStyle={tooltipLabelStyle}
           itemStyle={tooltipItemStyle}
         />
-        <Bar dataKey={valueKey} name={valueLabel ?? valueKey} fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
+        <Bar
+          dataKey={valueKey}
+          name={valueLabel ?? valueKey}
+          fill="var(--chart-2)"
+          radius={[4, 4, 0, 0]}
+          cursor={onItemClick ? 'pointer' : undefined}
+          onClick={(entry) => {
+            const name = String((entry as SeriesPoint)?.[nameKey] ?? '');
+            if (name && onItemClick) onItemClick(name);
+          }}
+        />
       </BarChart>
     </ResponsiveContainer>
   );
@@ -111,15 +168,29 @@ export function NamedPieChart({
   data,
   nameKey = 'name',
   valueKey,
+  onItemClick,
 }: {
   data: SeriesPoint[];
   nameKey?: string;
   valueKey: string;
+  onItemClick?: (name: string) => void;
 }) {
   return (
     <ResponsiveContainer>
       <PieChart>
-        <Pie data={data} dataKey={valueKey} nameKey={nameKey} innerRadius={48} outerRadius={80} paddingAngle={2}>
+        <Pie
+          data={data}
+          dataKey={valueKey}
+          nameKey={nameKey}
+          innerRadius={48}
+          outerRadius={80}
+          paddingAngle={2}
+          cursor={onItemClick ? 'pointer' : undefined}
+          onClick={(_, index) => {
+            const name = String(data[index]?.[nameKey] ?? '');
+            if (name && onItemClick) onItemClick(name);
+          }}
+        >
           {data.map((_, index) => (
             <Cell key={String(index)} fill={COLORS[index % COLORS.length]} />
           ))}

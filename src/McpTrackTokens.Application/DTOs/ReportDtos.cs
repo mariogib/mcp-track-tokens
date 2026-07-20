@@ -333,6 +333,9 @@ public sealed record UsageAttributionRow
 
     public decimal AllocatedCost { get; init; }
 
+    /// <summary>Rate-card calculated cost for the attributed (or unallocated) usage share.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
     public decimal AllocationPercentage { get; init; }
 
     public long AllocatedTotalTokens { get; init; }
@@ -392,6 +395,9 @@ public sealed record ImportedUsageItemDto
 
     public decimal ReportedCost { get; init; }
 
+    /// <summary>Rate-card calculated cost for this usage row.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
     public string Currency { get; init; } = "USD";
 
     public int? RequestCount { get; init; }
@@ -423,6 +429,9 @@ public sealed record ImportedUsageReport
     public long TotalTokens { get; init; }
 
     public decimal TotalCost { get; init; }
+
+    /// <summary>Rate-card calculated cost across imported usage rows.</summary>
+    public decimal TotalCalculatedTokenCost { get; init; }
 
     public string Currency { get; init; } = "USD";
 

@@ -9,6 +9,7 @@
     <RootNamespace>McpTrackTokens.Tray</RootNamespace>
     <AssemblyName>mcp-track-tokens-tray</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <Description>Windows system tray host for MCP Track Tokens (API, database, MCP, dashboard).</Description>
     <!-- Server and tray both ship appsettings.json; keep the tray file. -->
@@ -17,6 +18,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\McpTrackTokens.Server\McpTrackTokens.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

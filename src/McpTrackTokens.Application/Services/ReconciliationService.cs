@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
+using McpTrackTokens.Application.Options;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 
@@ -14,13 +16,16 @@ public sealed class ReconciliationService : IReconciliationService
 {
     private readonly IExternalUsageRepository _usage;
     private readonly IAttributionEngine _engine;
+    private readonly TrackingOptions _options;
 
     public ReconciliationService(
         IExternalUsageRepository usage,
-        IAttributionEngine engine)
+        IAttributionEngine engine,
+        IOptions<TrackingOptions> options)
     {
         _usage = usage;
         _engine = engine;
+        _options = options.Value;
     }
 
     /// <inheritdoc />
@@ -33,6 +38,10 @@ public sealed class ReconciliationService : IReconciliationService
         var records = await _usage
             .ListAsync(request.FromUtc, request.ToUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
+
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
 
         var attributions = new List<UsageAttributionRow>();
         var allocated = 0;
@@ -87,7 +96,7 @@ public sealed class ReconciliationService : IReconciliationService
                     allocated++;
                 }
 
-                attributions.Add(Map(row, record.TimestampUtc, record.Model, record.Provider?.ToString()));
+                attributions.Add(Map(row, record, rates));
             }
 
             if (!request.DryRun)
@@ -120,23 +129,33 @@ public sealed class ReconciliationService : IReconciliationService
 
     private static UsageAttributionRow Map(
         UsageAttribution attribution,
-        DateTimeOffset timestampUtc,
-        string? model,
-        string? provider)
-        => new()
+        ExternalUsageRecord record,
+        IReadOnlyList<CursorModelTokenRate> rates)
+    {
+        var rate = CursorTokenCostCalculator.ResolveRate(rates, record.Model);
+        var percentage = attribution.AllocationPercentage > 0m
+            ? attribution.AllocationPercentage
+            : 100m;
+        var calculated = rate is null
+            ? 0m
+            : CursorTokenCostCalculator.Estimate(record, percentage, rate);
+
+        return new()
         {
             UsageRecordId = attribution.ExternalUsageRecordId,
             AttributionId = attribution.Id,
             ProjectId = attribution.ProjectId,
             ActivityEventId = attribution.ActivityEventId,
-            TimestampUtc = timestampUtc,
-            Model = model,
-            Provider = provider,
+            TimestampUtc = record.TimestampUtc,
+            Model = record.Model,
+            Provider = record.Provider?.ToString(),
             AllocatedCost = attribution.AllocatedCost,
+            CalculatedTokenCost = calculated,
             AllocationPercentage = attribution.AllocationPercentage,
             AllocatedTotalTokens = attribution.AllocatedTotalTokens,
             AttributionMethod = attribution.AttributionMethod.ToString(),
             Confidence = attribution.Confidence.ToString(),
             Reason = attribution.Reason
         };
+    }
 }

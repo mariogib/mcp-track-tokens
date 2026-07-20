@@ -11,7 +11,7 @@
       Compressed="yes">
 
     <SummaryInformation
-        Description="Installs the MCP Track Tokens Windows tray host, desktop dashboard, Cursor hooks, and VS Code/Cursor extension."
+        Description="Deploys the MCP Track Tokens local stack on Windows: HTTP API, HTTP MCP server (/mcp), SQLite database, web dashboard (wwwroot), desktop shell, plus optional Cursor hooks and VS Code/Cursor extension."
         Manufacturer="MCP Track Tokens" />
 
     <MajorUpgrade
@@ -57,8 +57,9 @@
                   Return="ignore" />
 
     <InstallExecuteSequence>
+      <!-- Always run: writes HTTP MCP example config; optionally installs hooks/extension. -->
       <Custom Action="InstallIntegrations" After="InstallFiles"
-              Condition="NOT REMOVE AND (INSTALLHOOKS = 1 OR INSTALLEXTENSION = 1)" />
+              Condition="NOT REMOVE" />
     </InstallExecuteSequence>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -153,7 +154,7 @@
     <Component Id="StartMenuTrayShortcut" Directory="ApplicationProgramsFolder" Guid="F6C2D9E5-7A1B-423F-E4D6-5B0A2C8F3E79">
       <Shortcut Id="StartMenuTrayAppShortcut"
                 Name="MCP Track Tokens Host"
-                Description="Start the MCP Track Tokens tray host (API, database, MCP)"
+                Description="Start the local host: HTTP API, MCP (/mcp), SQLite, and dashboard at http://127.0.0.1:5187"
                 Target="[INSTALLFOLDER]mcp-track-tokens-tray.exe"
                 WorkingDirectory="INSTALLFOLDER"
                 Icon="AppIcon" />

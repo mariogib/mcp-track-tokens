@@ -138,6 +138,14 @@ foreach ($name in @('package.json', 'README.md', 'example-hooks-config.json')) {
 }
 Copy-Item -Force $vsix.FullName (Join-Path $integrationsContentDir $vsix.Name)
 
+$mcpHttpSample = Join-Path $root 'samples\cursor-config\mcp.http.json'
+if (Test-Path $mcpHttpSample) {
+    # Bundled for post-install helper + user reference (HTTP MCP against the tray host).
+    $sampleText = Get-Content -Raw $mcpHttpSample
+    $sampleText = $sampleText -replace 'YOUR_API_KEY', 'OverTheMoon'
+    Set-Content -Path (Join-Path $integrationsContentDir 'mcp.http.json') -Value $sampleText -NoNewline
+}
+
 Invoke-AppPublish -Project $trayProject -Output $publishDir -Label 'tray'
 Invoke-AppPublish -Project $desktopProject -Output $desktopPublishDir -Label 'desktop'
 Invoke-AppPublish -Project $helperProject -Output $integrationsHelperDir -Label 'integrations helper' -SingleFile
