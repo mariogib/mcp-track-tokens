@@ -67,7 +67,7 @@ public static class TrackingResources
     /// Usage attribution summary.
     /// </summary>
     [McpServerResource(UriTemplate = "mcp-track-tokens://usage", Name = "Usage", MimeType = "application/json")]
-    [Description("Usage attribution for the last 30 days.")]
+    [Description("Usage attribution for the last 30 days, including totalCalculatedTokenCost (rate card × attributed tokens).")]
     public static async Task<string> Usage(IReportService reports, CancellationToken cancellationToken = default)
     {
         var to = DateTimeOffset.UtcNow;
@@ -79,7 +79,7 @@ public static class TrackingResources
     /// Model cost summary.
     /// </summary>
     [McpServerResource(UriTemplate = "mcp-track-tokens://cost", Name = "Cost", MimeType = "application/json")]
-    [Description("Model cost summary for the last 30 days.")]
+    [Description("Model cost summary for the last 30 days, including calculatedTokenCost from the Settings rate card.")]
     public static async Task<string> Cost(IReportService reports, CancellationToken cancellationToken = default)
     {
         var to = DateTimeOffset.UtcNow;
@@ -103,7 +103,7 @@ public static class TrackingResources
     /// Unallocated usage items.
     /// </summary>
     [McpServerResource(UriTemplate = "mcp-track-tokens://unallocated/usage", Name = "Unallocated Usage", MimeType = "application/json")]
-    [Description("Unallocated usage for the last 30 days.")]
+    [Description("Unallocated usage for the last 30 days, including totalCalculatedTokenCost from the Settings rate card.")]
     public static async Task<string> UnallocatedUsage(IReportService reports, CancellationToken cancellationToken = default)
     {
         var to = DateTimeOffset.UtcNow;

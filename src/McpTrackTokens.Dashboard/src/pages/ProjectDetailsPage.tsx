@@ -1067,6 +1067,11 @@ export function ProjectDetailsPage() {
                   label="Total AI cost"
                   value={formatCurrency(cost.data?.totalAiCost, cost.data?.currency)}
                 />
+                <MetricCard
+                  label="Calculated token cost"
+                  value={formatCurrency(cost.data?.calculatedTokenCost ?? 0, cost.data?.currency)}
+                  hint="Settings rate card × attributed tokens"
+                />
               </div>
               <div className="table-wrap">
                 <table className="data">
@@ -1075,6 +1080,7 @@ export function ProjectDetailsPage() {
                       <th>Model</th>
                       <th>Usage cost</th>
                       <th>Subscription</th>
+                      <th>Token cost</th>
                       <th>Prompts</th>
                     </tr>
                   </thead>
@@ -1084,6 +1090,7 @@ export function ProjectDetailsPage() {
                         <td>{m.name}</td>
                         <td>{formatCurrency(m.usageBasedCost, cost.data?.currency)}</td>
                         <td>{formatCurrency(m.subscriptionAllocation, cost.data?.currency)}</td>
+                        <td>{formatCurrency(m.calculatedTokenCost ?? 0, cost.data?.currency)}</td>
                         <td>{formatNumber(m.promptCount)}</td>
                       </tr>
                     ))}

@@ -248,7 +248,7 @@ public static class TrackingTools
     /// <summary>
     /// Returns project AI cost separating usage and subscription allocation.
     /// </summary>
-    [McpServerTool(Name = "get_project_cost"), Description("Returns project AI cost separating usage and subscription allocation.")]
+    [McpServerTool(Name = "get_project_cost"), Description("Returns project AI cost separating usage, subscription allocation, and calculatedTokenCost (rate card × attributed tokens).")]
     public static async Task<string> GetProjectCost(
         IReportService reports,
         [Description("Project id")] Guid projectId,
@@ -266,7 +266,7 @@ public static class TrackingTools
     /// <summary>
     /// Returns imported usage attribution for a project or overall.
     /// </summary>
-    [McpServerTool(Name = "get_usage_summary"), Description("Returns imported usage attribution for a project or overall.")]
+    [McpServerTool(Name = "get_usage_summary"), Description("Returns imported usage attribution for a project or overall, including totalCalculatedTokenCost.")]
     public static async Task<string> GetUsageSummary(
         IReportService reports,
         [Description("Optional project id")] Guid? projectId = null,
@@ -317,7 +317,7 @@ public static class TrackingTools
     /// <summary>
     /// Lists imported usage that is not allocated to a project.
     /// </summary>
-    [McpServerTool(Name = "get_unallocated_usage"), Description("Lists imported usage that is not allocated to a project.")]
+    [McpServerTool(Name = "get_unallocated_usage"), Description("Lists imported usage that is not allocated to a project, including totalCalculatedTokenCost.")]
     public static async Task<string> GetUnallocatedUsage(
         IReportService reports,
         [Description("Range start UTC")] DateTimeOffset? fromUtc = null,
@@ -436,7 +436,7 @@ public static class TrackingTools
     /// <summary>
     /// Generates a client billing summary across projects.
     /// </summary>
-    [McpServerTool(Name = "generate_client_billing_summary"), Description("Generates a client billing summary across projects.")]
+    [McpServerTool(Name = "generate_client_billing_summary"), Description("Generates a client billing summary across projects, including calculatedTokenCost (rate card × attributed tokens).")]
     public static async Task<string> GenerateClientBillingSummary(
         IReportService reports,
         [Description("Client name")] string clientName,
@@ -468,7 +468,7 @@ public static class TrackingTools
     /// <summary>
     /// Compares editor activity metrics across the date range.
     /// </summary>
-    [McpServerTool(Name = "compare_projects"), Description("Compares editor activity metrics across the date range.")]
+    [McpServerTool(Name = "compare_projects"), Description("Compares editor activity and model cost metrics (including calculatedTokenCost) across the date range.")]
     public static async Task<string> CompareProjects(
         IReportService reports,
         [Description("Range start UTC")] DateTimeOffset? fromUtc = null,

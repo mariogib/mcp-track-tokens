@@ -76,17 +76,20 @@ export const MCP_TOOLS: McpToolHelp[] = [
   },
   {
     name: 'compare_projects',
-    description: 'Compares editor activity metrics across the date range.',
+    description:
+      'Compares editor activity and model cost metrics (including calculatedTokenCost) across the date range.',
     group: 'Status & activity',
   },
   {
     name: 'get_project_cost',
-    description: 'Returns project AI cost separating usage and subscription allocation.',
+    description:
+      'Returns project AI cost separating usage, subscription allocation, and calculatedTokenCost (rate card × attributed tokens).',
     group: 'Cost & usage',
   },
   {
     name: 'get_usage_summary',
-    description: 'Returns imported usage attribution for a project or overall.',
+    description:
+      'Returns imported usage attribution for a project or overall, including totalCalculatedTokenCost.',
     group: 'Cost & usage',
   },
   {
@@ -101,7 +104,8 @@ export const MCP_TOOLS: McpToolHelp[] = [
   },
   {
     name: 'get_unallocated_usage',
-    description: 'Lists imported usage that is not allocated to a project.',
+    description:
+      'Lists imported usage that is not allocated to a project, including totalCalculatedTokenCost.',
     group: 'Cost & usage',
   },
   {
@@ -126,7 +130,8 @@ export const MCP_TOOLS: McpToolHelp[] = [
   },
   {
     name: 'generate_client_billing_summary',
-    description: 'Generates a client billing summary across projects.',
+    description:
+      'Generates a client billing summary across projects, including calculatedTokenCost (rate card × attributed tokens).',
     group: 'Cost & usage',
   },
   {
@@ -161,12 +166,14 @@ export const MCP_RESOURCES: McpResourceHelp[] = [
   {
     name: 'Usage',
     uri: 'mcp-track-tokens://usage',
-    description: 'Usage attribution for the last 30 days.',
+    description:
+      'Usage attribution for the last 30 days, including totalCalculatedTokenCost (rate card × attributed tokens).',
   },
   {
     name: 'Cost',
     uri: 'mcp-track-tokens://cost',
-    description: 'Model cost summary for the last 30 days.',
+    description:
+      'Model cost summary for the last 30 days, including calculatedTokenCost from the Settings rate card.',
   },
   {
     name: 'Unallocated Activity',
@@ -176,7 +183,8 @@ export const MCP_RESOURCES: McpResourceHelp[] = [
   {
     name: 'Unallocated Usage',
     uri: 'mcp-track-tokens://unallocated/usage',
-    description: 'Unallocated usage for the last 30 days.',
+    description:
+      'Unallocated usage for the last 30 days, including totalCalculatedTokenCost from the Settings rate card.',
   },
 ];
 
@@ -188,17 +196,20 @@ export const MCP_PROMPTS: McpPromptHelp[] = [
   },
   {
     name: 'analyse_project_ai_cost',
-    description: 'Analyse project AI cost including usage and subscription allocation.',
+    description:
+      'Analyse project AI cost including usage, subscription allocation, and calculated token cost.',
     args: 'project, dateRange?',
   },
   {
     name: 'create_client_usage_report',
-    description: 'Create a client-facing AI usage and billing summary.',
+    description:
+      'Create a client-facing AI usage and billing summary including calculated token cost.',
     args: 'clientName, dateRange?',
   },
   {
     name: 'compare_project_efficiency',
-    description: 'Compare efficiency across editors/projects using activity and cost metrics.',
+    description:
+      'Compare efficiency across editors/projects using activity, AI cost, and calculated token cost.',
     args: 'dateRange?',
   },
   {
@@ -213,7 +224,8 @@ export const MCP_PROMPTS: McpPromptHelp[] = [
   },
   {
     name: 'prepare_monthly_ai_cost_report',
-    description: 'Prepare a monthly AI cost report across projects.',
+    description:
+      'Prepare a monthly AI cost report across projects including calculated token cost.',
     args: 'year, month',
   },
 ];

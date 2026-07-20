@@ -218,6 +218,20 @@ public sealed class ReportService : IReportService
         var unallocatedCost = await GetProjectUnallocatedCostAsync(projectId, fromUtc, toUtc, cancellationToken)
             .ConfigureAwait(false);
         var byModel = BuildProjectModelCostRows(allocated, usageById, subscription);
+        var tokenCost = await GetProjectTokenCostEstimateAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
+        var tokenCostByModel = tokenCost.ByModel.ToDictionary(
+            r => r.Model,
+            r => r.EstimatedCost,
+            StringComparer.OrdinalIgnoreCase);
+        byModel = byModel
+            .Select(row => row with
+            {
+                CalculatedTokenCost = tokenCostByModel.TryGetValue(row.Name, out var estimated)
+                    ? estimated
+                    : 0m
+            })
+            .ToList();
 
         return new ProjectCostReport
         {
@@ -236,6 +250,8 @@ public sealed class ReportService : IReportService
             OtherProviderCost = otherProvider,
             UnallocatedCost = unallocatedCost,
             TotalAiCost = usageBasedCursor + subscription + otherProvider,
+            CalculatedTokenCost = tokenCost.EstimatedCost,
+            HasRateCard = tokenCost.HasRateCard,
             ByModel = byModel
         };
     }
@@ -428,6 +444,11 @@ public sealed class ReportService : IReportService
             SubscriptionAllocation = projectReports.Sum(p => p.SubscriptionAllocation),
             OtherProviderCost = projectReports.Sum(p => p.OtherProviderCost),
             TotalAiCost = projectReports.Sum(p => p.TotalAiCost),
+            CalculatedTokenCost = Math.Round(
+                projectReports.Sum(p => p.CalculatedTokenCost),
+                4,
+                MidpointRounding.AwayFromZero),
+            HasRateCard = projectReports.Any(p => p.HasRateCard),
             Projects = projectReports
         };
     }
@@ -493,12 +514,26 @@ public sealed class ReportService : IReportService
         var projects = (await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false))
             .ToDictionary(p => p.Id);
 
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
         var rows = new List<UsageAttributionRow>();
+        decimal calculatedTokenCost = 0m;
         foreach (var attribution in attributions)
         {
             projects.TryGetValue(attribution.ProjectId ?? Guid.Empty, out var project);
             var usage = await _usage.GetByIdAsync(attribution.ExternalUsageRecordId, cancellationToken)
                 .ConfigureAwait(false);
+            if (usage is not null &&
+                attribution.AttributionMethod != AttributionMethod.Unallocated &&
+                CursorTokenCostCalculator.ResolveRate(rates, usage.Model) is { } rate)
+            {
+                calculatedTokenCost += CursorTokenCostCalculator.Estimate(
+                    usage,
+                    attribution.AllocationPercentage,
+                    rate);
+            }
+
             rows.Add(new UsageAttributionRow
             {
                 UsageRecordId = attribution.ExternalUsageRecordId,
@@ -530,6 +565,7 @@ public sealed class ReportService : IReportService
             Rows = rows,
             TotalAllocatedCost = rows.Sum(r => r.AllocatedCost),
             TotalUnallocatedCost = unallocated.Sum(u => u.ReportedCost ?? 0m),
+            TotalCalculatedTokenCost = Math.Round(calculatedTokenCost, 4, MidpointRounding.AwayFromZero),
             Currency = _options.DefaultCurrency
         };
     }
@@ -543,6 +579,9 @@ public sealed class ReportService : IReportService
     {
         var records = await _usage.ListUnallocatedAsync(fromUtc, toUtc, limit, cancellationToken)
             .ConfigureAwait(false);
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
         var items = records.Select(r => new UnallocatedItemDto
         {
             Id = r.Id,
@@ -555,12 +594,18 @@ public sealed class ReportService : IReportService
             Currency = r.Currency ?? _options.DefaultCurrency,
             Reason = "No attribution row with a project."
         }).ToList();
+        var calculatedTokenCost = records.Sum(r =>
+        {
+            var rate = CursorTokenCostCalculator.ResolveRate(rates, r.Model);
+            return rate is null ? 0m : CursorTokenCostCalculator.Estimate(r, 100m, rate);
+        });
 
         return new UnallocatedUsageReport
         {
             FromUtc = fromUtc,
             ToUtc = toUtc,
             Count = items.Count,
+            TotalCalculatedTokenCost = Math.Round(calculatedTokenCost, 4, MidpointRounding.AwayFromZero),
             TotalCost = items.Sum(i => i.ReportedCost ?? 0m),
             Currency = _options.DefaultCurrency,
             Items = items
@@ -684,6 +729,10 @@ public sealed class ReportService : IReportService
                 UnallocatedCost = (await GetUnallocatedUsageAsync(fromUtc, toUtc, cancellationToken: cancellationToken)
                     .ConfigureAwait(false)).TotalCost,
                 TotalAiCost = projectCosts.Sum(p => p.TotalAiCost),
+                CalculatedTokenCost = Math.Round(
+                    projectCosts.Sum(p => p.CalculatedTokenCost),
+                    4,
+                    MidpointRounding.AwayFromZero),
                 Currency = _options.DefaultCurrency,
                 FromUtc = fromUtc,
                 ToUtc = toUtc
@@ -734,6 +783,9 @@ public sealed class ReportService : IReportService
             .Where(a => a.ProjectId is not null)
             .Select(a => a.ExternalUsageRecordId)
             .ToHashSet();
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
 
         var models = usage
             .GroupBy(u => u.Model ?? "unknown")
@@ -743,6 +795,11 @@ public sealed class ReportService : IReportService
                     .Where(a => g.Any(u => u.Id == a.ExternalUsageRecordId))
                     .Sum(a => a.AllocatedCost);
                 var unallocated = g.Where(u => !attributedIds.Contains(u.Id)).Sum(u => u.ReportedCost ?? 0m);
+                var calculated = g.Sum(u =>
+                {
+                    var rate = CursorTokenCostCalculator.ResolveRate(rates, u.Model);
+                    return rate is null ? 0m : CursorTokenCostCalculator.Estimate(u, 100m, rate);
+                });
                 return new ModelCostRow
                 {
                     Model = g.Key,
@@ -751,10 +808,12 @@ public sealed class ReportService : IReportService
                     RequestCount = g.Sum(u => u.RequestCount ?? 0),
                     UsageBasedCost = g.Sum(u => u.ReportedCost ?? 0m),
                     AllocatedCost = allocated,
-                    UnallocatedCost = unallocated
+                    UnallocatedCost = unallocated,
+                    CalculatedTokenCost = Math.Round(calculated, 4, MidpointRounding.AwayFromZero)
                 };
             })
-            .OrderByDescending(m => m.UsageBasedCost)
+            .OrderByDescending(m => m.CalculatedTokenCost)
+            .ThenByDescending(m => m.UsageBasedCost)
             .ToList();
 
         return new ModelCostReport
@@ -762,6 +821,8 @@ public sealed class ReportService : IReportService
             FromUtc = fromUtc,
             ToUtc = toUtc,
             Currency = _options.DefaultCurrency,
+            CalculatedTokenCost = Math.Round(models.Sum(m => m.CalculatedTokenCost), 4, MidpointRounding.AwayFromZero),
+            HasRateCard = rates.Count > 0,
             Models = models
         };
     }

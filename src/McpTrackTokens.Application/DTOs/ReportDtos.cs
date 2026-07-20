@@ -97,6 +97,9 @@ public sealed record NamedMetricRow
     public decimal UsageBasedCost { get; init; }
 
     public decimal SubscriptionAllocation { get; init; }
+
+    /// <summary>Rate-card calculated cost (Settings Cursor token rates × attributed tokens).</summary>
+    public decimal CalculatedTokenCost { get; init; }
 }
 
 /// <summary>
@@ -133,6 +136,11 @@ public sealed record ProjectCostReport
     public decimal UnallocatedCost { get; init; }
 
     public decimal TotalAiCost { get; init; }
+
+    /// <summary>Rate-card calculated cost (Settings Cursor token rates × attributed tokens).</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
+    public bool HasRateCard { get; init; }
 
     public IReadOnlyList<NamedMetricRow> ByModel { get; init; } = [];
 }
@@ -272,6 +280,11 @@ public sealed record ClientCostReport
 
     public decimal TotalAiCost { get; init; }
 
+    /// <summary>Rate-card calculated cost across client projects.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
+    public bool HasRateCard { get; init; }
+
     public IReadOnlyList<ProjectCostReport> Projects { get; init; } = [];
 }
 
@@ -289,6 +302,9 @@ public sealed record UsageAttributionReport
     public decimal TotalAllocatedCost { get; init; }
 
     public decimal TotalUnallocatedCost { get; init; }
+
+    /// <summary>Rate-card calculated cost for attributed rows.</summary>
+    public decimal TotalCalculatedTokenCost { get; init; }
 
     public string Currency { get; init; } = "USD";
 }
@@ -340,6 +356,9 @@ public sealed record UnallocatedUsageReport
     public int Count { get; init; }
 
     public decimal TotalCost { get; init; }
+
+    /// <summary>Rate-card calculated cost for unallocated usage rows.</summary>
+    public decimal TotalCalculatedTokenCost { get; init; }
 
     public string Currency { get; init; } = "USD";
 
@@ -457,6 +476,11 @@ public sealed record ModelCostReport
 
     public string Currency { get; init; } = "USD";
 
+    /// <summary>Sum of rate-card calculated costs across models.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
+    public bool HasRateCard { get; init; }
+
     public IReadOnlyList<ModelCostRow> Models { get; init; } = [];
 }
 
@@ -478,4 +502,7 @@ public sealed record ModelCostRow
     public decimal AllocatedCost { get; init; }
 
     public decimal UnallocatedCost { get; init; }
+
+    /// <summary>Rate-card calculated cost for this model's imported tokens.</summary>
+    public decimal CalculatedTokenCost { get; init; }
 }

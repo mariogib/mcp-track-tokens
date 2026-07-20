@@ -328,7 +328,10 @@ public sealed class ReportServiceTests
         report.UnallocatedCost.Should().Be(0.8m);
         report.TotalAiCost.Should().Be(13.5m); // 2 + 10 + 1.5; unallocated excluded
         report.ImportedTotalTokens.Should().Be(1500);
+        report.CalculatedTokenCost.Should().BeGreaterThan(0m);
+        report.HasRateCard.Should().BeTrue();
         report.ByModel.Should().HaveCount(2);
+        report.ByModel.Sum(m => m.CalculatedTokenCost).Should().Be(report.CalculatedTokenCost);
 
         var gpt41 = report.ByModel.Single(r => r.Name == "gpt-4.1");
         gpt41.UsageBasedCost.Should().Be(2.0m);

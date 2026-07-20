@@ -111,7 +111,7 @@ export function OverviewPage() {
           <MetricCard
             label="Cursor cost (month)"
             value={formatCurrency(cost?.totalAiCost, cost?.currency ?? summary.data?.currency)}
-            hint={`Usage ${formatCurrency(cost?.usageBasedCost, cost?.currency)} · Sub ${formatCurrency(cost?.subscriptionAllocation, cost?.currency)}`}
+            hint={`Usage ${formatCurrency(cost?.usageBasedCost, cost?.currency)} · Sub ${formatCurrency(cost?.subscriptionAllocation, cost?.currency)} · Token ${formatCurrency(cost?.calculatedTokenCost ?? 0, cost?.currency)}`}
           />
           <MetricCard
             label="Unallocated activity"

@@ -475,6 +475,7 @@ public static class ApiEndpoints
             OtherProviderCost = cost.OtherProviderCost,
             UnallocatedCost = cost.UnallocatedCost,
             TotalAiCost = cost.TotalAiCost,
+            CalculatedTokenCost = cost.CalculatedTokenCost,
             Currency = cost.Currency,
             FromUtc = from,
             ToUtc = to

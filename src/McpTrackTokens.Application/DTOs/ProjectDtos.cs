@@ -217,6 +217,9 @@ public sealed record CostSummaryDto
 
     public decimal TotalAiCost { get; init; }
 
+    /// <summary>Rate-card calculated cost (Settings Cursor token rates × attributed tokens).</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
     public string Currency { get; init; } = "USD";
 
     public DateTimeOffset? FromUtc { get; init; }

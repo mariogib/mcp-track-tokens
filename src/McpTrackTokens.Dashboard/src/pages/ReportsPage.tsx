@@ -449,6 +449,11 @@ function ClientBillingReport({
           value={formatCurrency(data.totalAiCost, data.currency)}
           hint={`Usage ${formatCurrency(data.usageBasedCost, data.currency)} · Sub ${formatCurrency(data.subscriptionAllocation, data.currency)}`}
         />
+        <MetricCard
+          label="Calculated token cost"
+          value={formatCurrency(data.calculatedTokenCost ?? 0, data.currency)}
+          hint="Settings rate card × attributed tokens"
+        />
         <MetricCard label="Prompts" value={formatNumber(data.promptCount)} />
         <MetricCard
           label="Agent time"
@@ -474,13 +479,14 @@ function ClientBillingReport({
                 valueLabel="Cost"
               />
             </ChartCard>
-            <ChartCard title="Cost share">
-              <NamedPieChart
+            <ChartCard title="Calculated token cost by project">
+              <NamedBarChart
                 data={data.projects.map((p) => ({
                   name: p.projectName,
-                  value: p.totalAiCost,
+                  value: p.calculatedTokenCost ?? 0,
                 }))}
                 valueKey="value"
+                valueLabel="Token cost"
               />
             </ChartCard>
           </div>
@@ -493,6 +499,7 @@ function ClientBillingReport({
                   <th>Active time</th>
                   <th>Usage</th>
                   <th>Subscription</th>
+                  <th>Token cost</th>
                   <th>Total</th>
                 </tr>
               </thead>
@@ -506,6 +513,7 @@ function ClientBillingReport({
                     <td>{formatDurationSeconds(project.activeProjectTimeSeconds)}</td>
                     <td>{formatCurrency(project.usageBasedCursorCost, project.currency)}</td>
                     <td>{formatCurrency(project.subscriptionAllocation, project.currency)}</td>
+                    <td>{formatCurrency(project.calculatedTokenCost ?? 0, project.currency)}</td>
                     <td>{formatCurrency(project.totalAiCost, project.currency)}</td>
                   </tr>
                 ))}
@@ -751,7 +759,13 @@ function ModelCostReportView({
       <div className="section-header">
         <div>
           <h3>Model cost</h3>
-          <p className="muted">Usage-based and allocated cost by model.</p>
+          <p className="muted">
+            Usage-based, allocated, and calculated token cost by model
+            {query.data?.calculatedTokenCost != null
+              ? ` · calculated total ${formatCurrency(query.data.calculatedTokenCost, query.data.currency)}`
+              : ''}
+            .
+          </p>
         </div>
       </div>
       <div className="chart-grid">
@@ -760,6 +774,13 @@ function ModelCostReportView({
             data={models.map((m) => ({ name: m.model, value: m.usageBasedCost }))}
             valueKey="value"
             valueLabel="Cost"
+          />
+        </ChartCard>
+        <ChartCard title="Calculated token cost by model">
+          <NamedBarChart
+            data={models.map((m) => ({ name: m.model, value: m.calculatedTokenCost ?? 0 }))}
+            valueKey="value"
+            valueLabel="Token cost"
           />
         </ChartCard>
       </div>
@@ -773,6 +794,7 @@ function ModelCostReportView({
               <th>Tokens</th>
               <th>Usage cost</th>
               <th>Allocated</th>
+              <th>Token cost</th>
             </tr>
           </thead>
           <tbody>
@@ -787,6 +809,9 @@ function ModelCostReportView({
                 </td>
                 <td>
                   {formatCurrency(model.allocatedCost, query.data?.currency ?? 'USD')}
+                </td>
+                <td>
+                  {formatCurrency(model.calculatedTokenCost ?? 0, query.data?.currency ?? 'USD')}
                 </td>
               </tr>
             ))}
@@ -832,6 +857,11 @@ function ProjectCostReportView({
           value={formatCurrency(data.totalAiCost, data.currency)}
         />
         <MetricCard
+          label="Calculated token cost"
+          value={formatCurrency(data.calculatedTokenCost ?? 0, data.currency)}
+          hint="Settings rate card × attributed tokens"
+        />
+        <MetricCard
           label="Usage cost"
           value={formatCurrency(data.usageBasedCursorCost, data.currency)}
         />
@@ -856,6 +886,16 @@ function ProjectCostReportView({
               }))}
               valueKey="value"
               valueLabel="Cost"
+            />
+          </ChartCard>
+          <ChartCard title="Calculated token cost by model">
+            <NamedBarChart
+              data={data.byModel.map((m) => ({
+                name: m.name,
+                value: m.calculatedTokenCost ?? 0,
+              }))}
+              valueKey="value"
+              valueLabel="Token cost"
             />
           </ChartCard>
         </div>
@@ -1075,6 +1115,11 @@ function ProjectsMonthlyReport({
           label="Total AI cost"
           value={formatCurrency(data.cost?.totalAiCost, data.currency)}
         />
+        <MetricCard
+          label="Calculated token cost"
+          value={formatCurrency(data.cost?.calculatedTokenCost ?? 0, data.currency)}
+          hint="Settings rate card × attributed tokens"
+        />
         <MetricCard label="Prompts" value={formatNumber(data.activity?.promptCount)} />
         <MetricCard
           label="Agent time"
@@ -1097,6 +1142,16 @@ function ProjectsMonthlyReport({
                 valueLabel="Cost"
               />
             </ChartCard>
+            <ChartCard title="Calculated token cost by project">
+              <NamedBarChart
+                data={data.projects.map((p) => ({
+                  name: p.projectName,
+                  value: p.calculatedTokenCost ?? 0,
+                }))}
+                valueKey="value"
+                valueLabel="Token cost"
+              />
+            </ChartCard>
           </div>
           <div className="table-wrap">
             <table className="data">
@@ -1107,6 +1162,7 @@ function ProjectsMonthlyReport({
                   <th>Prompts</th>
                   <th>Usage</th>
                   <th>Subscription</th>
+                  <th>Token cost</th>
                   <th>Total</th>
                 </tr>
               </thead>
@@ -1120,6 +1176,7 @@ function ProjectsMonthlyReport({
                     <td>{formatNumber(project.promptCount)}</td>
                     <td>{formatCurrency(project.usageBasedCursorCost, project.currency)}</td>
                     <td>{formatCurrency(project.subscriptionAllocation, project.currency)}</td>
+                    <td>{formatCurrency(project.calculatedTokenCost ?? 0, project.currency)}</td>
                     <td>{formatCurrency(project.totalAiCost, project.currency)}</td>
                   </tr>
                 ))}

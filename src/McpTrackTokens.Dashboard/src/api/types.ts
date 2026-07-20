@@ -83,6 +83,7 @@ export interface CostSummaryDto {
   otherProviderCost: number;
   unallocatedCost: number;
   totalAiCost: number;
+  calculatedTokenCost?: number;
   currency: string;
   fromUtc?: string | null;
   toUtc?: string | null;
@@ -128,6 +129,7 @@ export interface NamedMetricRow {
   activeProjectTimeSeconds: number;
   usageBasedCost: number;
   subscriptionAllocation: number;
+  calculatedTokenCost?: number;
 }
 
 export interface ProjectActivityReport {
@@ -164,6 +166,8 @@ export interface ProjectCostReport {
   otherProviderCost: number;
   unallocatedCost: number;
   totalAiCost: number;
+  calculatedTokenCost?: number;
+  hasRateCard?: boolean;
   byModel: NamedMetricRow[];
 }
 
@@ -328,6 +332,8 @@ export interface ClientCostReport {
   subscriptionAllocation: number;
   otherProviderCost: number;
   totalAiCost: number;
+  calculatedTokenCost?: number;
+  hasRateCard?: boolean;
   projects: ProjectCostReport[];
 }
 
@@ -364,12 +370,15 @@ export interface ModelCostRow {
   usageBasedCost: number;
   allocatedCost: number;
   unallocatedCost: number;
+  calculatedTokenCost?: number;
 }
 
 export interface ModelCostReport {
   fromUtc: string;
   toUtc: string;
   currency: string;
+  calculatedTokenCost?: number;
+  hasRateCard?: boolean;
   models: ModelCostRow[];
 }
 
