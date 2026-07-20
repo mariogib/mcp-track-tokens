@@ -164,9 +164,10 @@ public static class TrackingHost
 
         if (enableHttpMcp)
         {
-            // Stateful Streamable HTTP so Cursor can open GET /mcp as an SSE stream.
-            // Stateless mode has no server→client channel; Cursor then fails discovery.
-            mcpBuilder.WithHttpTransport(options => options.Stateless = false);
+            // Stateless Streamable HTTP: no in-memory Mcp-Session-Id. Stateful sessions break
+            // after tray restart (Cursor keeps a stale id → -32001 Session not found, and
+            // reinitialization often fails). Tools/resources use POST; GET SSE is answered 405.
+            mcpBuilder.WithHttpTransport(options => options.Stateless = true);
         }
 
         var app = builder.Build();
@@ -309,6 +310,15 @@ public static class TrackingHost
 
         if (enableHttpMcp)
         {
+            // Spec: if SSE is unsupported, GET must be 405 (not SPA-fallback 404). Cursor
+            // tombstones the transport after consecutive GET 404s.
+            app.MapGet("/mcp", (HttpContext context) =>
+                {
+                    context.Response.Headers.Allow = "POST";
+                    return Results.StatusCode(StatusCodes.Status405MethodNotAllowed);
+                })
+                .ExcludeFromDescription();
+
             app.MapMcp("/mcp");
         }
     }

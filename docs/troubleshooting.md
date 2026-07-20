@@ -70,7 +70,8 @@ If `/health` works but `/ready` fails, check SQLite path permissions or Postgres
 - HTTP MCP is off by default (`EnableHttpMcp`); enable only if you intentionally use `/mcp`.
 - Restart Cursor after editing MCP config.
 - Verify the process starts: run the same command in a terminal.
-- If logs show `Failed to open SSE stream: Not Found` then tombstone the connection: Cursor needs stateful Streamable HTTP (`Tracking:EnableHttpMcp` with session SSE on `GET /mcp`). Reinstall/restart the tray host, then Reconnect MCP in Cursor.
+- If logs show `Failed to open SSE stream: Not Found`: `GET /mcp` must return **405** (SSE unsupported in stateless mode), not SPA-fallback **404**. Reinstall/restart the tray, then Reconnect MCP.
+- If logs show `-32001 Session not found` / `Failed to start MCP session reinitialization`: the tray restarted and Cursor still holds a stateful session id. Prefer **stateless** HTTP MCP (current default). Reconnect MCP in Cursor (or reload the window) after upgrading.
 
 ## Docker
 
