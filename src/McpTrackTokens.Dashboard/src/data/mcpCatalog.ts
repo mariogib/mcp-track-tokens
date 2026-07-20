@@ -14,6 +14,8 @@ export type McpPromptHelp = {
   name: string;
   description: string;
   args: string;
+  /** Sample user message you can paste into the agent chat. */
+  example: string;
 };
 
 export const MCP_TOOLS: McpToolHelp[] = [
@@ -193,39 +195,53 @@ export const MCP_PROMPTS: McpPromptHelp[] = [
     name: 'analyse_project_activity',
     description: 'Analyse project activity patterns and highlight anomalies.',
     args: 'project, dateRange?',
+    example:
+      "Analyse MCP Track Tokens activity for project 'MCP Track Tokens' over the last 30 days. Use get_project_activity, get_prompt_count, and get_project_time. Summarise prompt volume, agent runs, active project time, failures, and notable day-to-day changes.",
   },
   {
     name: 'analyse_project_ai_cost',
     description:
       'Analyse project AI cost including usage, subscription allocation, and calculated token cost.',
     args: 'project, dateRange?',
+    example:
+      "Analyse AI cost for project 'MCP Track Tokens' over the last 30 days. Use get_project_cost and get_usage_summary. Separate usage-based Cursor cost, subscription allocation, other provider cost, unallocated amounts, and calculatedTokenCost. When reported usage cost is $0, emphasise calculatedTokenCost.",
   },
   {
     name: 'create_client_usage_report',
     description:
       'Create a client-facing AI usage and billing summary including calculated token cost.',
     args: 'clientName, dateRange?',
+    example:
+      "Create a client usage/billing summary for 'LunarQ' covering July 2026. Use generate_client_billing_summary and present project breakdowns with totalAiCost, subscriptionAllocation, usageBasedCost, and calculatedTokenCost.",
   },
   {
     name: 'compare_project_efficiency',
     description:
       'Compare efficiency across editors/projects using activity, AI cost, and calculated token cost.',
     args: 'dateRange?',
+    example:
+      'Compare project/editor efficiency for the last 30 days. Use compare_projects, get_project_activity, and get_project_cost. Contrast prompt counts, active time, agent duration, totalAiCost, and calculatedTokenCost intensity.',
   },
   {
     name: 'identify_unallocated_usage',
     description: 'Identify unallocated imported usage and suggest attribution.',
     args: 'dateRange?',
+    example:
+      'Identify unallocated imported usage for the last 30 days. Use get_unallocated_usage and run_usage_reconciliation with dryRun=true first. Suggest high-confidence allocations and include rate-card calculated impact.',
   },
   {
     name: 'identify_activity_anomalies',
     description: 'Identify unusual activity patterns or unallocated events.',
     args: 'project?, dateRange?',
+    example:
+      "Identify activity anomalies for project 'MCP Track Tokens' over the last 30 days. Use get_unallocated_activity, get_tracking_status, and get_project_activity. Highlight spikes, gaps, failures, and unallocated sessions.",
   },
   {
     name: 'prepare_monthly_ai_cost_report',
     description:
       'Prepare a monthly AI cost report across projects including calculated token cost.',
     args: 'year, month',
+    example:
+      'Prepare the monthly AI cost report for 2026-07. Use get_tracking_status, get_usage_summary, get_project_cost for major projects, and export_project_report. Separate usage-based cost, subscription allocation, calculatedTokenCost, and remaining unallocated usage.',
   },
 ];

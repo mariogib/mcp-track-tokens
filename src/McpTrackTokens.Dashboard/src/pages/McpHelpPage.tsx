@@ -1,10 +1,67 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MCP_PROMPTS, MCP_RESOURCES, MCP_TOOLS } from '../data/mcpCatalog';
 import { Page } from '../layout/AppLayout';
 
 const TABS = ['Tools', 'Resources', 'Prompts'] as const;
 type Tab = (typeof TABS)[number];
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const input = document.createElement('textarea');
+    input.value = value;
+    input.setAttribute('readonly', '');
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(input);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function CopyTextButton({
+  value,
+  label = 'Copy',
+}: {
+  value: string;
+  label?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      type="button"
+      className="btn btn-secondary btn-copy-inline"
+      aria-label={copied ? `${value} copied` : `Copy ${value}`}
+      title={copied ? 'Copied' : label}
+      onClick={async () => {
+        const ok = await copyText(value);
+        if (ok) setCopied(true);
+      }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
 
 export function McpHelpPage() {
   const [tab, setTab] = useState<Tab>('Tools');
@@ -50,6 +107,7 @@ export function McpHelpPage() {
 
         {tab === 'Tools' && (
           <div className="stack">
+            <p className="muted">Click Copy next to a tool name to put it on the clipboard.</p>
             {toolGroups.map(([group, tools]) => (
               <div key={group} className="panel stack">
                 <h3>{group}</h3>
@@ -65,7 +123,10 @@ export function McpHelpPage() {
                       {tools.map((tool) => (
                         <tr key={tool.name}>
                           <td>
-                            <code className="mono">{tool.name}</code>
+                            <div className="mcp-copy-row">
+                              <code className="mono">{tool.name}</code>
+                              <CopyTextButton value={tool.name} label="Copy tool name" />
+                            </div>
                           </td>
                           <td>{tool.description}</td>
                         </tr>
@@ -82,7 +143,7 @@ export function McpHelpPage() {
           <div className="panel stack">
             <p className="muted">
               JSON snapshots you can read from the MCP client. Most time-based resources cover the
-              last 30 days.
+              last 30 days. Click Copy next to a URI to put it on the clipboard.
             </p>
             <div className="table-wrap">
               <table className="data">
@@ -98,7 +159,10 @@ export function McpHelpPage() {
                     <tr key={resource.uri}>
                       <td>{resource.name}</td>
                       <td>
-                        <code className="mono">{resource.uri}</code>
+                        <div className="mcp-copy-row">
+                          <code className="mono">{resource.uri}</code>
+                          <CopyTextButton value={resource.uri} label="Copy resource URI" />
+                        </div>
                       </td>
                       <td>{resource.description}</td>
                     </tr>
@@ -113,6 +177,7 @@ export function McpHelpPage() {
           <div className="panel stack">
             <p className="muted">
               Prompt templates that guide the agent to call the right tools for common analyses.
+              Copy the prompt name or a filled-in example to paste into chat.
             </p>
             <div className="table-wrap">
               <table className="data">
@@ -121,18 +186,28 @@ export function McpHelpPage() {
                     <th>Prompt</th>
                     <th>Arguments</th>
                     <th>Description</th>
+                    <th>Example</th>
                   </tr>
                 </thead>
                 <tbody>
                   {MCP_PROMPTS.map((prompt) => (
                     <tr key={prompt.name}>
                       <td>
-                        <code className="mono">{prompt.name}</code>
+                        <div className="mcp-copy-row">
+                          <code className="mono">{prompt.name}</code>
+                          <CopyTextButton value={prompt.name} label="Copy prompt name" />
+                        </div>
                       </td>
                       <td>
                         <code className="mono">{prompt.args}</code>
                       </td>
                       <td>{prompt.description}</td>
+                      <td>
+                        <div className="mcp-prompt-example">
+                          <p className="mcp-prompt-example-text">{prompt.example}</p>
+                          <CopyTextButton value={prompt.example} label="Copy example" />
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
