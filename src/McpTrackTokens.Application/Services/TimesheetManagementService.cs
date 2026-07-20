@@ -18,6 +18,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     private readonly IProjectRepository _projects;
     private readonly IProjectDetectionService _projectDetection;
     private readonly ITimesheetEntryRepository _timesheets;
+    private readonly ITimesheetCategoryRepository _categories;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<CreateTimesheetEntryRequest> _createValidator;
     private readonly IValidator<UpdateTimesheetEntryRequest> _updateValidator;
@@ -28,6 +29,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         IProjectRepository projects,
         IProjectDetectionService projectDetection,
         ITimesheetEntryRepository timesheets,
+        ITimesheetCategoryRepository categories,
         IUnitOfWork unitOfWork,
         IValidator<CreateTimesheetEntryRequest> createValidator,
         IValidator<UpdateTimesheetEntryRequest> updateValidator,
@@ -37,6 +39,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         _projects = projects;
         _projectDetection = projectDetection;
         _timesheets = timesheets;
+        _categories = categories;
         _unitOfWork = unitOfWork;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
@@ -61,14 +64,20 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             createIfMissing: true,
             cancellationToken).ConfigureAwait(false);
 
+        var category = await ResolveCategoryAsync(
+            request.CategoryId,
+            request.Category,
+            requireActive: true,
+            cancellationToken).ConfigureAwait(false);
+
         var started = (request.StartedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
         await CloseAllOpenEntriesAsync(started, AutoclosedNotes, exceptEntryId: null, cancellationToken)
             .ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(project.Id, started, request.Notes);
+        var entry = TimesheetEntry.Start(project.Id, category.Id, started, request.Notes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry);
+        return ToDto(entry, category.Name);
     }
 
     /// <inheritdoc />
@@ -113,7 +122,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         entry.End(request.EndedAtUtc ?? DateTimeOffset.UtcNow, request.AppendNotes);
         await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry);
+        return await ToDtoAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -128,7 +137,9 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
 
         var list = await _timesheets.ListByProjectAsync(projectId, fromUtc, toUtc, cancellationToken)
             .ConfigureAwait(false);
-        return list.Select(ToDto).ToList();
+        var names = await LoadCategoryNamesAsync(list.Select(e => e.CategoryId), cancellationToken)
+            .ConfigureAwait(false);
+        return list.Select(e => ToDto(e, names.GetValueOrDefault(e.CategoryId, string.Empty))).ToList();
     }
 
     /// <inheritdoc />
@@ -143,19 +154,25 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         _ = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
             ?? throw new EntityNotFoundException(nameof(Project), projectId);
 
+        var category = await ResolveCategoryAsync(
+            request.CategoryId,
+            request.Category,
+            requireActive: true,
+            cancellationToken).ConfigureAwait(false);
+
         var started = (request.StartedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
         await CloseAllOpenEntriesAsync(started, AutoclosedNotes, exceptEntryId: null, cancellationToken)
             .ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(projectId, started, request.Notes);
+        var entry = TimesheetEntry.Start(projectId, category.Id, started, request.Notes);
         if (request.EndedAtUtc is DateTimeOffset ended)
         {
-            entry.ApplyAdminEdit(started, ended, request.Notes);
+            entry.ApplyAdminEdit(category.Id, started, ended, request.Notes);
         }
 
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry);
+        return ToDto(entry, category.Name);
     }
 
     /// <inheritdoc />
@@ -180,7 +197,13 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         await CloseAllOpenEntriesAsync(started, AutoclosedNotes, exceptEntryId: null, cancellationToken)
             .ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(projectId, started, AutocreatedNotes);
+        var category = await ResolveCategoryAsync(
+            TimesheetCategory.WorkId,
+            categoryName: null,
+            requireActive: false,
+            cancellationToken).ConfigureAwait(false);
+
+        var entry = TimesheetEntry.Start(projectId, category.Id, started, AutocreatedNotes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
@@ -196,10 +219,16 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         var entry = await _timesheets.GetByIdAsync(entryId, cancellationToken).ConfigureAwait(false)
             ?? throw new EntityNotFoundException(nameof(TimesheetEntry), entryId);
 
-        entry.ApplyAdminEdit(request.StartedAtUtc, request.EndedAtUtc, request.Notes);
+        var category = await ResolveCategoryAsync(
+            request.CategoryId,
+            categoryName: null,
+            requireActive: false,
+            cancellationToken).ConfigureAwait(false);
+
+        entry.ApplyAdminEdit(category.Id, request.StartedAtUtc, request.EndedAtUtc, request.Notes);
         await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry);
+        return ToDto(entry, category.Name);
     }
 
     /// <inheritdoc />
@@ -230,6 +259,76 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             entry.End(endAt, appendNotes);
             await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private async Task<TimesheetCategory> ResolveCategoryAsync(
+        Guid? categoryId,
+        string? categoryName,
+        bool requireActive,
+        CancellationToken cancellationToken)
+    {
+        TimesheetCategory? category = null;
+        if (categoryId is Guid id && id != Guid.Empty)
+        {
+            category = await _categories.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new EntityNotFoundException(nameof(TimesheetCategory), id);
+        }
+        else if (!string.IsNullOrWhiteSpace(categoryName))
+        {
+            category = await _categories.GetByNameAsync(categoryName, cancellationToken).ConfigureAwait(false)
+                ?? throw new DomainValidationException(
+                    "Category",
+                    $"Unknown timesheet category '{categoryName.Trim()}'.");
+        }
+        else
+        {
+            category = await _categories.GetByIdAsync(TimesheetCategory.WorkId, cancellationToken)
+                .ConfigureAwait(false)
+                ?? await _categories.GetByNameAsync("Work", cancellationToken).ConfigureAwait(false)
+                ?? (await _categories.ListAsync(activeOnly: true, cancellationToken).ConfigureAwait(false))
+                    .FirstOrDefault();
+        }
+
+        if (category is null)
+        {
+            throw new DomainValidationException(
+                "Category",
+                "No timesheet category is available. Add one under Settings → Data.");
+        }
+
+        if (requireActive && !category.IsActive)
+        {
+            throw new DomainValidationException(
+                "Category",
+                $"Timesheet category '{category.Name}' is inactive.");
+        }
+
+        return category;
+    }
+
+    private async Task<Dictionary<Guid, string>> LoadCategoryNamesAsync(
+        IEnumerable<Guid> categoryIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = categoryIds.Where(id => id != Guid.Empty).Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        var all = await _categories.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
+        return all
+            .Where(c => ids.Contains(c.Id))
+            .ToDictionary(c => c.Id, c => c.Name);
+    }
+
+    private async Task<TimesheetEntryDto> ToDtoAsync(
+        TimesheetEntry entry,
+        CancellationToken cancellationToken)
+    {
+        var category = await _categories.GetByIdAsync(entry.CategoryId, cancellationToken)
+            .ConfigureAwait(false);
+        return ToDto(entry, category?.Name ?? string.Empty);
     }
 
     private async Task<Project> ResolveProjectAsync(
@@ -263,10 +362,12 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 "Could not resolve a project from the current workspace. Register the project or pass projectId.");
     }
 
-    private static TimesheetEntryDto ToDto(TimesheetEntry entry) => new()
+    private static TimesheetEntryDto ToDto(TimesheetEntry entry, string categoryName) => new()
     {
         Id = entry.Id,
         ProjectId = entry.ProjectId,
+        CategoryId = entry.CategoryId,
+        CategoryName = categoryName,
         StartedAtUtc = entry.StartedAtUtc,
         EndedAtUtc = entry.EndedAtUtc,
         Notes = entry.Notes,

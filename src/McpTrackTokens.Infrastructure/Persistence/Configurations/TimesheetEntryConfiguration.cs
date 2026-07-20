@@ -18,6 +18,7 @@ public sealed class TimesheetEntryConfiguration : IEntityTypeConfiguration<Times
         builder.Property(e => e.Notes).HasMaxLength(8000);
 
         builder.HasIndex(e => e.ProjectId);
+        builder.HasIndex(e => e.CategoryId);
         builder.HasIndex(e => e.StartedAtUtc);
         builder.HasIndex(e => e.EndedAtUtc);
         builder.HasIndex(e => new { e.ProjectId, e.EndedAtUtc });
@@ -26,5 +27,10 @@ public sealed class TimesheetEntryConfiguration : IEntityTypeConfiguration<Times
             .WithMany()
             .HasForeignKey(e => e.ProjectId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<TimesheetCategory>()
+            .WithMany()
+            .HasForeignKey(e => e.CategoryId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IProjectRepository, ProjectRepository>();
         services.TryAddScoped<ISessionRepository, SessionRepository>();
         services.TryAddScoped<ITimesheetEntryRepository, TimesheetEntryRepository>();
+        services.TryAddScoped<ITimesheetCategoryRepository, TimesheetCategoryRepository>();
         services.TryAddScoped<IActivityEventRepository, ActivityEventRepository>();
         services.TryAddScoped<IActivityWindowRepository, ActivityWindowRepository>();
         services.TryAddScoped<IExternalUsageRepository, ExternalUsageRepository>();

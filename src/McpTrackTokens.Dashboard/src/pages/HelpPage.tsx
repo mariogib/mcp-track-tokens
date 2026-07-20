@@ -58,7 +58,8 @@ export function HelpPage() {
             <p>
               Start with the <strong>Cursor setup</strong> tab to connect Cursor. Then open{' '}
               <Link to="/settings">Settings</Link> to confirm your API key, and use{' '}
-              <Link to="/imports">Imports</Link> for Cursor usage exports.
+              <Link to="/imports">Imports</Link> for Cursor usage exports. For the MCP tool,
+              resource, and prompt catalog, open <Link to="/help/mcp">MCP Help</Link>.
             </p>
             <ul>
               <li>

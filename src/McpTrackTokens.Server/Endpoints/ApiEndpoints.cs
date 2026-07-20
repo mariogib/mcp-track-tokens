@@ -57,6 +57,11 @@ public static class ApiEndpoints
         api.MapGet("/usage/imported", GetImportedUsageAsync);
         api.MapPost("/activity/assign", AssignActivityAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
+        api.MapGet("/reports/clients", ListReportClientsAsync);
+        api.MapGet("/reports/clients/{clientName}/cost", GetClientCostAsync);
+        api.MapGet("/reports/clients/{clientName}/token-cost", GetClientTokenCostAsync);
+        api.MapGet("/reports/model-cost", GetModelCostAsync);
+        api.MapGet("/reports/editors", GetEditorComparisonAsync);
 
         return app;
     }
@@ -942,6 +947,91 @@ public static class ApiEndpoints
             activity,
             unallocatedUsage
         });
+    }
+
+    private static async Task<IResult> ListReportClientsAsync(
+        IProjectRepository projects,
+        CancellationToken cancellationToken)
+    {
+        var list = await projects.ListAsync(activeOnly: true, cancellationToken).ConfigureAwait(false);
+        var clients = list
+            .Where(p => !string.IsNullOrWhiteSpace(p.ClientName))
+            .GroupBy(p => p.ClientName!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new
+            {
+                name = g.First().ClientName!.Trim(),
+                projectCount = g.Count(),
+                currency = g.Select(p => p.Currency).FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? "USD"
+            })
+            .ToList();
+        return Results.Ok(clients);
+    }
+
+    private static async Task<IResult> GetClientCostAsync(
+        string clientName,
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var decoded = Uri.UnescapeDataString(clientName);
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports.GetClientCostAsync(decoded, from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetClientTokenCostAsync(
+        string clientName,
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var decoded = Uri.UnescapeDataString(clientName);
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports
+                .GetClientTokenCostEstimateAsync(decoded, from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetModelCostAsync(
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var report = await reports.GetModelCostAsync(from, to, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(report);
+    }
+
+    private static async Task<IResult> GetEditorComparisonAsync(
+        IReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var report = await reports.GetEditorComparisonAsync(from, to, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(report);
     }
 
     private static IResult MapException(Exception ex) => ex switch

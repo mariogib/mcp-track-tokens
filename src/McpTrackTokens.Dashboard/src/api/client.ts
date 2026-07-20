@@ -14,9 +14,14 @@ import type {
   DatabaseBackupInfoDto,
   DatabaseBackupResultDto,
   DatabaseRestoreResultDto,
+  ClientCostReport,
+  ClientTokenCostEstimate,
+  EditorComparisonReport,
+  ModelCostReport,
   MonthlySummaryReport,
   ProjectActivityReport,
   ProjectCostReport,
+  ReportClientDto,
   ProjectTokenCostEstimate,
   ProjectDetailDto,
   ProjectDto,
@@ -24,11 +29,14 @@ import type {
   ReconciliationRequestDto,
   ReconciliationResultDto,
   CreateProjectSessionRequest,
+  CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
   SessionDto,
   SettingsDto,
+  TimesheetCategoryDto,
   TimesheetEntryDto,
   TrackingStatusDto,
+  UpdateTimesheetCategoryRequest,
   AssignActivityRequestDto,
   AssignActivityResultDto,
   UnallocatedBundle,
@@ -215,6 +223,39 @@ export const api = {
       signal,
     });
   },
+
+  listReportClients: (signal?: AbortSignal) =>
+    apiRequest<ReportClientDto[]>('/api/v1/reports/clients', { signal }),
+
+  getClientCost: (clientName: string, fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<ClientCostReport>(
+      `/api/v1/reports/clients/${encodeURIComponent(clientName)}/cost`,
+      {
+        query: { fromUtc, toUtc },
+        signal,
+      },
+    ),
+
+  getClientTokenCost: (clientName: string, fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<ClientTokenCostEstimate>(
+      `/api/v1/reports/clients/${encodeURIComponent(clientName)}/token-cost`,
+      {
+        query: { fromUtc, toUtc },
+        signal,
+      },
+    ),
+
+  getModelCostReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<ModelCostReport>('/api/v1/reports/model-cost', {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getEditorComparisonReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<EditorComparisonReport>('/api/v1/reports/editors', {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
 
   listProjects: (signal?: AbortSignal) =>
     apiRequest<ProjectDto[]>('/api/v1/projects', { signal }),
@@ -463,6 +504,36 @@ export const api = {
 
   revokeApiKey: (id: string, signal?: AbortSignal) =>
     apiRequest<void>(`/api/v1/api-keys/${id}`, {
+      method: 'DELETE',
+      signal,
+    }),
+
+  listTimesheetCategories: (activeOnly?: boolean, signal?: AbortSignal) =>
+    apiRequest<TimesheetCategoryDto[]>('/api/v1/timesheet-categories', {
+      query: { activeOnly: activeOnly === undefined ? undefined : String(activeOnly) },
+      signal,
+    }),
+
+  createTimesheetCategory: (body: CreateTimesheetCategoryRequest, signal?: AbortSignal) =>
+    apiRequest<TimesheetCategoryDto>('/api/v1/timesheet-categories', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  updateTimesheetCategory: (
+    id: string,
+    body: UpdateTimesheetCategoryRequest,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetCategoryDto>(`/api/v1/timesheet-categories/${id}`, {
+      method: 'PUT',
+      body,
+      signal,
+    }),
+
+  deleteTimesheetCategory: (id: string, signal?: AbortSignal) =>
+    apiRequest<void>(`/api/v1/timesheet-categories/${id}`, {
       method: 'DELETE',
       signal,
     }),

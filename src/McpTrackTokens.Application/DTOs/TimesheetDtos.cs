@@ -9,6 +9,10 @@ public sealed record TimesheetEntryDto
 
     public Guid ProjectId { get; init; }
 
+    public Guid CategoryId { get; init; }
+
+    public string CategoryName { get; init; } = string.Empty;
+
     public DateTimeOffset StartedAtUtc { get; init; }
 
     public DateTimeOffset? EndedAtUtc { get; init; }
@@ -27,6 +31,13 @@ public sealed record TimesheetEntryDto
 /// </summary>
 public sealed record CreateTimesheetEntryRequest
 {
+    public Guid? CategoryId { get; init; }
+
+    /// <summary>
+    /// Optional category name (resolved case-insensitively when <see cref="CategoryId"/> is omitted).
+    /// </summary>
+    public string? Category { get; init; }
+
     public DateTimeOffset? StartedAtUtc { get; init; }
 
     public DateTimeOffset? EndedAtUtc { get; init; }
@@ -39,6 +50,8 @@ public sealed record CreateTimesheetEntryRequest
 /// </summary>
 public sealed record UpdateTimesheetEntryRequest
 {
+    public Guid CategoryId { get; init; }
+
     public DateTimeOffset StartedAtUtc { get; init; }
 
     public DateTimeOffset? EndedAtUtc { get; init; }
@@ -52,6 +65,14 @@ public sealed record UpdateTimesheetEntryRequest
 public sealed record StartTimesheetRequest
 {
     public Guid? ProjectId { get; init; }
+
+    public Guid? CategoryId { get; init; }
+
+    /// <summary>
+    /// Optional category name (resolved case-insensitively when <see cref="CategoryId"/> is omitted).
+    /// Defaults to Work.
+    /// </summary>
+    public string? Category { get; init; }
 
     public string? WorkspacePath { get; init; }
 

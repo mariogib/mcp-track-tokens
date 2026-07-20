@@ -74,10 +74,12 @@ public static class ProjectMapper
 /// </summary>
 public static class TimesheetMapper
 {
-    public static object ToDto(TimesheetEntry entry) => new
+    public static object ToDto(TimesheetEntry entry, string? categoryName = null) => new
     {
         entry.Id,
         entry.ProjectId,
+        entry.CategoryId,
+        categoryName = categoryName ?? string.Empty,
         entry.StartedAtUtc,
         entry.EndedAtUtc,
         entry.Notes,

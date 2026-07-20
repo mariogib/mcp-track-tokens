@@ -87,6 +87,33 @@ public interface ISessionRepository
 }
 
 /// <summary>
+/// Persistence for timesheet categories.
+/// </summary>
+public interface ITimesheetCategoryRepository
+{
+    Task<TimesheetCategory?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<TimesheetCategory?> GetByNameAsync(string name, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TimesheetCategory>> ListAsync(
+        bool activeOnly = false,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> ExistsWithNameAsync(
+        string name,
+        Guid? excludingId = null,
+        CancellationToken cancellationToken = default);
+
+    Task AddAsync(TimesheetCategory category, CancellationToken cancellationToken = default);
+
+    Task UpdateAsync(TimesheetCategory category, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(TimesheetCategory category, CancellationToken cancellationToken = default);
+
+    Task<int> CountEntriesAsync(Guid categoryId, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Persistence for manual timesheet entries.
 /// </summary>
 public interface ITimesheetEntryRepository

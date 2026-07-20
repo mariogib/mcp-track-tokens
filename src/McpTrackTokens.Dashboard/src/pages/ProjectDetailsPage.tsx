@@ -15,6 +15,7 @@ import {
   useProjectSessionsQuery,
   useProjectTimesheetQuery,
   useProjectUsageQuery,
+  useTimesheetCategoriesQuery,
   useUpdateProjectMutation,
   useUpdateSessionMutation,
   useUpdateTimesheetEntryMutation,
@@ -125,13 +126,15 @@ function draftFromSession(session: SessionDto): SessionDraft {
 }
 
 type TimesheetDraft = {
+  categoryId: string;
   startedAtLocal: string;
   endedAtLocal: string;
   notes: string;
 };
 
-function emptyTimesheetDraft(): TimesheetDraft {
+function emptyTimesheetDraft(defaultCategoryId = ''): TimesheetDraft {
   return {
+    categoryId: defaultCategoryId,
     startedAtLocal: toLocalInputValue(new Date().toISOString()),
     endedAtLocal: '',
     notes: '',
@@ -140,6 +143,7 @@ function emptyTimesheetDraft(): TimesheetDraft {
 
 function draftFromTimesheet(entry: TimesheetEntryDto): TimesheetDraft {
   return {
+    categoryId: entry.categoryId,
     startedAtLocal: toLocalInputValue(entry.startedAtUtc),
     endedAtLocal: toLocalInputValue(entry.endedAtUtc),
     notes: entry.notes ?? '',
@@ -162,6 +166,7 @@ export function ProjectDetailsPage() {
   // was hiding newly created/edited sessions from the table.
   const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
   const timesheet = useProjectTimesheetQuery(projectId, range.fromUtc);
+  const timesheetCategories = useTimesheetCategoriesQuery(true);
   const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
@@ -747,17 +752,23 @@ export function ProjectDetailsPage() {
             <div>
               <h2>Timesheet</h2>
               <p className="muted">
-                Capture billable time with start, end, and notes. MCP tools{' '}
+                Capture billable time with category, start, end, and notes. MCP tools{' '}
                 <code>start_timesheet</code> / <code>end_timesheet</code> write here for the open
-                Cursor project.
+                Cursor project. Categories are managed under Settings → Data.
               </p>
             </div>
             <button
               type="button"
               className="btn"
               onClick={() => {
+                const defaultCategoryId =
+                  timesheetCategories.data?.find((c) =>
+                    c.name.toLowerCase() === 'work',
+                  )?.id ??
+                  timesheetCategories.data?.[0]?.id ??
+                  '';
                 setEditingTimesheetId(null);
-                setTimesheetDraft(emptyTimesheetDraft());
+                setTimesheetDraft(emptyTimesheetDraft(defaultCategoryId));
                 setTimesheetMessage(null);
                 setTimesheetEditorOpen(true);
               }}
@@ -797,7 +808,12 @@ export function ProjectDetailsPage() {
                   setTimesheetMessage('Ended time cannot be earlier than started time.');
                   return;
                 }
+                if (!timesheetDraft.categoryId) {
+                  setTimesheetMessage('Category is required.');
+                  return;
+                }
                 const payload = {
+                  categoryId: timesheetDraft.categoryId,
                   startedAtUtc,
                   endedAtUtc,
                   notes: timesheetDraft.notes.trim() || null,
@@ -807,6 +823,7 @@ export function ProjectDetailsPage() {
                     await updateTimesheetMutation.mutateAsync({
                       id: editingTimesheetId,
                       body: {
+                        categoryId: payload.categoryId,
                         startedAtUtc,
                         endedAtUtc,
                         notes: payload.notes,
@@ -829,6 +846,36 @@ export function ProjectDetailsPage() {
               }}
             >
               <h3>{editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}</h3>
+              <div className="field">
+                <label htmlFor="timesheet-category">Category</label>
+                <select
+                  id="timesheet-category"
+                  required
+                  value={timesheetDraft.categoryId}
+                  onChange={(e) =>
+                    setTimesheetDraft((s) => ({ ...s, categoryId: e.target.value }))
+                  }
+                >
+                  <option value="" disabled>
+                    Select category…
+                  </option>
+                  {(timesheetCategories.data ?? []).map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                  {editingTimesheetId &&
+                  timesheetDraft.categoryId &&
+                  !(timesheetCategories.data ?? []).some(
+                    (c) => c.id === timesheetDraft.categoryId,
+                  ) ? (
+                    <option value={timesheetDraft.categoryId}>
+                      {timesheet.data?.find((e) => e.id === editingTimesheetId)?.categoryName ??
+                        'Inactive category'}
+                    </option>
+                  ) : null}
+                </select>
+              </div>
               <div className="field-row">
                 <DateTimeField
                   id="timesheet-started"
@@ -900,6 +947,7 @@ export function ProjectDetailsPage() {
               <table className="data">
                 <thead>
                   <tr>
+                    <th>Category</th>
                     <th>Started</th>
                     <th>Ended</th>
                     <th>Notes</th>
@@ -910,6 +958,7 @@ export function ProjectDetailsPage() {
                 <tbody>
                   {timesheet.data.map((entry) => (
                     <tr key={entry.id}>
+                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
                       <td>{formatDateTime(entry.startedAtUtc)}</td>
                       <td>{formatDateTime(entry.endedAtUtc)}</td>
                       <td>{entry.notes?.trim() ? entry.notes : '—'}</td>

@@ -25,6 +25,10 @@ public static class DashboardAdminEndpoints
         api.MapGet("/api-keys", ListApiKeysAsync);
         api.MapPost("/api-keys", CreateApiKeyAsync);
         api.MapDelete("/api-keys/{id:guid}", RevokeApiKeyAsync);
+        api.MapGet("/timesheet-categories", ListTimesheetCategoriesAsync);
+        api.MapPost("/timesheet-categories", CreateTimesheetCategoryAsync);
+        api.MapPut("/timesheet-categories/{id:guid}", UpdateTimesheetCategoryAsync);
+        api.MapDelete("/timesheet-categories/{id:guid}", DeleteTimesheetCategoryAsync);
         api.MapGet("/integrations/status", GetIntegrationsAsync);
         api.MapGet("/database/backup-info", GetDatabaseBackupInfo);
         api.MapPost("/database/backup", BackupDatabaseAsync);
@@ -203,6 +207,66 @@ public static class DashboardAdminEndpoints
         try
         {
             await apiKeys.RevokeAsync(id, cancellationToken).ConfigureAwait(false);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            return Results.NotFound(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> ListTimesheetCategoriesAsync(
+        ITimesheetCategoryService categories,
+        bool? activeOnly,
+        CancellationToken cancellationToken)
+    {
+        var list = await categories
+            .ListAsync(activeOnly ?? false, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(list);
+    }
+
+    private static async Task<IResult> CreateTimesheetCategoryAsync(
+        CreateTimesheetCategoryRequest request,
+        ITimesheetCategoryService categories,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await categories.CreateAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.Created($"/api/v1/timesheet-categories/{created.Id}", created);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> UpdateTimesheetCategoryAsync(
+        Guid id,
+        UpdateTimesheetCategoryRequest request,
+        ITimesheetCategoryService categories,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await categories.UpdateAsync(id, request, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(updated);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> DeleteTimesheetCategoryAsync(
+        Guid id,
+        ITimesheetCategoryService categories,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await categories.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
             return Results.NoContent();
         }
         catch (Exception ex)

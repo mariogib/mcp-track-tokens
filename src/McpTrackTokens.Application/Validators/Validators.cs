@@ -222,6 +222,7 @@ public sealed class CreateTimesheetEntryRequestValidator : AbstractValidator<Cre
 {
     public CreateTimesheetEntryRequestValidator()
     {
+        RuleFor(x => x.Category).MaximumLength(128).When(x => x.Category is not null);
         RuleFor(x => x.Notes).MaximumLength(8000).When(x => x.Notes is not null);
         RuleFor(x => x.EndedAtUtc)
             .GreaterThanOrEqualTo(x => x.StartedAtUtc!.Value)
@@ -237,6 +238,9 @@ public sealed class UpdateTimesheetEntryRequestValidator : AbstractValidator<Upd
 {
     public UpdateTimesheetEntryRequestValidator()
     {
+        RuleFor(x => x.CategoryId)
+            .NotEmpty()
+            .WithMessage("categoryId is required.");
         RuleFor(x => x.StartedAtUtc)
             .Must(ts => ts != default)
             .WithMessage("startedAtUtc is required.");
@@ -255,11 +259,34 @@ public sealed class StartTimesheetRequestValidator : AbstractValidator<StartTime
 {
     public StartTimesheetRequestValidator()
     {
+        RuleFor(x => x.Category).MaximumLength(128).When(x => x.Category is not null);
         RuleFor(x => x.Notes).MaximumLength(8000).When(x => x.Notes is not null);
         RuleFor(x => x.WorkspacePath).MaximumLength(1024).When(x => x.WorkspacePath is not null);
         RuleFor(x => x.RepositoryPath).MaximumLength(1024).When(x => x.RepositoryPath is not null);
         RuleFor(x => x.RemoteUrl).MaximumLength(1024).When(x => x.RemoteUrl is not null);
         RuleFor(x => x.ActiveFilePath).MaximumLength(1024).When(x => x.ActiveFilePath is not null);
+    }
+}
+
+/// <summary>
+/// Validates create-timesheet-category requests.
+/// </summary>
+public sealed class CreateTimesheetCategoryRequestValidator : AbstractValidator<CreateTimesheetCategoryRequest>
+{
+    public CreateTimesheetCategoryRequestValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(128);
+    }
+}
+
+/// <summary>
+/// Validates update-timesheet-category requests.
+/// </summary>
+public sealed class UpdateTimesheetCategoryRequestValidator : AbstractValidator<UpdateTimesheetCategoryRequest>
+{
+    public UpdateTimesheetCategoryRequestValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(128);
     }
 }
 

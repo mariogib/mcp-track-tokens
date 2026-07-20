@@ -404,7 +404,9 @@ public sealed class ReportService : IReportService
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
-        var projects = await _projects.ListByClientAsync(clientName, cancellationToken).ConfigureAwait(false);
+        var projects = (await _projects.ListByClientAsync(clientName, cancellationToken).ConfigureAwait(false))
+            .Where(p => p.IsActive)
+            .ToList();
         var projectReports = new List<ProjectCostReport>();
         foreach (var project in projects)
         {
@@ -427,6 +429,54 @@ public sealed class ReportService : IReportService
             OtherProviderCost = projectReports.Sum(p => p.OtherProviderCost),
             TotalAiCost = projectReports.Sum(p => p.TotalAiCost),
             Projects = projectReports
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<ClientTokenCostEstimate> GetClientTokenCostEstimateAsync(
+        string clientName,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientName);
+        var projects = (await _projects.ListByClientAsync(clientName, cancellationToken).ConfigureAwait(false))
+            .Where(p => p.IsActive)
+            .ToList();
+        var projectReports = new List<ProjectTokenCostEstimate>();
+        foreach (var project in projects)
+        {
+            projectReports.Add(
+                await GetProjectTokenCostEstimateAsync(project.Id, fromUtc, toUtc, cancellationToken)
+                    .ConfigureAwait(false));
+        }
+
+        var byModel = MergeTokenCostModelRows(projectReports.SelectMany(p => p.ByModel));
+        var rates = _options.CursorTokenRates.Count > 0
+            ? _options.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
+
+        return new ClientTokenCostEstimate
+        {
+            ClientName = clientName.Trim(),
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            Currency = projectReports.FirstOrDefault()?.Currency ?? _options.DefaultCurrency,
+            ProjectCount = projectReports.Count,
+            InputTokens = projectReports.Sum(p => p.InputTokens),
+            OutputTokens = projectReports.Sum(p => p.OutputTokens),
+            CachedInputTokens = projectReports.Sum(p => p.CachedInputTokens),
+            ReasoningTokens = projectReports.Sum(p => p.ReasoningTokens),
+            TotalTokens = projectReports.Sum(p => p.TotalTokens),
+            EstimatedCost = Math.Round(projectReports.Sum(p => p.EstimatedCost), 4, MidpointRounding.AwayFromZero),
+            ReportedCost = Math.Round(projectReports.Sum(p => p.ReportedCost), 4, MidpointRounding.AwayFromZero),
+            RateCardModelCount = rates.Count,
+            HasRateCard = rates.Count > 0,
+            ByModel = byModel,
+            Projects = projectReports
+                .OrderByDescending(p => p.EstimatedCost)
+                .ThenBy(p => p.ProjectName, StringComparer.OrdinalIgnoreCase)
+                .ToList()
         };
     }
 
@@ -983,6 +1033,43 @@ public sealed class ReportService : IReportService
     private async Task<Project> RequireProjectAsync(Guid projectId, CancellationToken cancellationToken)
         => await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
            ?? throw new EntityNotFoundException(nameof(Project), projectId);
+
+    private static IReadOnlyList<TokenCostModelRow> MergeTokenCostModelRows(
+        IEnumerable<TokenCostModelRow> rows)
+    {
+        var merged = new Dictionary<string, TokenCostModelRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
+        {
+            var key = string.IsNullOrWhiteSpace(row.Model) ? "unknown" : row.Model.Trim();
+            if (!merged.TryGetValue(key, out var existing))
+            {
+                merged[key] = row with { Model = key };
+                continue;
+            }
+
+            merged[key] = existing with
+            {
+                InputTokens = existing.InputTokens + row.InputTokens,
+                OutputTokens = existing.OutputTokens + row.OutputTokens,
+                CachedInputTokens = existing.CachedInputTokens + row.CachedInputTokens,
+                ReasoningTokens = existing.ReasoningTokens + row.ReasoningTokens,
+                TotalTokens = existing.TotalTokens + row.TotalTokens,
+                EstimatedCost = Math.Round(
+                    existing.EstimatedCost + row.EstimatedCost,
+                    4,
+                    MidpointRounding.AwayFromZero),
+                ReportedCost = Math.Round(
+                    existing.ReportedCost + row.ReportedCost,
+                    4,
+                    MidpointRounding.AwayFromZero)
+            };
+        }
+
+        return merged.Values
+            .OrderByDescending(r => r.EstimatedCost)
+            .ThenBy(r => r.Model, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
 
     private static long ScaleByAllocation(long value, decimal allocationPercentage)
     {

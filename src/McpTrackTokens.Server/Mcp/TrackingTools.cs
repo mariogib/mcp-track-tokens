@@ -118,10 +118,12 @@ public static class TrackingTools
     /// Starts a timesheet entry for the project open in Cursor. Defaults start time to now.
     /// Any open timesheet entry on that project is ended first (end time = now).
     /// </summary>
-    [McpServerTool(Name = "start_timesheet"), Description("Starts a timesheet entry for the current Cursor project. Defaults start time to now and closes any open entry first.")]
+    [McpServerTool(Name = "start_timesheet"), Description("Starts a timesheet entry for the current Cursor project. Defaults start time to now and closes any open entry first. Category defaults to Work.")]
     public static async Task<string> StartTimesheet(
         ITimesheetManagementService timesheets,
         [Description("Optional notes for the new timesheet entry")] string? notes = null,
+        [Description("Optional category name (e.g. Work, Meetings). Defaults to Work.")] string? category = null,
+        [Description("Optional category id")] Guid? categoryId = null,
         [Description("Optional project id (otherwise detected from workspace)")] Guid? projectId = null,
         [Description("Workspace path")] string? workspacePath = null,
         [Description("Repository path")] string? repositoryPath = null,
@@ -134,6 +136,8 @@ public static class TrackingTools
             new StartTimesheetRequest
             {
                 ProjectId = projectId,
+                CategoryId = categoryId,
+                Category = category,
                 WorkspacePath = workspacePath,
                 RepositoryPath = repositoryPath,
                 RemoteUrl = remoteUrl,
@@ -442,6 +446,23 @@ public static class TrackingTools
     {
         var (from, to) = ResolveRange(fromUtc, toUtc);
         return Serialize(await reports.GetClientCostAsync(clientName, from, to, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Estimates client token cost using Settings Cursor rate-card prices × attributed tokens.
+    /// </summary>
+    [McpServerTool(Name = "generate_client_token_cost"), Description("Estimates client token cost from Settings rate-card prices and attributed token usage.")]
+    public static async Task<string> GenerateClientTokenCost(
+        IReportService reports,
+        [Description("Client name")] string clientName,
+        [Description("Range start UTC")] DateTimeOffset? fromUtc = null,
+        [Description("Range end UTC")] DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var (from, to) = ResolveRange(fromUtc, toUtc);
+        return Serialize(
+            await reports.GetClientTokenCostEstimateAsync(clientName, from, to, cancellationToken)
+                .ConfigureAwait(false));
     }
 
     /// <summary>

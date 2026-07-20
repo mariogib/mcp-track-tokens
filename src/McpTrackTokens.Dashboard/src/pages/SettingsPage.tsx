@@ -7,18 +7,23 @@ import {
 import {
   useApiKeysQuery,
   useCreateApiKeyMutation,
+  useCreateTimesheetCategoryMutation,
   useDatabaseBackupInfoQuery,
+  useDeleteTimesheetCategoryMutation,
   useIntegrationsQuery,
   useRestoreDatabaseUploadMutation,
   useRevokeApiKeyMutation,
   useSettingsQuery,
   useStatusQuery,
+  useTimesheetCategoriesQuery,
   useUpdateSettingsMutation,
+  useUpdateTimesheetCategoryMutation,
 } from '../api/hooks';
 import { api } from '../api/client';
 import type {
   CursorModelTokenRateDto,
   SettingsDto,
+  TimesheetCategoryDto,
   UpdateSettingsRequest,
 } from '../api/types';
 import { ErrorState, LoadingState } from '../components/States';
@@ -109,6 +114,7 @@ const SETTINGS_TABS = [
   'Tracking',
   'Cursor token costs',
   'API keys',
+  'Data',
   'Backup & restore',
   'Integrations',
 ] as const;
@@ -199,16 +205,24 @@ export function SettingsPage() {
   const settings = useSettingsQuery();
   const status = useStatusQuery();
   const apiKeys = useApiKeysQuery();
+  const timesheetCategories = useTimesheetCategoriesQuery();
   const integrations = useIntegrationsQuery();
   const updateSettings = useUpdateSettingsMutation();
   const createKey = useCreateApiKeyMutation();
   const revokeKey = useRevokeApiKeyMutation();
+  const createCategory = useCreateTimesheetCategoryMutation();
+  const updateCategory = useUpdateTimesheetCategoryMutation();
+  const deleteCategory = useDeleteTimesheetCategoryMutation();
   const restoreUpload = useRestoreDatabaseUploadMutation();
 
   const [tab, setTab] = useState<SettingsTab>('Connection');
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [localKey, setLocalKey] = useState(() => getStoredApiKey() ?? '');
   const [newKeyName, setNewKeyName] = useState('Dashboard');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState({ name: '', sortOrder: 0, isActive: true });
+  const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
   const [createdPlaintext, setCreatedPlaintext] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [backupFolderLabel, setBackupFolderLabel] = useState(
@@ -854,6 +868,247 @@ export function SettingsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </section>
+      )}
+
+      {tab === 'Data' && (
+        <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Timesheet categories</h2>
+              <p>
+                Manage categories used on timesheet entries. Seeded defaults are Work and Meetings.
+                Deleting a category that is in use deactivates it so history stays intact.
+              </p>
+            </div>
+          </div>
+
+          <div className="panel stack">
+            <div className="field-row">
+              <div className="field">
+                <SettingLabel
+                  htmlFor="new-category-name"
+                  help="Display name for a new timesheet category (for example Work or Meetings)."
+                >
+                  New category
+                </SettingLabel>
+                <input
+                  id="new-category-name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Research"
+                />
+              </div>
+            </div>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={createCategory.isPending || !newCategoryName.trim()}
+                onClick={() => {
+                  setCategoryMessage(null);
+                  createCategory.mutate(
+                    { name: newCategoryName.trim() },
+                    {
+                      onSuccess: () => {
+                        setNewCategoryName('');
+                        setCategoryMessage('Category created.');
+                      },
+                      onError: (err) => {
+                        setCategoryMessage(
+                          err instanceof Error ? err.message : 'Failed to create category',
+                        );
+                      },
+                    },
+                  );
+                }}
+              >
+                {createCategory.isPending ? 'Adding…' : 'Add category'}
+              </button>
+              {categoryMessage ? <span className="form-message">{categoryMessage}</span> : null}
+            </div>
+
+            {timesheetCategories.isError ? (
+              <ErrorState
+                message={
+                  timesheetCategories.error instanceof Error
+                    ? timesheetCategories.error.message
+                    : 'Unable to list timesheet categories'
+                }
+              />
+            ) : timesheetCategories.isLoading ? (
+              <LoadingState label="Loading categories…" />
+            ) : (
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Sort</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(timesheetCategories.data ?? []).map((category: TimesheetCategoryDto) => {
+                      const editing = editingCategoryId === category.id;
+                      return (
+                        <tr key={category.id}>
+                          <td>
+                            {editing ? (
+                              <input
+                                value={categoryDraft.name}
+                                onChange={(e) =>
+                                  setCategoryDraft((d) => ({ ...d, name: e.target.value }))
+                                }
+                              />
+                            ) : (
+                              category.name
+                            )}
+                          </td>
+                          <td>
+                            {editing ? (
+                              <input
+                                type="number"
+                                value={categoryDraft.sortOrder}
+                                onChange={(e) =>
+                                  setCategoryDraft((d) => ({
+                                    ...d,
+                                    sortOrder: Number(e.target.value) || 0,
+                                  }))
+                                }
+                                style={{ width: '5rem' }}
+                              />
+                            ) : (
+                              category.sortOrder
+                            )}
+                          </td>
+                          <td>
+                            {editing ? (
+                              <label className="row">
+                                <input
+                                  type="checkbox"
+                                  checked={categoryDraft.isActive}
+                                  onChange={(e) =>
+                                    setCategoryDraft((d) => ({
+                                      ...d,
+                                      isActive: e.target.checked,
+                                    }))
+                                  }
+                                />
+                                Active
+                              </label>
+                            ) : (
+                              <StatusBadge
+                                label={category.isActive ? 'Active' : 'Inactive'}
+                                tone={category.isActive ? 'success' : 'neutral'}
+                              />
+                            )}
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              {editing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-compact"
+                                    disabled={
+                                      updateCategory.isPending || !categoryDraft.name.trim()
+                                    }
+                                    onClick={() => {
+                                      setCategoryMessage(null);
+                                      updateCategory.mutate(
+                                        {
+                                          id: category.id,
+                                          body: {
+                                            name: categoryDraft.name.trim(),
+                                            sortOrder: categoryDraft.sortOrder,
+                                            isActive: categoryDraft.isActive,
+                                          },
+                                        },
+                                        {
+                                          onSuccess: () => {
+                                            setEditingCategoryId(null);
+                                            setCategoryMessage('Category updated.');
+                                          },
+                                          onError: (err) => {
+                                            setCategoryMessage(
+                                              err instanceof Error
+                                                ? err.message
+                                                : 'Failed to update category',
+                                            );
+                                          },
+                                        },
+                                      );
+                                    }}
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-compact btn-secondary"
+                                    onClick={() => setEditingCategoryId(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="btn btn-compact btn-secondary"
+                                    onClick={() => {
+                                      setEditingCategoryId(category.id);
+                                      setCategoryDraft({
+                                        name: category.name,
+                                        sortOrder: category.sortOrder,
+                                        isActive: category.isActive,
+                                      });
+                                      setCategoryMessage(null);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-compact btn-danger"
+                                    disabled={deleteCategory.isPending}
+                                    onClick={() => {
+                                      const ok = window.confirm(
+                                        category.isActive
+                                          ? `Remove category "${category.name}"? If it is used on timesheet entries it will be deactivated instead of deleted.`
+                                          : `Delete inactive category "${category.name}"?`,
+                                      );
+                                      if (!ok) return;
+                                      setCategoryMessage(null);
+                                      deleteCategory.mutate(category.id, {
+                                        onSuccess: () => {
+                                          setCategoryMessage('Category removed.');
+                                        },
+                                        onError: (err) => {
+                                          setCategoryMessage(
+                                            err instanceof Error
+                                              ? err.message
+                                              : 'Failed to remove category',
+                                          );
+                                        },
+                                      });
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </section>
       )}

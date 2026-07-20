@@ -206,6 +206,44 @@ public sealed record TokenCostModelRow
 }
 
 /// <summary>
+/// Client-level token cost estimate using the configured Cursor rate card.
+/// </summary>
+public sealed record ClientTokenCostEstimate
+{
+    public string ClientName { get; init; } = string.Empty;
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public string Currency { get; init; } = "USD";
+
+    public int ProjectCount { get; init; }
+
+    public long InputTokens { get; init; }
+
+    public long OutputTokens { get; init; }
+
+    public long CachedInputTokens { get; init; }
+
+    public long ReasoningTokens { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    public decimal EstimatedCost { get; init; }
+
+    public decimal ReportedCost { get; init; }
+
+    public int RateCardModelCount { get; init; }
+
+    public bool HasRateCard { get; init; }
+
+    public IReadOnlyList<TokenCostModelRow> ByModel { get; init; } = [];
+
+    public IReadOnlyList<ProjectTokenCostEstimate> Projects { get; init; } = [];
+}
+
+/// <summary>
 /// Client-level cost rollup.
 /// </summary>
 public sealed record ClientCostReport

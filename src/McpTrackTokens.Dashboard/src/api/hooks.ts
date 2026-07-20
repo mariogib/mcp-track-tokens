@@ -5,12 +5,14 @@ import type {
   AssignActivityRequestDto,
   CreateApiKeyRequestDto,
   CreateProjectSessionRequest,
+  CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
   ExportRequestDto,
   ReconciliationRequestDto,
   UpdateSettingsRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
+  UpdateTimesheetCategoryRequest,
   UpdateTimesheetEntryRequest,
 } from './types';
 
@@ -19,6 +21,13 @@ export const queryKeys = {
   ready: ['ready'] as const,
   status: ['status'] as const,
   summary: (year: number, month: number) => ['reports', 'summary', year, month] as const,
+  reportClients: ['reports', 'clients'] as const,
+  clientCost: (clientName: string, from: string, to: string) =>
+    ['reports', 'client-cost', clientName, from, to] as const,
+  clientTokenCost: (clientName: string, from: string, to: string) =>
+    ['reports', 'client-token-cost', clientName, from, to] as const,
+  modelCost: (from: string, to: string) => ['reports', 'model-cost', from, to] as const,
+  editorComparison: (from: string, to: string) => ['reports', 'editors', from, to] as const,
   projects: ['projects'] as const,
   project: (id: string) => ['projects', id] as const,
   projectActivity: (id: string, from: string, to: string) =>
@@ -40,6 +49,8 @@ export const queryKeys = {
   importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
   settings: ['settings'] as const,
   apiKeys: ['api-keys'] as const,
+  timesheetCategories: (activeOnly?: boolean) =>
+    ['timesheet-categories', activeOnly ?? 'all'] as const,
   integrations: ['integrations'] as const,
   databaseBackupInfo: (destinationDirectory?: string) =>
     ['database-backup-info', destinationDirectory ?? ''] as const,
@@ -66,6 +77,55 @@ export function useReportsSummaryQuery(year: number, month: number) {
   return useQuery({
     queryKey: queryKeys.summary(year, month),
     queryFn: ({ signal }) => api.reportsSummary(year, month, signal),
+  });
+}
+
+export function useReportClientsQuery() {
+  return useQuery({
+    queryKey: queryKeys.reportClients,
+    queryFn: ({ signal }) => api.listReportClients(signal),
+  });
+}
+
+export function useClientCostQuery(
+  clientName: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.clientCost(clientName ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getClientCost(clientName!, fromUtc, toUtc, signal),
+    enabled: Boolean(clientName) && enabled,
+  });
+}
+
+export function useClientTokenCostQuery(
+  clientName: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.clientTokenCost(clientName ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getClientTokenCost(clientName!, fromUtc, toUtc, signal),
+    enabled: Boolean(clientName) && enabled,
+  });
+}
+
+export function useModelCostReportQuery(fromUtc: string, toUtc: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.modelCost(fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getModelCostReport(fromUtc, toUtc, signal),
+    enabled,
+  });
+}
+
+export function useEditorComparisonReportQuery(fromUtc: string, toUtc: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.editorComparison(fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getEditorComparisonReport(fromUtc, toUtc, signal),
+    enabled,
   });
 }
 
@@ -371,6 +431,38 @@ export function useRevokeApiKeyMutation() {
   return useMutation({
     mutationFn: (id: string) => api.revokeApiKey(id),
     onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.apiKeys }),
+  });
+}
+
+export function useTimesheetCategoriesQuery(activeOnly?: boolean) {
+  return useQuery({
+    queryKey: queryKeys.timesheetCategories(activeOnly),
+    queryFn: ({ signal }) => api.listTimesheetCategories(activeOnly, signal),
+  });
+}
+
+export function useCreateTimesheetCategoryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateTimesheetCategoryRequest) => api.createTimesheetCategory(body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['timesheet-categories'] }),
+  });
+}
+
+export function useUpdateTimesheetCategoryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: UpdateTimesheetCategoryRequest }) =>
+      api.updateTimesheetCategory(id, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['timesheet-categories'] }),
+  });
+}
+
+export function useDeleteTimesheetCategoryMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteTimesheetCategory(id),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['timesheet-categories'] }),
   });
 }
 

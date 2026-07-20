@@ -309,6 +309,70 @@ export interface MonthlySummaryReport {
   projects: ProjectCostReport[];
 }
 
+export interface ReportClientDto {
+  name: string;
+  projectCount: number;
+  currency: string;
+}
+
+export interface ClientCostReport {
+  clientName: string;
+  fromUtc: string;
+  toUtc: string;
+  currency: string;
+  projectCount: number;
+  activeProjectTimeSeconds: number;
+  agentDurationMilliseconds: number;
+  promptCount: number;
+  usageBasedCost: number;
+  subscriptionAllocation: number;
+  otherProviderCost: number;
+  totalAiCost: number;
+  projects: ProjectCostReport[];
+}
+
+export interface ClientTokenCostEstimate {
+  clientName: string;
+  fromUtc: string;
+  toUtc: string;
+  currency: string;
+  projectCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  reportedCost: number;
+  rateCardModelCount: number;
+  hasRateCard: boolean;
+  byModel: TokenCostModelRow[];
+  projects: ProjectTokenCostEstimate[];
+}
+
+export interface EditorComparisonReport {
+  fromUtc: string;
+  toUtc: string;
+  editors: NamedMetricRow[];
+}
+
+export interface ModelCostRow {
+  model: string;
+  provider?: string | null;
+  totalTokens: number;
+  requestCount: number;
+  usageBasedCost: number;
+  allocatedCost: number;
+  unallocatedCost: number;
+}
+
+export interface ModelCostReport {
+  fromUtc: string;
+  toUtc: string;
+  currency: string;
+  models: ModelCostRow[];
+}
+
 export interface ActiveSessionDto {
   id: string;
   projectId?: string | null;
@@ -583,9 +647,31 @@ export interface UpdateSessionRequest {
   status: string;
 }
 
+export interface TimesheetCategoryDto {
+  id: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface CreateTimesheetCategoryRequest {
+  name: string;
+  sortOrder?: number | null;
+}
+
+export interface UpdateTimesheetCategoryRequest {
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+}
+
 export interface TimesheetEntryDto {
   id: string;
   projectId: string;
+  categoryId: string;
+  categoryName: string;
   startedAtUtc: string;
   endedAtUtc?: string | null;
   notes?: string | null;
@@ -595,12 +681,15 @@ export interface TimesheetEntryDto {
 }
 
 export interface CreateTimesheetEntryRequest {
+  categoryId?: string | null;
+  category?: string | null;
   startedAtUtc?: string | null;
   endedAtUtc?: string | null;
   notes?: string | null;
 }
 
 export interface UpdateTimesheetEntryRequest {
+  categoryId: string;
   startedAtUtc: string;
   endedAtUtc?: string | null;
   notes?: string | null;

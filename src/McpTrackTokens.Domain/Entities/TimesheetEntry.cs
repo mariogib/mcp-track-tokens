@@ -14,6 +14,11 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
     public Guid ProjectId { get; set; }
 
     /// <summary>
+    /// Gets or sets the timesheet category identifier.
+    /// </summary>
+    public Guid CategoryId { get; set; }
+
+    /// <summary>
     /// Gets or sets when the timesheet entry started (UTC).
     /// </summary>
     public DateTimeOffset StartedAtUtc { get; set; }
@@ -36,6 +41,7 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
     /// </summary>
     public static TimesheetEntry Start(
         Guid projectId,
+        Guid categoryId,
         DateTimeOffset startedAtUtc,
         string? notes = null,
         Guid? id = null)
@@ -45,10 +51,16 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
             throw new ValidationException(nameof(ProjectId), "ProjectId is required.");
         }
 
+        if (categoryId == Guid.Empty)
+        {
+            throw new ValidationException(nameof(CategoryId), "CategoryId is required.");
+        }
+
         var started = startedAtUtc.ToUniversalTime();
         return new TimesheetEntry(id ?? Guid.NewGuid(), started)
         {
             ProjectId = projectId,
+            CategoryId = categoryId,
             StartedAtUtc = started,
             Notes = NormalizeNotes(notes),
             UpdatedAtUtc = started
@@ -98,10 +110,16 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
     /// Applies a full administrative edit from the dashboard.
     /// </summary>
     public void ApplyAdminEdit(
+        Guid categoryId,
         DateTimeOffset startedAtUtc,
         DateTimeOffset? endedAtUtc,
         string? notes)
     {
+        if (categoryId == Guid.Empty)
+        {
+            throw new ValidationException(nameof(CategoryId), "CategoryId is required.");
+        }
+
         var started = startedAtUtc.ToUniversalTime();
         DateTimeOffset? ended = endedAtUtc?.ToUniversalTime();
         if (ended is DateTimeOffset end && end < started)
@@ -111,6 +129,7 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
                 "EndedAtUtc cannot be earlier than StartedAtUtc.");
         }
 
+        CategoryId = categoryId;
         StartedAtUtc = started;
         EndedAtUtc = ended;
         Notes = NormalizeNotes(notes);

@@ -6,14 +6,29 @@ import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
 
-const navItems = [
+type NavLeaf = { to: string; label: string; end?: boolean };
+type NavGroup = { label: string; children: NavLeaf[] };
+type NavEntry = NavLeaf | NavGroup;
+
+function isNavGroup(item: NavEntry): item is NavGroup {
+  return 'children' in item;
+}
+
+const navItems: NavEntry[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/projects', label: 'Projects' },
+  { to: '/reports', label: 'Reports' },
   { to: '/imports', label: 'Imports' },
   { to: '/imported-usage', label: 'Imported usage' },
   { to: '/reconciliation', label: 'Reconciliation' },
   { to: '/settings', label: 'Settings' },
-  { to: '/help', label: 'Help' },
+  {
+    label: 'Help',
+    children: [
+      { to: '/help', label: 'Windows setup', end: true },
+      { to: '/help/mcp', label: 'MCP Help' },
+    ],
+  },
 ];
 
 function titleForPath(pathname: string): { title: string; subtitle: string } {
@@ -23,6 +38,8 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
   switch (pathname) {
     case '/projects':
       return { title: 'Projects', subtitle: 'Tracked repositories and cost rollups' };
+    case '/reports':
+      return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
     case '/imports':
       return { title: 'Imports', subtitle: 'Upload and map Cursor usage exports' };
     case '/imported-usage':
@@ -33,6 +50,8 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
       return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
     case '/settings':
       return { title: 'Settings', subtitle: 'Tracking preferences, privacy, and API keys' };
+    case '/help/mcp':
+      return { title: 'MCP Help', subtitle: 'Tools, resources, and prompts on the MCP server' };
     case '/help':
       return { title: 'Help', subtitle: 'Windows install and Cursor setup' };
     default:
@@ -69,20 +88,40 @@ export function AppLayout() {
           <span className="brand-mark">MCP Track Tokens</span>
           <span className="brand-sub">Local AI activity & cost</span>
         </div>
-        <nav>
+        <nav id="primary-nav">
           <ul className="nav-list">
-            {navItems.map((item) => (
-              <li key={item.to}>
-                <NavLink
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {item.label}
-                </NavLink>
-              </li>
-            ))}
+            {navItems.map((item) =>
+              isNavGroup(item) ? (
+                <li key={item.label} className="nav-group">
+                  <div className="nav-group-label">{item.label}</div>
+                  <ul className="nav-sublist">
+                    {item.children.map((child) => (
+                      <li key={child.to}>
+                        <NavLink
+                          to={child.to}
+                          end={child.end}
+                          className={({ isActive }) => `nav-link nav-sublink${isActive ? ' active' : ''}`}
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          {child.label}
+                        </NavLink>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ) : (
+                <li key={item.to}>
+                  <NavLink
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+                    onClick={() => setMenuOpen(false)}
+                  >
+                    {item.label}
+                  </NavLink>
+                </li>
+              ),
+            )}
           </ul>
         </nav>
         <div className="sidebar-footer">
@@ -118,7 +157,10 @@ export function AppLayout() {
           </div>
         </header>
         <main className="content">
-          {!hasApiKey && location.pathname !== '/settings' && location.pathname !== '/help' ? (
+          {!hasApiKey &&
+          location.pathname !== '/settings' &&
+          location.pathname !== '/help' &&
+          location.pathname !== '/help/mcp' ? (
             <div className="warning-banner" role="status">
               No API key saved yet. Open <Link to="/settings">Settings</Link> and save your tracking
               Bearer key (default for the Windows install is <code>OverTheMoon</code>).

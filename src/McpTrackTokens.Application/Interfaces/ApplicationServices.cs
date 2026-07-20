@@ -127,6 +127,27 @@ public interface ISessionManagementService
 }
 
 /// <summary>
+/// Settings CRUD for timesheet categories.
+/// </summary>
+public interface ITimesheetCategoryService
+{
+    Task<IReadOnlyList<TimesheetCategoryDto>> ListAsync(
+        bool activeOnly = false,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetCategoryDto> CreateAsync(
+        CreateTimesheetCategoryRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetCategoryDto> UpdateAsync(
+        Guid id,
+        UpdateTimesheetCategoryRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
 /// Manual timesheet start/end and dashboard CRUD.
 /// </summary>
 public interface ITimesheetManagementService
@@ -206,6 +227,15 @@ public interface IReportService
         CancellationToken cancellationToken = default);
 
     Task<ClientCostReport> GetClientCostAsync(
+        string clientName,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Estimated token cost for a client using Settings rate-card prices × attributed tokens.
+    /// </summary>
+    Task<ClientTokenCostEstimate> GetClientTokenCostEstimateAsync(
         string clientName,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,

@@ -273,8 +273,24 @@ public static class TrackingHost
                 .ExcludeFromDescription();
             app.MapGet("/index.html", () => Results.Bytes(File.ReadAllBytes(indexPath), "text/html; charset=utf-8"))
                 .ExcludeFromDescription();
+            // Never SPA-fallback API/MCP/health — missing routes must not look like a successful HTML page.
             app.MapFallback(async context =>
             {
+                var path = context.Request.Path.Value ?? string.Empty;
+                if (path.StartsWith("/api", StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith("/mcp", StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith("/health", StringComparison.OrdinalIgnoreCase) ||
+                    path.StartsWith("/ready", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    context.Response.ContentType = "application/json; charset=utf-8";
+                    await context.Response.WriteAsync(
+                            """{"error":"Not found."}""",
+                            context.RequestAborted)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
                 context.Response.ContentType = "text/html; charset=utf-8";
                 await context.Response.SendFileAsync(indexPath).ConfigureAwait(false);
             });
