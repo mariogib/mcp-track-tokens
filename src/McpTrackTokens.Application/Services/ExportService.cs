@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using FluentValidation;
 using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
@@ -11,16 +9,10 @@ using DomainValidationException = McpTrackTokens.Domain.Exceptions.ValidationExc
 namespace McpTrackTokens.Application.Services;
 
 /// <summary>
-/// Exports reports to CSV/JSON/Markdown with path-traversal protection.
+/// Exports reports to CSV/JSON/Markdown with path-traversal protection for disk writes.
 /// </summary>
 public sealed class ExportService : IExportService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
     private readonly IReportService _reports;
     private readonly IReportExporter _exporter;
     private readonly IValidator<ExportRequestDto> _validator;
@@ -39,41 +31,50 @@ public sealed class ExportService : IExportService
     }
 
     /// <inheritdoc />
-    public async Task<ExportResultDto> ExportAsync(
+    public async Task<ExportFileDto> BuildFileAsync(
         ExportRequestDto request,
         CancellationToken cancellationToken = default)
     {
         await _validator.ValidateAndThrowAsync(request, cancellationToken).ConfigureAwait(false);
 
         var report = await BuildReportAsync(request, cancellationToken).ConfigureAwait(false);
-        var directory = ResolveOutputDirectory(request.OutputDirectory);
-        Directory.CreateDirectory(directory);
-
         var fileName = string.IsNullOrWhiteSpace(request.FileName)
             ? BuildDefaultFileName(request)
             : SanitizeFileName(request.FileName!);
+        var content = _exporter.Render(report, request.Format);
+        var exportedAt = DateTimeOffset.UtcNow;
 
-        var fullPath = Path.GetFullPath(Path.Combine(directory, fileName));
-        EnsureApprovedPath(fullPath);
-
-        // Prefer infrastructure exporter; fall back to local serialization for JSON.
-        if (request.Format == ExportFormat.Json)
+        return new ExportFileDto
         {
-            var json = JsonSerializer.Serialize(report, report.GetType(), JsonOptions);
-            var bytes = Encoding.UTF8.GetBytes(json);
-            await File.WriteAllBytesAsync(fullPath, bytes, cancellationToken).ConfigureAwait(false);
-            return new ExportResultDto
-            {
-                FilePath = fullPath,
-                Format = request.Format,
-                ByteCount = bytes.LongLength,
-                ExportedAtUtc = DateTimeOffset.UtcNow
-            };
-        }
+            FileName = fileName,
+            ContentType = ContentTypeFor(request.Format),
+            Content = content,
+            Format = request.Format,
+            ByteCount = content.LongLength,
+            ExportedAtUtc = exportedAt
+        };
+    }
 
-        return await _exporter
-            .ExportAsync(report, request.Format, fullPath, cancellationToken)
-            .ConfigureAwait(false);
+    /// <inheritdoc />
+    public async Task<ExportResultDto> ExportAsync(
+        ExportRequestDto request,
+        CancellationToken cancellationToken = default)
+    {
+        var file = await BuildFileAsync(request, cancellationToken).ConfigureAwait(false);
+        var directory = ResolveOutputDirectory(request.OutputDirectory);
+        Directory.CreateDirectory(directory);
+
+        var fullPath = Path.GetFullPath(Path.Combine(directory, file.FileName));
+        EnsureApprovedPath(fullPath);
+        await File.WriteAllBytesAsync(fullPath, file.Content, cancellationToken).ConfigureAwait(false);
+
+        return new ExportResultDto
+        {
+            FilePath = fullPath,
+            Format = file.Format,
+            ByteCount = file.ByteCount,
+            ExportedAtUtc = file.ExportedAtUtc
+        };
     }
 
     private async Task<object> BuildReportAsync(ExportRequestDto request, CancellationToken cancellationToken)
@@ -114,7 +115,61 @@ public sealed class ExportService : IExportService
             "modelcost" or "model-cost" or "models" =>
                 await _reports.GetModelCostAsync(request.FromUtc, request.ToUtc, cancellationToken)
                     .ConfigureAwait(false),
+            "project" or "project-report" or "full" =>
+                await BuildProjectReportAsync(request, cancellationToken).ConfigureAwait(false),
             _ => throw new DomainValidationException(nameof(request.ReportType), $"Unknown report type '{request.ReportType}'.")
+        };
+    }
+
+    private async Task<object> BuildProjectReportAsync(ExportRequestDto request, CancellationToken cancellationToken)
+    {
+        var projectId = RequireProjectId(request);
+        var includeActivity = request.IncludeActivity;
+        var includeUsage = request.IncludeUsage;
+        var includeCosts = request.IncludeCosts;
+        if (!includeActivity && !includeUsage && !includeCosts)
+        {
+            includeActivity = includeUsage = includeCosts = true;
+        }
+
+        object? activity = null;
+        object? usage = null;
+        object? cost = null;
+
+        if (includeActivity)
+        {
+            activity = await _reports
+                .GetProjectActivityAsync(projectId, request.FromUtc, request.ToUtc, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (includeUsage)
+        {
+            usage = await _reports
+                .GetProjectUsageSummaryAsync(projectId, request.FromUtc, request.ToUtc, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (includeCosts)
+        {
+            cost = await _reports
+                .GetProjectCostAsync(
+                    projectId,
+                    request.FromUtc,
+                    request.ToUtc,
+                    includeSubscriptionAllocation: true,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return new
+        {
+            ProjectId = projectId,
+            FromUtc = request.FromUtc,
+            ToUtc = request.ToUtc,
+            Activity = activity,
+            Usage = usage,
+            Cost = cost
         };
     }
 
@@ -192,4 +247,12 @@ public sealed class ExportService : IExportService
 
         return name;
     }
+
+    private static string ContentTypeFor(ExportFormat format)
+        => format switch
+        {
+            ExportFormat.Csv or ExportFormat.ExcelCsv => "text/csv; charset=utf-8",
+            ExportFormat.Markdown => "text/markdown; charset=utf-8",
+            _ => "application/json; charset=utf-8"
+        };
 }

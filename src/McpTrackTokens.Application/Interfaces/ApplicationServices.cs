@@ -336,6 +336,14 @@ public interface IReconciliationService
 /// </summary>
 public interface IExportService
 {
+    /// <summary>
+    /// Builds the export payload in memory (no disk write).
+    /// </summary>
+    Task<ExportFileDto> BuildFileAsync(ExportRequestDto request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Builds the export and writes it under an approved export directory.
+    /// </summary>
     Task<ExportResultDto> ExportAsync(ExportRequestDto request, CancellationToken cancellationToken = default);
 }
 

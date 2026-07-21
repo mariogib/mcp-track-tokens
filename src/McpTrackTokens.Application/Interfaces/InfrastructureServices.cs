@@ -80,6 +80,11 @@ public interface IExternalUsageNormalizer
 /// </summary>
 public interface IReportExporter
 {
+    /// <summary>
+    /// Renders a report payload to bytes without writing to disk.
+    /// </summary>
+    byte[] Render(object report, ExportFormat format);
+
     Task<ExportResultDto> ExportAsync(
         object report,
         ExportFormat format,

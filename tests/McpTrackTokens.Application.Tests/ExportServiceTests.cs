@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
@@ -21,6 +22,19 @@ public sealed class ExportServiceTests
     {
         _exportRoot = Path.Combine(Path.GetTempPath(), "mcp-track-tokens-export-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_exportRoot);
+        _reports.GetDailyActivityAsync(
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<Guid?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(new DailyActivityReport
+            {
+                FromUtc = DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+                ToUtc = DateTimeOffset.Parse("2026-07-31T00:00:00Z"),
+                Rows = []
+            });
+        _exporter.Render(Arg.Any<object>(), Arg.Any<ExportFormat>())
+            .Returns(Encoding.UTF8.GetBytes("{}"));
     }
 
     private ExportService CreateSut()
@@ -32,6 +46,26 @@ public sealed class ExportServiceTests
             {
                 ExportPath = _exportRoot
             }));
+
+    [Fact]
+    public async Task BuildFileAsync_returns_in_memory_payload()
+    {
+        var sut = CreateSut();
+        var request = new ExportRequestDto
+        {
+            ReportType = "daily",
+            Format = ExportFormat.Json,
+            FromUtc = DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            ToUtc = DateTimeOffset.Parse("2026-07-31T00:00:00Z")
+        };
+
+        var file = await sut.BuildFileAsync(request);
+
+        file.FileName.Should().EndWith(".json");
+        file.ContentType.Should().Contain("application/json");
+        file.Content.Should().NotBeEmpty();
+        file.ByteCount.Should().Be(file.Content.LongLength);
+    }
 
     [Fact]
     public async Task ExportAsync_rejects_path_traversal_in_output_directory()

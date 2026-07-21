@@ -68,15 +68,14 @@ public sealed class ReportServiceTests
                 durationMilliseconds: 30_000)
         };
 
-        var window = ActivityWindow.Create(from.AddMinutes(5), from.AddMinutes(35), 15, projectId);
+        var session = EditorSession.Start(EditorType.Cursor, from.AddMinutes(5), projectId);
+        session.TransitionTo(SessionStatus.Ended, from.AddMinutes(35));
         // Active time = 30 minutes = 1800 seconds; agent duration = 150000 ms
 
         _events.ListAsync(from, to, projectId, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
             .Returns(events);
-        _windows.ListAsync(from, to, projectId, Arg.Any<CancellationToken>())
-            .Returns([window]);
-        _windowService.MergeOverlappingSameProjectWindows(Arg.Any<IEnumerable<ActivityWindow>>())
-            .Returns(ci => ci.Arg<IEnumerable<ActivityWindow>>().ToList());
+        _sessions.ListAsync(projectId, from, to, Arg.Any<CancellationToken>())
+            .Returns([session]);
 
         var sut = CreateSut();
         var summary = await sut.GetActivitySummaryAsync(projectId, from, to);
@@ -111,14 +110,13 @@ public sealed class ReportServiceTests
                 project.Id,
                 durationMilliseconds: 45_000)
         };
-        var window = ActivityWindow.Create(from, from.AddMinutes(20), 15, project.Id);
+        var session = EditorSession.Start(EditorType.Cursor, from, project.Id);
+        session.TransitionTo(SessionStatus.Ended, from.AddMinutes(20));
 
         _events.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), project.Id, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
             .Returns(events);
-        _windows.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), project.Id, Arg.Any<CancellationToken>())
-            .Returns([window]);
-        _windowService.MergeOverlappingSameProjectWindows(Arg.Any<IEnumerable<ActivityWindow>>())
-            .Returns(ci => ci.Arg<IEnumerable<ActivityWindow>>().ToList());
+        _sessions.ListAsync(project.Id, Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns([session]);
 
         var sut = CreateSut();
         var report = await sut.GetProjectActivityAsync(project.Id, from, to);
@@ -251,6 +249,8 @@ public sealed class ReportServiceTests
             reportedCost: 9.0m);
 
         var window = ActivityWindow.Create(from.AddHours(1), from.AddHours(3), 15, project.Id);
+        var session = EditorSession.Start(EditorType.Cursor, from.AddHours(1), project.Id);
+        session.TransitionTo(SessionStatus.Ended, from.AddHours(3));
 
         _projects.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
         _events.ListAsync(from, to, project.Id, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
@@ -262,6 +262,8 @@ public sealed class ReportServiceTests
                     from.AddHours(1),
                     project.Id)
             ]);
+        _sessions.ListAsync(project.Id, from, to, Arg.Any<CancellationToken>())
+            .Returns([session]);
         _windows.ListAsync(from, to, project.Id, Arg.Any<CancellationToken>())
             .Returns([window]);
         _windowService.MergeOverlappingSameProjectWindows(Arg.Any<IEnumerable<ActivityWindow>>())

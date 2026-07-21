@@ -188,19 +188,55 @@ public sealed class TimesheetReportService : ITimesheetReportService
                 DurationSeconds = g.Sum(s => s.DurationSeconds),
                 EntryCount = g.Count()
             })
+            .ToList();
+
+        // Include active registered projects with no overlapping timesheet time so client/project
+        // rollups match the Projects list (zeros instead of omitting the project).
+        var projectsWithTime = byProject.Select(r => r.ProjectId).ToHashSet();
+        foreach (var project in projects
+                     .Where(p => p.IsActive)
+                     .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (projectsWithTime.Contains(project.Id))
+            {
+                continue;
+            }
+
+            byProject.Add(new TimesheetProjectBreakdownRow
+            {
+                ProjectId = project.Id,
+                ProjectName = project.Name,
+                ClientName = project.ClientName,
+                DurationSeconds = 0,
+                EntryCount = 0
+            });
+        }
+
+        byProject = byProject
             .OrderByDescending(r => r.DurationSeconds)
             .ThenBy(r => r.ProjectName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        var projectCountByClient = projects
+            .Where(p => p.IsActive && !string.IsNullOrWhiteSpace(p.ClientName))
+            .GroupBy(p => p.ClientName!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+
         var byClient = slices
             .Where(s => !string.IsNullOrWhiteSpace(s.ClientName))
             .GroupBy(s => s.ClientName!.Trim(), StringComparer.OrdinalIgnoreCase)
-            .Select(g => new TimesheetClientBreakdownRow
+            .Select(g =>
             {
-                ClientName = g.First().ClientName!.Trim(),
-                DurationSeconds = g.Sum(s => s.DurationSeconds),
-                EntryCount = g.Count(),
-                ProjectCount = g.Select(s => s.Entry.ProjectId).Distinct().Count()
+                var clientName = g.First().ClientName!.Trim();
+                return new TimesheetClientBreakdownRow
+                {
+                    ClientName = clientName,
+                    DurationSeconds = g.Sum(s => s.DurationSeconds),
+                    EntryCount = g.Count(),
+                    ProjectCount = projectCountByClient.TryGetValue(clientName, out var count)
+                        ? count
+                        : g.Select(s => s.Entry.ProjectId).Distinct().Count()
+                };
             })
             .OrderByDescending(r => r.DurationSeconds)
             .ThenBy(r => r.ClientName, StringComparer.OrdinalIgnoreCase)

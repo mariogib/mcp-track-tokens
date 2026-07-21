@@ -58,15 +58,16 @@ public sealed class ReportService : IReportService
     {
         var events = await _events.ListAsync(fromUtc, toUtc, projectId, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var windows = await _windows.ListAsync(fromUtc, toUtc, projectId, cancellationToken)
+        var sessions = await ListProjectSessionsAsync(projectId, fromUtc, toUtc, cancellationToken)
             .ConfigureAwait(false);
-        var merged = _windowService.MergeOverlappingSameProjectWindows(windows);
         var tokensByDay = await GetAttributedTokensByDayAsync(fromUtc, toUtc, projectId, cancellationToken)
             .ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
 
         var dayKeys = events
             .Select(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime))
             .Concat(tokensByDay.Keys)
+            .Concat(sessions.SelectMany(SessionDayKeys))
             .Distinct()
             .OrderByDescending(d => d)
             .ToList();
@@ -75,10 +76,8 @@ public sealed class ReportService : IReportService
             .Select(day =>
             {
                 var dayEvents = events.Where(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime) == day);
-                var dayStart = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-                var dayEnd = day.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc);
-                var dayWindows = merged.Where(w =>
-                    w.StartedAtUtc < dayEnd && w.EndedAtUtc > dayStart);
+                var dayStart = new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+                var dayEnd = new DateTimeOffset(day.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc));
                 return new DailyActivityRow
                 {
                     Day = day,
@@ -86,7 +85,8 @@ public sealed class ReportService : IReportService
                     PromptCount = dayEvents.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
                     AgentRuns = dayEvents.Count(e => e.EventType == ActivityEventType.AgentStarted),
                     AgentDurationMilliseconds = SumAgentDuration(dayEvents),
-                    ActiveProjectTimeSeconds = dayWindows.Sum(w => OverlapSeconds(w, dayStart, dayEnd)),
+                    ActiveProjectTimeSeconds = sessions.Sum(s =>
+                        IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, dayStart, dayEnd, now)),
                     SessionCount = dayEvents.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
                     TotalTokens = tokensByDay.GetValueOrDefault(day)
                 };
@@ -113,9 +113,9 @@ public sealed class ReportService : IReportService
         var project = await RequireProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
         var events = await _events.ListAsync(fromUtc, toUtc, projectId, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var windows = await _windows.ListAsync(fromUtc, toUtc, projectId, cancellationToken).ConfigureAwait(false);
-        var merged = _windowService.MergeOverlappingSameProjectWindows(windows);
-        var summary = BuildActivitySummary(events, merged, fromUtc, toUtc);
+        var sessions = await ListProjectSessionsAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
+        var summary = BuildActivitySummary(events, sessions, fromUtc, toUtc);
 
         var daily = await GetDailyActivityAsync(fromUtc, toUtc, projectId, cancellationToken).ConfigureAwait(false);
 
@@ -906,9 +906,9 @@ public sealed class ReportService : IReportService
     {
         var events = await _events.ListAsync(fromUtc, toUtc, projectId, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
-        var windows = await _windows.ListAsync(fromUtc, toUtc, projectId, cancellationToken).ConfigureAwait(false);
-        var merged = _windowService.MergeOverlappingSameProjectWindows(windows);
-        return BuildActivitySummary(events, merged, fromUtc, toUtc);
+        var sessions = await ListProjectSessionsAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
+        return BuildActivitySummary(events, sessions, fromUtc, toUtc);
     }
 
     /// <inheritdoc />
@@ -1173,23 +1173,48 @@ public sealed class ReportService : IReportService
         return (long)Math.Round(value * (allocationPercentage / 100m), MidpointRounding.AwayFromZero);
     }
 
+    private async Task<IReadOnlyList<EditorSession>> ListProjectSessionsAsync(
+        Guid? projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken)
+    {
+        var sessions = await _sessions.ListAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
+        return sessions.Where(s => s.ProjectId is not null).ToList();
+    }
+
+    private static IEnumerable<DateOnly> SessionDayKeys(EditorSession session)
+    {
+        var start = DateOnly.FromDateTime(session.StartedAtUtc.UtcDateTime);
+        var end = DateOnly.FromDateTime((session.EndedAtUtc ?? DateTimeOffset.UtcNow).UtcDateTime);
+        for (var day = start; day <= end; day = day.AddDays(1))
+        {
+            yield return day;
+        }
+    }
+
     private static ActivitySummaryDto BuildActivitySummary(
         IReadOnlyList<PromptActivityEvent> events,
-        IReadOnlyList<ActivityWindow> windows,
+        IReadOnlyList<EditorSession> sessions,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc)
-        => new()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new ActivitySummaryDto
         {
             PromptCount = events.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
             AgentRuns = events.Count(e => e.EventType == ActivityEventType.AgentStarted),
             AgentDurationMilliseconds = SumAgentDuration(events),
-            ActiveProjectTimeSeconds = windows.Sum(w => w.DurationSeconds),
+            ActiveProjectTimeSeconds = sessions.Sum(s =>
+                IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, fromUtc, toUtc, now)),
             SessionCount = events.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
             FailureCount = events.Count(e => e.EventType == ActivityEventType.AgentFailed),
             CancellationCount = events.Count(e => e.EventType == ActivityEventType.AgentCancelled),
             FromUtc = fromUtc,
             ToUtc = toUtc
         };
+    }
 
     private static long SumAgentDuration(IEnumerable<PromptActivityEvent> events)
         => events
@@ -1197,18 +1222,6 @@ public sealed class ReportService : IReportService
                 or ActivityEventType.AgentFailed
                 or ActivityEventType.AgentCancelled)
             .Sum(e => e.DurationMilliseconds ?? 0);
-
-    private static long OverlapSeconds(ActivityWindow window, DateTime dayStart, DateTime dayEnd)
-    {
-        var start = window.StartedAtUtc > dayStart ? window.StartedAtUtc : new DateTimeOffset(dayStart);
-        var end = window.EndedAtUtc < dayEnd ? window.EndedAtUtc : new DateTimeOffset(dayEnd);
-        if (end <= start)
-        {
-            return 0;
-        }
-
-        return (long)Math.Round((end - start).TotalSeconds, MidpointRounding.AwayFromZero);
-    }
 
     private static ProjectDto MapProject(Project project) => new()
     {

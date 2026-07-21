@@ -226,7 +226,7 @@ export function OverviewPage() {
           <MetricCard
             label="Active project time"
             value={formatDurationSeconds(activity?.activeProjectTimeSeconds)}
-            hint="Merged activity windows"
+            hint="Sum of editor session durations"
           />
           <MetricCard
             label="Cursor cost (month)"

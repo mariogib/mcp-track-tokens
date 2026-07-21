@@ -14,20 +14,20 @@ public sealed class SubscriptionAllocationService : ISubscriptionAllocationServi
 {
     private readonly IProjectRepository _projects;
     private readonly IActivityEventRepository _events;
-    private readonly IActivityWindowRepository _windows;
+    private readonly ISessionRepository _sessions;
     private readonly SubscriptionAllocationCalculator _calculator;
     private readonly TrackingOptions _options;
 
     public SubscriptionAllocationService(
         IProjectRepository projects,
         IActivityEventRepository events,
-        IActivityWindowRepository windows,
+        ISessionRepository sessions,
         SubscriptionAllocationCalculator calculator,
         IOptions<TrackingOptions> options)
     {
         _projects = projects;
         _events = events;
-        _windows = windows;
+        _sessions = sessions;
         _calculator = calculator;
         _options = options.Value;
     }
@@ -53,6 +53,7 @@ public sealed class SubscriptionAllocationService : ISubscriptionAllocationServi
 
         var projects = await _projects.ListAsync(activeOnly: true, cancellationToken).ConfigureAwait(false);
         var metrics = new List<ProjectAllocationMetrics>(projects.Count);
+        var now = DateTimeOffset.UtcNow;
 
         foreach (var project in projects)
         {
@@ -67,9 +68,12 @@ public sealed class SubscriptionAllocationService : ISubscriptionAllocationServi
                     or Domain.Enums.ActivityEventType.AgentCancelled)
                 .Sum(e => e.DurationMilliseconds ?? 0);
 
-            var activeSeconds = await _windows
-                .SumDurationSecondsAsync(fromUtc, toUtc, project.Id, cancellationToken)
+            var sessions = await _sessions
+                .ListAsync(project.Id, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
+            var activeSeconds = sessions
+                .Where(s => s.ProjectId is not null)
+                .Sum(s => IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, fromUtc, toUtc, now));
 
             decimal? manual = null;
             if (manualPercentages is not null && manualPercentages.TryGetValue(project.Id, out var pct))

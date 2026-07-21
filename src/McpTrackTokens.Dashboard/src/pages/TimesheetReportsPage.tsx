@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   useProjectsQuery,
   useReportClientsQuery,
@@ -22,7 +22,7 @@ import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../comp
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { Page } from '../layout/AppLayout';
-import { type RangePreset, resolveRange } from '../utils/dateRange';
+import { parseRangePreset, resolveRange } from '../utils/dateRange';
 import {
   formatDateTime,
   formatDurationMs,
@@ -30,13 +30,11 @@ import {
   formatNumber,
 } from '../utils/format';
 
-const SECTIONS = ['overall', 'projects', 'clients'] as const;
-type ReportSection = (typeof SECTIONS)[number];
+type ReportScope = 'all' | 'project' | 'client';
 
-function sectionFromPath(pathname: string): ReportSection {
-  if (pathname.includes('/timesheet/reports/projects')) return 'projects';
-  if (pathname.includes('/timesheet/reports/clients')) return 'clients';
-  return 'overall';
+function parseReportScope(value: string | null): ReportScope {
+  if (value === 'project' || value === 'client') return value;
+  return 'all';
 }
 
 function hoursFromSeconds(seconds: number): number {
@@ -133,7 +131,13 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
   );
 }
 
-function ClientTable({ rows }: { rows: TimesheetClientBreakdownRow[] }) {
+function ClientTable({
+  rows,
+  onClientClick,
+}: {
+  rows: TimesheetClientBreakdownRow[];
+  onClientClick?: (clientName: string) => void;
+}) {
   if (rows.length === 0) {
     return <EmptyState message="No client breakdown for this range." />;
   }
@@ -152,9 +156,17 @@ function ClientTable({ rows }: { rows: TimesheetClientBreakdownRow[] }) {
           {rows.map((row) => (
             <tr key={row.clientName}>
               <td>
-                <Link to={`/timesheet/reports/clients?client=${encodeURIComponent(row.clientName)}`}>
-                  {row.clientName}
-                </Link>
+                {onClientClick ? (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => onClientClick(row.clientName)}
+                  >
+                    {row.clientName}
+                  </button>
+                ) : (
+                  row.clientName
+                )}
               </td>
               <td>{formatNumber(row.projectCount)}</td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
@@ -246,10 +258,12 @@ function OverallReportView({
   fromUtc,
   toUtc,
   onDayClick,
+  onClientClick,
 }: {
   fromUtc: string;
   toUtc: string;
   onDayClick: (day: string) => void;
+  onClientClick: (clientName: string) => void;
 }) {
   const report = useTimesheetOverallReportQuery(fromUtc, toUtc);
   if (report.isLoading) return <LoadingState label="Loading overall report…" />;
@@ -266,14 +280,19 @@ function OverallReportView({
     name: row.categoryName,
     hours: hoursFromSeconds(row.durationSeconds),
   }));
-  const projectChart = report.data.byProject.slice(0, 12).map((row) => ({
-    name: row.projectName,
-    hours: hoursFromSeconds(row.durationSeconds),
-  }));
-  const clientChart = report.data.byClient.map((row) => ({
-    name: row.clientName,
-    hours: hoursFromSeconds(row.durationSeconds),
-  }));
+  const projectChart = report.data.byProject
+    .filter((row) => row.durationSeconds > 0)
+    .slice(0, 12)
+    .map((row) => ({
+      name: row.projectName,
+      hours: hoursFromSeconds(row.durationSeconds),
+    }));
+  const clientChart = report.data.byClient
+    .filter((row) => row.durationSeconds > 0)
+    .map((row) => ({
+      name: row.clientName,
+      hours: hoursFromSeconds(row.durationSeconds),
+    }));
 
   return (
     <div className="stack">
@@ -306,7 +325,7 @@ function OverallReportView({
       </section>
       <section className="page-section">
         <h3>By client</h3>
-        <ClientTable rows={report.data.byClient} />
+        <ClientTable rows={report.data.byClient} onClientClick={onClientClick} />
       </section>
       <section className="page-section">
         <h3>By day</h3>
@@ -320,16 +339,13 @@ function ProjectReportView({
   fromUtc,
   toUtc,
   projectId,
-  onProjectChange,
   onDayClick,
 }: {
   fromUtc: string;
   toUtc: string;
   projectId: string;
-  onProjectChange: (id: string) => void;
   onDayClick: (day: string, projectIds?: string[]) => void;
 }) {
-  const projects = useProjectsQuery();
   const report = useTimesheetProjectReportQuery(projectId || undefined, fromUtc, toUtc, Boolean(projectId));
 
   const categoryChart = (report.data?.byCategory ?? []).map((row) => ({
@@ -337,59 +353,42 @@ function ProjectReportView({
     hours: hoursFromSeconds(row.durationSeconds),
   }));
 
+  if (!projectId) {
+    return <EmptyState message="Select a project to view its timesheet report." />;
+  }
+  if (report.isLoading) return <LoadingState label="Loading project report…" />;
+  if (report.error) {
+    return (
+      <ErrorState
+        message={report.error instanceof Error ? report.error.message : 'Failed to load report'}
+      />
+    );
+  }
+  if (!report.data) return null;
+
   return (
     <div className="stack">
-      <div className="panel field-row">
-        <div className="field">
-          <label htmlFor="timesheet-report-project">Project</label>
-          <select
-            id="timesheet-report-project"
-            value={projectId}
-            onChange={(e) => onProjectChange(e.target.value)}
-          >
-            <option value="">Select project…</option>
-            {(projects.data ?? []).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
+      <p className="muted">
+        {report.data.projectName}
+        {report.data.clientName?.trim() ? ` · ${report.data.clientName}` : ''}
+      </p>
+      <TotalsCards totals={report.data.totals} />
+      <div className="chart-grid">
+        {categoryChart.length > 0 ? (
+          <ChartCard title="By category (hours)">
+            <NamedPieChart data={categoryChart} nameKey="name" valueKey="hours" />
+          </ChartCard>
+        ) : null}
+        <DailyChart rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
       </div>
-
-      {!projectId ? (
-        <EmptyState message="Select a project to view its timesheet report." />
-      ) : report.isLoading ? (
-        <LoadingState label="Loading project report…" />
-      ) : report.error ? (
-        <ErrorState
-          message={report.error instanceof Error ? report.error.message : 'Failed to load report'}
-        />
-      ) : report.data ? (
-        <>
-          <p className="muted">
-            {report.data.projectName}
-            {report.data.clientName?.trim() ? ` · ${report.data.clientName}` : ''}
-          </p>
-          <TotalsCards totals={report.data.totals} />
-          <div className="chart-grid">
-            {categoryChart.length > 0 ? (
-              <ChartCard title="By category (hours)">
-                <NamedPieChart data={categoryChart} nameKey="name" valueKey="hours" />
-              </ChartCard>
-            ) : null}
-            <DailyChart rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
-          </div>
-          <section className="page-section">
-            <h3>By category</h3>
-            <CategoryTable rows={report.data.byCategory} />
-          </section>
-          <section className="page-section">
-            <h3>By day</h3>
-            <DailyTable rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
-          </section>
-        </>
-      ) : null}
+      <section className="page-section">
+        <h3>By category</h3>
+        <CategoryTable rows={report.data.byCategory} />
+      </section>
+      <section className="page-section">
+        <h3>By day</h3>
+        <DailyTable rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
+      </section>
     </div>
   );
 }
@@ -398,16 +397,13 @@ function ClientReportView({
   fromUtc,
   toUtc,
   clientName,
-  onClientChange,
   onDayClick,
 }: {
   fromUtc: string;
   toUtc: string;
   clientName: string;
-  onClientChange: (name: string) => void;
   onDayClick: (day: string, projectIds?: string[]) => void;
 }) {
-  const clients = useReportClientsQuery();
   const report = useTimesheetClientReportQuery(
     clientName || undefined,
     fromUtc,
@@ -424,75 +420,54 @@ function ClientReportView({
     hours: hoursFromSeconds(row.durationSeconds),
   }));
 
+  if (!clientName) {
+    return <EmptyState message="Select a client to view its timesheet report." />;
+  }
+  if (report.isLoading) return <LoadingState label="Loading client report…" />;
+  if (report.error) {
+    return (
+      <ErrorState
+        message={report.error instanceof Error ? report.error.message : 'Failed to load report'}
+      />
+    );
+  }
+  if (!report.data) return null;
+
   return (
     <div className="stack">
-      <div className="panel field-row">
-        <div className="field">
-          <label htmlFor="timesheet-report-client">Client</label>
-          <select
-            id="timesheet-report-client"
-            value={clientName}
-            onChange={(e) => onClientChange(e.target.value)}
-          >
-            <option value="">Select client…</option>
-            {(clients.data ?? []).map((c) => (
-              <option key={c.name} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {!clientName ? (
-        <EmptyState message="Select a client to view its timesheet report." />
-      ) : report.isLoading ? (
-        <LoadingState label="Loading client report…" />
-      ) : report.error ? (
-        <ErrorState
-          message={report.error instanceof Error ? report.error.message : 'Failed to load report'}
+      <p className="muted">{report.data.clientName}</p>
+      <TotalsCards totals={report.data.totals} />
+      <div className="chart-grid">
+        {projectChart.length > 0 ? (
+          <ChartCard title="By project (hours)">
+            <NamedBarChart data={projectChart} valueKey="hours" valueLabel="Hours" />
+          </ChartCard>
+        ) : null}
+        {categoryChart.length > 0 ? (
+          <ChartCard title="By category (hours)">
+            <NamedPieChart data={categoryChart} nameKey="name" valueKey="hours" />
+          </ChartCard>
+        ) : null}
+        <DailyChart
+          rows={report.data.byDay}
+          onDayClick={(day) => onDayClick(day, report.data?.byProject.map((row) => row.projectId))}
         />
-      ) : report.data ? (
-        <>
-          <p className="muted">{report.data.clientName}</p>
-          <TotalsCards totals={report.data.totals} />
-          <div className="chart-grid">
-            {projectChart.length > 0 ? (
-              <ChartCard title="By project (hours)">
-                <NamedBarChart data={projectChart} valueKey="hours" valueLabel="Hours" />
-              </ChartCard>
-            ) : null}
-            {categoryChart.length > 0 ? (
-              <ChartCard title="By category (hours)">
-                <NamedPieChart data={categoryChart} nameKey="name" valueKey="hours" />
-              </ChartCard>
-            ) : null}
-            <DailyChart
-              rows={report.data.byDay}
-              onDayClick={(day) =>
-                onDayClick(day, report.data?.byProject.map((row) => row.projectId))
-              }
-            />
-          </div>
-          <section className="page-section">
-            <h3>By project</h3>
-            <ProjectTable rows={report.data.byProject} />
-          </section>
-          <section className="page-section">
-            <h3>By category</h3>
-            <CategoryTable rows={report.data.byCategory} />
-          </section>
-          <section className="page-section">
-            <h3>By day</h3>
-            <DailyTable
-              rows={report.data.byDay}
-              onDayClick={(day) =>
-                onDayClick(day, report.data?.byProject.map((row) => row.projectId))
-              }
-            />
-          </section>
-        </>
-      ) : null}
+      </div>
+      <section className="page-section">
+        <h3>By project</h3>
+        <ProjectTable rows={report.data.byProject} />
+      </section>
+      <section className="page-section">
+        <h3>By category</h3>
+        <CategoryTable rows={report.data.byCategory} />
+      </section>
+      <section className="page-section">
+        <h3>By day</h3>
+        <DailyTable
+          rows={report.data.byDay}
+          onDayClick={(day) => onDayClick(day, report.data?.byProject.map((row) => row.projectId))}
+        />
+      </section>
     </div>
   );
 }
@@ -680,17 +655,16 @@ function SessionPromptsDialog({
 }
 
 export function TimesheetReportsPage() {
-  const { pathname } = useLocation();
-  const section = sectionFromPath(pathname);
-  const [rangePreset, setRangePreset] = useState<RangePreset>('30d');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const scope = parseReportScope(searchParams.get('scope'));
+  const rangePreset = parseRangePreset(searchParams.get('range'));
+  const projectId = searchParams.get('project') ?? '';
+  const clientName = searchParams.get('client') ?? '';
   const range = useMemo(() => resolveRange(rangePreset), [rangePreset]);
-  const projects = useProjectsQuery();
 
-  const [projectId, setProjectId] = useState('');
-  const [clientName, setClientName] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('client') ?? '';
-  });
+  const projects = useProjectsQuery();
+  const clients = useReportClientsQuery();
+
   const [selectedDay, setSelectedDay] = useState<{
     day: string;
     projectIds?: string[];
@@ -705,15 +679,39 @@ export function TimesheetReportsPage() {
     return map;
   }, [projects.data]);
 
-  const sectionLinks: { to: string; label: string; end?: boolean }[] = [
-    { to: '/timesheet/reports/overall', label: 'Overall', end: true },
-    { to: '/timesheet/reports/projects', label: 'By project', end: true },
-    { to: '/timesheet/reports/clients', label: 'By client', end: true },
-  ];
+  const updateParams = (patch: Record<string, string | null>) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(patch)) {
+          if (value == null || value === '') next.delete(key);
+          else next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const setScope = (next: ReportScope) => {
+    updateParams({
+      scope: next === 'all' ? null : next,
+      project: next === 'project' ? projectId || null : null,
+      client: next === 'client' ? clientName || null : null,
+    });
+  };
 
   const openDay = (day: string, projectIds?: string[]) => {
     setSelectedSession(null);
     setSelectedDay({ day, projectIds: projectIds?.filter(Boolean) });
+  };
+
+  const focusClient = (name: string) => {
+    updateParams({
+      scope: 'client',
+      client: name,
+      project: null,
+    });
   };
 
   return (
@@ -723,8 +721,8 @@ export function TimesheetReportsPage() {
           <div>
             <h2>Timesheet reports</h2>
             <p className="muted">
-              Billable time rolled up by category, project, client, and day. Open entries count
-              through now within the selected range.
+              Billable time by range, optionally filtered to one project or client. Open entries
+              count through now within the selected range.
             </p>
           </div>
           <Link to="/timesheet" className="btn btn-secondary">
@@ -732,27 +730,25 @@ export function TimesheetReportsPage() {
           </Link>
         </div>
 
-        <div className="tabs" role="tablist" aria-label="Timesheet report views">
-          {sectionLinks.map((link) => (
-            <NavLink
-              key={link.to}
-              to={link.to}
-              end={link.end}
-              className={({ isActive }) => `tab${isActive ? ' active' : ''}`}
-              role="tab"
-            >
-              {link.label}
-            </NavLink>
-          ))}
-        </div>
-
         <div className="panel field-row">
+          <div className="field">
+            <label htmlFor="timesheet-report-scope">Scope</label>
+            <select
+              id="timesheet-report-scope"
+              value={scope}
+              onChange={(e) => setScope(e.target.value as ReportScope)}
+            >
+              <option value="all">All projects</option>
+              <option value="project">One project</option>
+              <option value="client">One client</option>
+            </select>
+          </div>
           <div className="field">
             <label htmlFor="timesheet-report-range">Range</label>
             <select
               id="timesheet-report-range"
-              value={rangePreset}
-              onChange={(e) => setRangePreset(e.target.value as RangePreset)}
+              value={rangePreset === 'custom' ? '30d' : rangePreset}
+              onChange={(e) => updateParams({ range: e.target.value })}
             >
               <option value="7d">Last 7 days</option>
               <option value="30d">Last 30 days</option>
@@ -760,24 +756,58 @@ export function TimesheetReportsPage() {
               <option value="month">This month</option>
             </select>
           </div>
+          {scope === 'project' ? (
+            <div className="field">
+              <label htmlFor="timesheet-report-project">Project</label>
+              <select
+                id="timesheet-report-project"
+                value={projectId}
+                onChange={(e) => updateParams({ project: e.target.value || null })}
+              >
+                <option value="">Select project…</option>
+                {(projects.data ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+          {scope === 'client' ? (
+            <div className="field">
+              <label htmlFor="timesheet-report-client">Client</label>
+              <select
+                id="timesheet-report-client"
+                value={clientName}
+                onChange={(e) => updateParams({ client: e.target.value || null })}
+              >
+                <option value="">Select client…</option>
+                {(clients.data ?? []).map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div className="field">
             <label className="label">Period</label>
             <p className="hint">{range.label}</p>
           </div>
         </div>
 
-        {section === 'overall' ? (
+        {scope === 'all' ? (
           <OverallReportView
             fromUtc={range.fromUtc}
             toUtc={range.toUtc}
             onDayClick={openDay}
+            onClientClick={focusClient}
           />
-        ) : section === 'projects' ? (
+        ) : scope === 'project' ? (
           <ProjectReportView
             fromUtc={range.fromUtc}
             toUtc={range.toUtc}
             projectId={projectId}
-            onProjectChange={setProjectId}
             onDayClick={openDay}
           />
         ) : (
@@ -785,7 +815,6 @@ export function TimesheetReportsPage() {
             fromUtc={range.fromUtc}
             toUtc={range.toUtc}
             clientName={clientName}
-            onClientChange={setClientName}
             onDayClick={openDay}
           />
         )}

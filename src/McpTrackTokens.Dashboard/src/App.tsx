@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
 import { OverviewPage } from './pages/OverviewPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -14,6 +14,14 @@ import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
 import { McpHelpPage } from './pages/McpHelpPage';
 
+function RedirectTimesheetReports({ scope }: { scope?: 'project' | 'client' }) {
+  const [params] = useSearchParams();
+  const next = new URLSearchParams(params);
+  if (scope) next.set('scope', scope);
+  const qs = next.toString();
+  return <Navigate to={qs ? `/timesheet/reports?${qs}` : '/timesheet/reports'} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -27,10 +35,16 @@ export default function App() {
           element={<ProjectChartDetailPage />}
         />
         <Route path="timesheet" element={<TimesheetPage />} />
-        <Route path="timesheet/reports/overall" element={<TimesheetReportsPage />} />
-        <Route path="timesheet/reports/projects" element={<TimesheetReportsPage />} />
-        <Route path="timesheet/reports/clients" element={<TimesheetReportsPage />} />
-        <Route path="timesheet/reports" element={<Navigate to="/timesheet/reports/overall" replace />} />
+        <Route path="timesheet/reports" element={<TimesheetReportsPage />} />
+        <Route path="timesheet/reports/overall" element={<RedirectTimesheetReports />} />
+        <Route
+          path="timesheet/reports/projects"
+          element={<RedirectTimesheetReports scope="project" />}
+        />
+        <Route
+          path="timesheet/reports/clients"
+          element={<RedirectTimesheetReports scope="client" />}
+        />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="imported-usage" element={<ImportedUsagePage />} />
         <Route path="imports" element={<Navigate to="/imported-usage" replace />} />

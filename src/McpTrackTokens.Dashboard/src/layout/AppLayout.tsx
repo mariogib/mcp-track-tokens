@@ -21,9 +21,7 @@ const navItems: NavEntry[] = [
     label: 'Timesheet',
     children: [
       { to: '/timesheet', label: 'Entries', end: true },
-      { to: '/timesheet/reports/overall', label: 'Overall report', end: true },
-      { to: '/timesheet/reports/projects', label: 'By project', end: true },
-      { to: '/timesheet/reports/clients', label: 'By client', end: true },
+      { to: '/timesheet/reports', label: 'Reports', end: true },
     ],
   },
   { to: '/reports', label: 'Reports' },
@@ -61,20 +59,10 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
         title: 'Timesheet',
         subtitle: 'Start, end, and edit billable time across projects',
       };
-    case '/timesheet/reports/overall':
+    case '/timesheet/reports':
       return {
         title: 'Timesheet reports',
-        subtitle: 'Overall billable time across all projects',
-      };
-    case '/timesheet/reports/projects':
-      return {
-        title: 'Timesheet reports',
-        subtitle: 'Billable time for one project',
-      };
-    case '/timesheet/reports/clients':
-      return {
-        title: 'Timesheet reports',
-        subtitle: 'Billable time rolled up by client',
+        subtitle: 'Billable time by range, with optional project or client filter',
       };
     case '/reports':
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };

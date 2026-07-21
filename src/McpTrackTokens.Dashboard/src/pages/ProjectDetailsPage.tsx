@@ -125,6 +125,16 @@ function draftFromSession(session: SessionDto): SessionDraft {
   };
 }
 
+function sessionDurationMs(session: SessionDto): number | null {
+  const started = new Date(session.startedAtUtc).getTime();
+  if (Number.isNaN(started)) return null;
+  const ended = session.endedAtUtc
+    ? new Date(session.endedAtUtc).getTime()
+    : Date.now();
+  if (Number.isNaN(ended) || ended < started) return null;
+  return ended - started;
+}
+
 type TimesheetDraft = {
   categoryId: string;
   startedAtLocal: string;
@@ -743,18 +753,22 @@ export function ProjectDetailsPage() {
                     <th>Editor</th>
                     <th>Started</th>
                     <th>Ended</th>
+                    <th>Duration</th>
                     <th>Branch</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.data.map((s) => (
+                  {sessions.data.map((s) => {
+                    const durationMs = sessionDurationMs(s);
+                    return (
                     <tr key={s.id}>
                       <td className="mono">{s.id.slice(0, 8)}</td>
                       <td>{s.editor ?? '—'}</td>
                       <td>{formatDateTime(s.startedAtUtc)}</td>
                       <td>{formatDateTime(s.endedAtUtc)}</td>
+                      <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
                       <td>{s.branch ?? '—'}</td>
                       <td>
                         <StatusBadge
@@ -803,7 +817,8 @@ export function ProjectDetailsPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1313,7 +1328,7 @@ export function ProjectDetailsPage() {
       {tab === 'Exports' && (
         <section className="page-section">
           <div className="panel stack">
-            <p>Export a project report to the configured export directory on the server.</p>
+            <p>Download a project report as JSON or CSV.</p>
             <div className="row">
               <button
                 type="button"
@@ -1345,6 +1360,9 @@ export function ProjectDetailsPage() {
                     projectId: detail.id,
                     fromUtc: range.fromUtc,
                     toUtc: range.toUtc,
+                    includeActivity: true,
+                    includeUsage: true,
+                    includeCosts: true,
                   })
                 }
               >
@@ -1353,7 +1371,8 @@ export function ProjectDetailsPage() {
             </div>
             {exportMutation.isSuccess ? (
               <p className="mono">
-                Wrote {exportMutation.data.filePath} ({formatNumber(exportMutation.data.byteCount)} bytes)
+                Downloaded {exportMutation.data.fileName} (
+                {formatNumber(exportMutation.data.byteCount)} bytes)
               </p>
             ) : null}
             {exportMutation.isError ? (

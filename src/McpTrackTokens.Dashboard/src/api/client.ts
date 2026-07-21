@@ -5,7 +5,6 @@ import type {
   ApiKeyDto,
   CreateApiKeyRequestDto,
   ExportRequestDto,
-  ExportResultDto,
   HealthDto,
   ImportPreviewDto,
   ImportResultDto,
@@ -636,12 +635,69 @@ export const api = {
       signal,
     }),
 
-  exportReport: (body: ExportRequestDto, signal?: AbortSignal) =>
-    apiRequest<ExportResultDto>('/api/v1/exports', {
+  exportReport: async (
+    body: ExportRequestDto,
+    signal?: AbortSignal,
+  ): Promise<{ fileName: string; byteCount: number }> => {
+    const headers: Record<string, string> = {
+      Accept: 'application/json, text/csv, text/markdown, application/octet-stream',
+    };
+    const key = getStoredApiKey();
+    if (key) {
+      headers.Authorization = `Bearer ${key}`;
+    }
+    headers['Content-Type'] = 'application/json';
+
+    const response = await fetch(buildUrl('/api/v1/exports'), {
       method: 'POST',
-      body,
+      headers,
+      body: JSON.stringify(body),
       signal,
-    }),
+    });
+
+    if (!response.ok) {
+      let message = `Request failed (${response.status})`;
+      const contentType = response.headers.get('content-type') ?? '';
+      if (contentType.includes('application/json')) {
+        try {
+          const payload = await response.json();
+          if (payload && typeof payload === 'object' && 'error' in payload) {
+            message = String((payload as { error: unknown }).error);
+          } else if (payload && typeof payload === 'object' && 'title' in payload) {
+            message = String((payload as { title: unknown }).title);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (response.status === 401) {
+        message = getStoredApiKey()
+          ? 'Unauthorized (401). The stored API key was rejected — update it under Settings.'
+          : 'Unauthorized (401). Set a Bearer API key under Settings to call the tracking API.';
+      }
+      throw new ApiError(response.status, message);
+    }
+
+    const disposition = response.headers.get('content-disposition') ?? '';
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(disposition);
+    const fileName = match
+      ? decodeURIComponent(match[1].replace(/"/g, ''))
+      : `mcp-track-tokens-export.${String(body.format ?? 'json').toLowerCase()}`;
+    const bytes = await response.arrayBuffer();
+    const blob = new Blob([bytes], {
+      type: response.headers.get('content-type') ?? 'application/octet-stream',
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    return { fileName, byteCount: bytes.byteLength };
+  },
 
   integrationStatus: (signal?: AbortSignal) =>
     apiRequest<IntegrationStatusDto>('/api/v1/integrations/status', { signal }),

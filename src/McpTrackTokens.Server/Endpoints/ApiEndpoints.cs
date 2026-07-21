@@ -72,6 +72,7 @@ public static class ApiEndpoints
         api.MapGet("/reports/clients/{clientName}/token-cost", GetClientTokenCostAsync);
         api.MapGet("/reports/model-cost", GetModelCostAsync);
         api.MapGet("/reports/editors", GetEditorComparisonAsync);
+        api.MapPost("/exports", ExportReportAsync);
 
         return app;
     }
@@ -1213,6 +1214,22 @@ public static class ApiEndpoints
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var report = await reports.GetEditorComparisonAsync(from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(report);
+    }
+
+    private static async Task<IResult> ExportReportAsync(
+        ExportRequestDto request,
+        IExportService export,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var file = await export.BuildFileAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.File(file.Content, file.ContentType, file.FileName);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static IResult MapException(Exception ex) => ex switch

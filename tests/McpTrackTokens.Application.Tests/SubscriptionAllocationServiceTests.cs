@@ -14,13 +14,13 @@ public sealed class SubscriptionAllocationServiceTests
 {
     private readonly IProjectRepository _projects = Substitute.For<IProjectRepository>();
     private readonly IActivityEventRepository _events = Substitute.For<IActivityEventRepository>();
-    private readonly IActivityWindowRepository _windows = Substitute.For<IActivityWindowRepository>();
+    private readonly ISessionRepository _sessions = Substitute.For<ISessionRepository>();
 
     private SubscriptionAllocationService CreateSut(TrackingOptions? options = null)
         => new(
             _projects,
             _events,
-            _windows,
+            _sessions,
             new SubscriptionAllocationCalculator(),
             Microsoft.Extensions.Options.Options.Create(options ?? new TrackingOptions
             {
@@ -40,14 +40,19 @@ public sealed class SubscriptionAllocationServiceTests
         _events.ListAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), projectB.Id, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
             .Returns([PromptActivityEvent.Create(ActivityEventType.PromptSubmitted, EditorType.Cursor, DateTimeOffset.UtcNow, projectB.Id)]);
 
-        _windows.SumDurationSecondsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), projectA.Id, Arg.Any<CancellationToken>())
-            .Returns(3 * 3600L);
-        _windows.SumDurationSecondsAsync(Arg.Any<DateTimeOffset>(), Arg.Any<DateTimeOffset>(), projectB.Id, Arg.Any<CancellationToken>())
-            .Returns(3600L);
+        var from = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
+        var to = from.AddMonths(1);
+
+        var sessionA = EditorSession.Start(EditorType.Cursor, from, projectA.Id);
+        sessionA.TransitionTo(SessionStatus.Ended, from.AddHours(3));
+        var sessionB = EditorSession.Start(EditorType.Cursor, from, projectB.Id);
+        sessionB.TransitionTo(SessionStatus.Ended, from.AddHours(1));
+
+        _sessions.ListAsync(projectA.Id, from, to, Arg.Any<CancellationToken>()).Returns([sessionA]);
+        _sessions.ListAsync(projectB.Id, from, to, Arg.Any<CancellationToken>()).Returns([sessionB]);
 
         var sut = CreateSut();
-        var from = DateTimeOffset.Parse("2026-07-01T00:00:00Z");
-        var shares = await sut.AllocateAsync(from, from.AddMonths(1), AllocationRuleType.ByActiveProjectTime, amount: 10m);
+        var shares = await sut.AllocateAsync(from, to, AllocationRuleType.ByActiveProjectTime, amount: 10m);
 
         shares.Should().HaveCount(2);
         shares.Single(s => s.ProjectId == projectA.Id).Percentage.Should().Be(75m);

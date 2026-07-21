@@ -31,6 +31,21 @@ public sealed class ReportExporter : IReportExporter
     }
 
     /// <inheritdoc />
+    public byte[] Render(object report, ExportFormat format)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        return format switch
+        {
+            ExportFormat.Json => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, report.GetType(), JsonOptions)),
+            ExportFormat.Markdown => Encoding.UTF8.GetBytes(ToMarkdown(report)),
+            ExportFormat.Csv => Encoding.UTF8.GetBytes(ToCsv(report, excelFriendly: false)),
+            ExportFormat.ExcelCsv => Encoding.UTF8.GetBytes(ToCsv(report, excelFriendly: true)),
+            _ => throw new DomainValidationException(nameof(format), $"Unsupported export format '{format}'.")
+        };
+    }
+
+    /// <inheritdoc />
     public async Task<ExportResultDto> ExportAsync(
         object report,
         ExportFormat format,
@@ -49,15 +64,7 @@ public sealed class ReportExporter : IReportExporter
             Directory.CreateDirectory(directory);
         }
 
-        byte[] bytes = format switch
-        {
-            ExportFormat.Json => Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, report.GetType(), JsonOptions)),
-            ExportFormat.Markdown => Encoding.UTF8.GetBytes(ToMarkdown(report)),
-            ExportFormat.Csv => Encoding.UTF8.GetBytes(ToCsv(report, excelFriendly: false)),
-            ExportFormat.ExcelCsv => Encoding.UTF8.GetBytes(ToCsv(report, excelFriendly: true)),
-            _ => throw new DomainValidationException(nameof(format), $"Unsupported export format '{format}'.")
-        };
-
+        var bytes = Render(report, format);
         await File.WriteAllBytesAsync(fullPath, bytes, cancellationToken).ConfigureAwait(false);
 
         return new ExportResultDto

@@ -195,11 +195,29 @@ public sealed record ExportRequestDto
 }
 
 /// <summary>
-/// Result of an export operation.
+/// Result of an export operation written to disk.
 /// </summary>
 public sealed record ExportResultDto
 {
     public string FilePath { get; init; } = string.Empty;
+
+    public ExportFormat Format { get; init; }
+
+    public long ByteCount { get; init; }
+
+    public DateTimeOffset ExportedAtUtc { get; init; }
+}
+
+/// <summary>
+/// In-memory export payload for HTTP download.
+/// </summary>
+public sealed record ExportFileDto
+{
+    public string FileName { get; init; } = string.Empty;
+
+    public string ContentType { get; init; } = "application/octet-stream";
+
+    public byte[] Content { get; init; } = [];
 
     public ExportFormat Format { get; init; }
 
