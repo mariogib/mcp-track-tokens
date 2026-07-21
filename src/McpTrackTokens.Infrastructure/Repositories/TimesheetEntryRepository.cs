@@ -22,16 +22,30 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
         => _db.TimesheetEntries.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TimesheetEntry>> ListByProjectAsync(
+    public Task<IReadOnlyList<TimesheetEntry>> ListByProjectAsync(
         Guid projectId,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default)
+        => ListAsync(projectId, fromUtc, toUtc, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetEntry>> ListAsync(
+        Guid? projectId = null,
         DateTimeOffset? fromUtc = null,
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
+        var query = _db.TimesheetEntries.AsNoTracking();
+        if (projectId is Guid pid)
+        {
+            query = query.Where(e => e.ProjectId == pid);
+        }
+
         return await SqliteDateTimeQuery.MaterializeAsync(
-            _db.TimesheetEntries.AsNoTracking().Where(e => e.ProjectId == projectId),
+            query,
             e => (from is null || e.StartedAtUtc >= from || (e.EndedAtUtc != null && e.EndedAtUtc >= from)) &&
                  (to is null || e.StartedAtUtc <= to),
             items => items.OrderByDescending(e => e.StartedAtUtc),

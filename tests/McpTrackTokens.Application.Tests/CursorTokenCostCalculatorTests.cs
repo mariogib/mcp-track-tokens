@@ -48,4 +48,27 @@ public sealed class CursorTokenCostCalculatorTests
         var match = CursorTokenCostCalculator.ResolveRate(rates, "gpt-mystery");
         match!.Model.Should().Be("*");
     }
+
+    [Fact]
+    public void NormalizeModelName_maps_default_and_Auto_to_auto()
+    {
+        CursorTokenCostCalculator.NormalizeModelName("default").Should().Be("auto");
+        CursorTokenCostCalculator.NormalizeModelName("Default").Should().Be("auto");
+        CursorTokenCostCalculator.NormalizeModelName("Auto").Should().Be("auto");
+        CursorTokenCostCalculator.NormalizeModelName("claude-4.5-sonnet").Should().Be("claude-4.5-sonnet");
+        CursorTokenCostCalculator.NormalizeModelName("  ").Should().BeNull();
+    }
+
+    [Fact]
+    public void ResolveRate_maps_default_alias_to_Auto_rate()
+    {
+        var rates = new List<CursorModelTokenRate>
+        {
+            new() { Model = "Auto", InputPerMillion = 1.25m, OutputPerMillion = 6m },
+            new() { Model = "*", InputPerMillion = 2m, OutputPerMillion = 8m }
+        };
+
+        var match = CursorTokenCostCalculator.ResolveRate(rates, "default");
+        match!.Model.Should().Be("Auto");
+    }
 }

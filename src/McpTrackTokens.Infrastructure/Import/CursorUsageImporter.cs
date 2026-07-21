@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Options;
+using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 using DomainValidationException = McpTrackTokens.Domain.Exceptions.ValidationException;
@@ -576,7 +577,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             PeriodStartUtc = ParseOptionalTimestamp(GetMapped("PeriodStartUtc"), timeZone),
             PeriodEndUtc = ParseOptionalTimestamp(GetMapped("PeriodEndUtc"), timeZone),
             UserIdentifier = NullIfWhiteSpace(GetMapped("UserIdentifier")),
-            Model = NullIfWhiteSpace(GetMapped("Model")),
+            Model = CursorTokenCostCalculator.NormalizeModelName(NullIfWhiteSpace(GetMapped("Model"))),
             Provider = NullIfWhiteSpace(GetMapped("Provider")) ?? "Cursor",
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
@@ -817,7 +818,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
     {
         // Identity is anchored on the row date so overlapping re-exports import each dated
         // row only once. Full timestamp remains in the fingerprint so distinct same-day rows
-        // stay separate; TimestampUtc is matched to the closest prior prompt (second precision).
+        // stay separate; TimestampUtc is matched to the closest prior same-model prompt (second precision).
         var utc = timestampUtc.ToUniversalTime();
         var dateKey = utc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var timeKey = utc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);

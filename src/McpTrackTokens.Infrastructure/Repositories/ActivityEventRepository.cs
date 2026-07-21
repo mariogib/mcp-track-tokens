@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
+using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 using McpTrackTokens.Domain.Services;
@@ -150,9 +151,11 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     /// <inheritdoc />
     /// <remarks>
     /// Does not exclude prompts that already have usage attributions.
+    /// Only prompts whose model matches <paramref name="model"/> are considered.
     /// </remarks>
     public async Task<PromptActivityEvent?> FindClosestPriorPromptWithProjectAsync(
         DateTimeOffset timestampUtc,
+        string? model,
         CancellationToken cancellationToken = default)
     {
         var at = TimestampPrecision.RoundToSecond(timestampUtc);
@@ -170,11 +173,31 @@ public sealed class ActivityEventRepository : IActivityEventRepository
 
         return candidates
             .Select(e => (Event: e, Second: TimestampPrecision.RoundToSecond(e.TimestampUtc)))
-            .Where(x => x.Second <= at)
+            .Where(x => x.Second <= at && ModelsMatch(x.Event.Model, model))
             .OrderByDescending(x => x.Second)
             .ThenBy(x => x.Event.Id)
             .Select(x => x.Event)
             .FirstOrDefault();
+    }
+
+    private static bool ModelsMatch(string? promptModel, string? usageModel)
+    {
+        var left = CursorTokenCostCalculator.NormalizeModelName(promptModel) ?? string.Empty;
+        var right = CursorTokenCostCalculator.NormalizeModelName(usageModel) ?? string.Empty;
+        if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (left.Length == 0 || right.Length == 0)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            CursorTokenCostCalculator.NormalizeModelKey(left),
+            CursorTokenCostCalculator.NormalizeModelKey(right),
+            StringComparison.Ordinal);
     }
 
     /// <inheritdoc />

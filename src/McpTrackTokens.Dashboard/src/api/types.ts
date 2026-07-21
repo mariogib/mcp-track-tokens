@@ -620,6 +620,8 @@ export interface PromptEventDto {
   /** Present when reconciliation linked this prompt to imported usage. */
   totalTokens?: number | null;
   reportedCost?: number | null;
+  /** Rate-card calculated cost for linked usage (Settings Cursor token rates). */
+  calculatedTokenCost?: number | null;
   /** Number of imported usage rows linked to this prompt (many-to-one). */
   linkedUsageCount?: number;
   hasLinkedUsage?: boolean;
@@ -699,6 +701,7 @@ export interface UpdateTimesheetCategoryRequest {
 export interface TimesheetEntryDto {
   id: string;
   projectId: string;
+  projectName?: string | null;
   categoryId: string;
   categoryName: string;
   startedAtUtc: string;
@@ -707,6 +710,21 @@ export interface TimesheetEntryDto {
   isOpen: boolean;
   createdAtUtc: string;
   updatedAtUtc: string;
+}
+
+export interface StartTimesheetRequest {
+  projectId?: string | null;
+  categoryId?: string | null;
+  category?: string | null;
+  startedAtUtc?: string | null;
+  notes?: string | null;
+}
+
+export interface EndTimesheetRequest {
+  projectId?: string | null;
+  timesheetEntryId?: string | null;
+  endedAtUtc?: string | null;
+  appendNotes?: string | null;
 }
 
 export interface CreateTimesheetEntryRequest {
@@ -722,6 +740,71 @@ export interface UpdateTimesheetEntryRequest {
   startedAtUtc: string;
   endedAtUtc?: string | null;
   notes?: string | null;
+}
+
+export interface TimesheetReportTotals {
+  totalDurationSeconds: number;
+  entryCount: number;
+  openEntryCount: number;
+}
+
+export interface TimesheetCategoryBreakdownRow {
+  categoryId: string;
+  categoryName: string;
+  durationSeconds: number;
+  entryCount: number;
+}
+
+export interface TimesheetProjectBreakdownRow {
+  projectId: string;
+  projectName: string;
+  clientName?: string | null;
+  durationSeconds: number;
+  entryCount: number;
+}
+
+export interface TimesheetClientBreakdownRow {
+  clientName: string;
+  durationSeconds: number;
+  entryCount: number;
+  projectCount: number;
+}
+
+export interface TimesheetDailyBreakdownRow {
+  day: string;
+  durationSeconds: number;
+  entryCount: number;
+}
+
+export interface TimesheetOverallReport {
+  fromUtc: string;
+  toUtc: string;
+  totals: TimesheetReportTotals;
+  byCategory: TimesheetCategoryBreakdownRow[];
+  byProject: TimesheetProjectBreakdownRow[];
+  byClient: TimesheetClientBreakdownRow[];
+  byDay: TimesheetDailyBreakdownRow[];
+}
+
+export interface TimesheetProjectReport {
+  projectId: string;
+  projectName: string;
+  clientName?: string | null;
+  fromUtc: string;
+  toUtc: string;
+  totals: TimesheetReportTotals;
+  byCategory: TimesheetCategoryBreakdownRow[];
+  byDay: TimesheetDailyBreakdownRow[];
+}
+
+export interface TimesheetClientReport {
+  clientName: string;
+  fromUtc: string;
+  toUtc: string;
+  totals: TimesheetReportTotals;
+  byProject: TimesheetProjectBreakdownRow[];
+  byCategory: TimesheetCategoryBreakdownRow[];
+  byDay: TimesheetDailyBreakdownRow[];
 }
 
 export interface DateRangeParams {

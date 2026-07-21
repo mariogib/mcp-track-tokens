@@ -70,6 +70,12 @@ public interface ISessionRepository
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<EditorSession>> ListAsync(
+        Guid? projectId = null,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(EditorSession session, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(EditorSession session, CancellationToken cancellationToken = default);
@@ -122,6 +128,15 @@ public interface ITimesheetEntryRepository
 
     Task<IReadOnlyList<TimesheetEntry>> ListByProjectAsync(
         Guid projectId,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists timesheet entries across projects, optionally filtered by project and date range.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetEntry>> ListAsync(
+        Guid? projectId = null,
         DateTimeOffset? fromUtc = null,
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
@@ -199,12 +214,14 @@ public interface IActivityEventRepository
 
     /// <summary>
     /// Finds the prompt (with a project) whose timestamp (rounded to the second)
-    /// is closest at or before <paramref name="timestampUtc"/>.
+    /// is closest at or before <paramref name="timestampUtc"/> and whose model
+    /// matches <paramref name="model"/> (case-insensitive; empty matches empty).
     /// Already-attributed prompts remain eligible — multiple usage rows may
     /// link to the same prompt (many usages → one prompt).
     /// </summary>
     Task<PromptActivityEvent?> FindClosestPriorPromptWithProjectAsync(
         DateTimeOffset timestampUtc,
+        string? model,
         CancellationToken cancellationToken = default);
 
     Task<int> CountUnallocatedAsync(

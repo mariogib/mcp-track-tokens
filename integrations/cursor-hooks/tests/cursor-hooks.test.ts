@@ -83,6 +83,26 @@ describe('adapters', () => {
     expect(fromNested.event.model).toBe('claude-opus-4-7-thinking-max');
   });
 
+  it('maps Cursor default/Auto model to auto', () => {
+    const fromDefault = adaptCursorPayload(
+      {
+        model: 'default',
+        workspace_roots: ['/ws'],
+      },
+      'PromptSubmitted',
+    );
+    expect(fromDefault.event.model).toBe('auto');
+
+    const fromAuto = adaptCursorPayload(
+      {
+        model: 'Auto',
+        workspace_roots: ['/ws'],
+      },
+      'PromptSubmitted',
+    );
+    expect(fromAuto.event.model).toBe('auto');
+  });
+
   it('accepts camelCase aliases', () => {
     const adapted = adaptCursorPayload(
       {

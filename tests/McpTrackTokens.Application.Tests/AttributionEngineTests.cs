@@ -23,10 +23,14 @@ public sealed class AttributionEngineTests
             _unitOfWork,
             new AllocationRequestDtoValidator());
 
-    private static ExternalUsageRecord CreateUsage(decimal cost = 10m, DateTimeOffset? at = null)
+    private static ExternalUsageRecord CreateUsage(
+        decimal cost = 10m,
+        DateTimeOffset? at = null,
+        string? model = "claude-4.5-sonnet")
         => ExternalUsageRecord.Create(
             UsageSource.CursorCsv,
             at ?? DateTimeOffset.Parse("2026-07-17T10:00:00Z"),
+            model: model,
             reportedCost: cost,
             totalTokens: 1000);
 
@@ -35,16 +39,18 @@ public sealed class AttributionEngineTests
     {
         var projectId = Guid.NewGuid();
         var usageAt = DateTimeOffset.Parse("2026-07-17T10:00:30Z");
+        var model = "claude-4.5-sonnet";
         var prompt = PromptActivityEvent.Create(
             ActivityEventType.PromptSubmitted,
             EditorType.Cursor,
             DateTimeOffset.Parse("2026-07-17T10:00:00Z"),
-            projectId: projectId);
+            projectId: projectId,
+            model: model);
 
-        _events.FindClosestPriorPromptWithProjectAsync(usageAt, Arg.Any<CancellationToken>())
+        _events.FindClosestPriorPromptWithProjectAsync(usageAt, model, Arg.Any<CancellationToken>())
             .Returns(prompt);
 
-        var result = await CreateSut().ProposeAsync(CreateUsage(at: usageAt));
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: usageAt, model: model));
 
         result.Should().HaveCount(1);
         result[0].ProjectId.Should().Be(projectId);
@@ -53,21 +59,24 @@ public sealed class AttributionEngineTests
         result[0].Confidence.Should().Be(AttributionConfidence.High);
         result[0].AllocatedCost.Should().Be(10m);
         result[0].AllocatedTotalTokens.Should().Be(1000);
+        result[0].Reason.Should().Contain(model);
     }
 
     [Fact]
     public async Task ProposeAsync_NoPriorPrompt_is_unallocated()
     {
         var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
-        _events.FindClosestPriorPromptWithProjectAsync(at, Arg.Any<CancellationToken>())
+        var model = "claude-4.5-sonnet";
+        _events.FindClosestPriorPromptWithProjectAsync(at, model, Arg.Any<CancellationToken>())
             .Returns((PromptActivityEvent?)null);
 
-        var result = await CreateSut().ProposeAsync(CreateUsage(at: at));
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: at, model: model));
 
         result.Should().HaveCount(1);
         result[0].ProjectId.Should().BeNull();
         result[0].ActivityEventId.Should().BeNull();
         result[0].AttributionMethod.Should().Be(AttributionMethod.Unallocated);
+        result[0].Reason.Should().Contain(model);
     }
 
     [Fact]
@@ -75,18 +84,21 @@ public sealed class AttributionEngineTests
     {
         var projectId = Guid.NewGuid();
         var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        var model = "gpt-5.4";
         var prompt = PromptActivityEvent.Create(
             ActivityEventType.PromptSubmitted,
             EditorType.Cursor,
             at,
-            projectId: projectId);
+            projectId: projectId,
+            model: model);
 
-        _events.FindClosestPriorPromptWithProjectAsync(at, Arg.Any<CancellationToken>())
+        _events.FindClosestPriorPromptWithProjectAsync(at, model, Arg.Any<CancellationToken>())
             .Returns(prompt);
 
         var usage = ExternalUsageRecord.Create(
             UsageSource.CursorCsv,
             at,
+            model: model,
             reportedCost: 0m,
             totalTokens: 3250);
 
@@ -103,23 +115,26 @@ public sealed class AttributionEngineTests
     {
         var projectId = Guid.NewGuid();
         var promptAt = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        var model = "claude-4.5-sonnet";
         var prompt = PromptActivityEvent.Create(
             ActivityEventType.PromptSubmitted,
             EditorType.Cursor,
             promptAt,
-            projectId: projectId);
+            projectId: projectId,
+            model: model);
 
         var usageAt1 = promptAt.AddSeconds(2);
         var usageAt2 = promptAt.AddSeconds(45);
 
         _events.FindClosestPriorPromptWithProjectAsync(
                 Arg.Any<DateTimeOffset>(),
+                model,
                 Arg.Any<CancellationToken>())
             .Returns(prompt);
 
         var sut = CreateSut();
-        var first = await sut.ProposeAsync(CreateUsage(cost: 1m, at: usageAt1));
-        var second = await sut.ProposeAsync(CreateUsage(cost: 2m, at: usageAt2));
+        var first = await sut.ProposeAsync(CreateUsage(cost: 1m, at: usageAt1, model: model));
+        var second = await sut.ProposeAsync(CreateUsage(cost: 2m, at: usageAt2, model: model));
 
         first[0].ActivityEventId.Should().Be(prompt.Id);
         second[0].ActivityEventId.Should().Be(prompt.Id);
@@ -127,5 +142,21 @@ public sealed class AttributionEngineTests
         second[0].ProjectId.Should().Be(projectId);
         first[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
         second[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Passes_usage_model_to_prompt_lookup()
+    {
+        var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        var model = "composer-2";
+        _events.FindClosestPriorPromptWithProjectAsync(at, model, Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
+
+        await CreateSut().ProposeAsync(CreateUsage(at: at, model: model));
+
+        await _events.Received(1).FindClosestPriorPromptWithProjectAsync(
+            at,
+            model,
+            Arg.Any<CancellationToken>());
     }
 }

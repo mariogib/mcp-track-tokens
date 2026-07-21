@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ISessionManagementService, SessionManagementService>();
         services.TryAddScoped<ITimesheetManagementService, TimesheetManagementService>();
         services.TryAddScoped<ITimesheetCategoryService, TimesheetCategoryService>();
+        services.TryAddScoped<ITimesheetReportService, TimesheetReportService>();
         services.TryAddScoped<IReportService, ReportService>();
         services.TryAddScoped<IReconciliationService, ReconciliationService>();
         services.TryAddScoped<IExportService, ExportService>();

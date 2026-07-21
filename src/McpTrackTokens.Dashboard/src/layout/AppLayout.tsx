@@ -17,6 +17,15 @@ function isNavGroup(item: NavEntry): item is NavGroup {
 const navItems: NavEntry[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/projects', label: 'Projects' },
+  {
+    label: 'Timesheet',
+    children: [
+      { to: '/timesheet', label: 'Entries', end: true },
+      { to: '/timesheet/reports/overall', label: 'Overall report', end: true },
+      { to: '/timesheet/reports/projects', label: 'By project', end: true },
+      { to: '/timesheet/reports/clients', label: 'By client', end: true },
+    ],
+  },
   { to: '/reports', label: 'Reports' },
   { to: '/imported-usage', label: 'Imported usage' },
   { to: '/settings', label: 'Settings' },
@@ -47,6 +56,26 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
   switch (pathname) {
     case '/projects':
       return { title: 'Projects', subtitle: 'Tracked repositories and cost rollups' };
+    case '/timesheet':
+      return {
+        title: 'Timesheet',
+        subtitle: 'Start, end, and edit billable time across projects',
+      };
+    case '/timesheet/reports/overall':
+      return {
+        title: 'Timesheet reports',
+        subtitle: 'Overall billable time across all projects',
+      };
+    case '/timesheet/reports/projects':
+      return {
+        title: 'Timesheet reports',
+        subtitle: 'Billable time for one project',
+      };
+    case '/timesheet/reports/clients':
+      return {
+        title: 'Timesheet reports',
+        subtitle: 'Billable time rolled up by client',
+      };
     case '/reports':
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
     case '/imported-usage':

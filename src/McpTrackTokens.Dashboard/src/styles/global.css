@@ -905,6 +905,53 @@ a.chart-card--link:focus-visible .chart-card-open {
   flex-wrap: wrap;
 }
 
+.link-button {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.link-button:hover,
+.link-button:focus-visible {
+  color: var(--accent-hover);
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: auto;
+  background: var(--bg-overlay);
+  padding: 4rem 1rem 1rem;
+}
+
+.modal-panel {
+  width: min(1100px, 96vw);
+  max-height: calc(100vh - 5rem);
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 1rem;
+}
+
 .mono {
   font-family: var(--font-mono);
   font-size: 0.85rem;

@@ -169,7 +169,7 @@ public sealed class EventIngestionService : IEventIngestionService
             promptContentEncrypted: encryptedContent,
             responseCompletedAtUtc: dto.ResponseCompletedAtUtc,
             durationMilliseconds: dto.DurationMilliseconds,
-            model: dto.Model,
+            model: CursorTokenCostCalculator.NormalizeModelName(dto.Model),
             provider: EnumParsing.ParseProvider(dto.Provider),
             status: ResolveStatus(dto, eventType),
             attributionMethod: attributionMethod,
@@ -581,7 +581,11 @@ public sealed class EventIngestionService : IEventIngestionService
 
         var completedAt = dto.ResponseCompletedAtUtc ?? dto.TimestampUtc;
         var status = ResolveStatus(dto, eventType);
-        prompt.ApplyCompletion(status, completedAt, dto.DurationMilliseconds, dto.Model);
+        prompt.ApplyCompletion(
+            status,
+            completedAt,
+            dto.DurationMilliseconds,
+            CursorTokenCostCalculator.NormalizeModelName(dto.Model));
         await _events.UpdateAsync(prompt, cancellationToken).ConfigureAwait(false);
         return true;
     }

@@ -9,6 +9,8 @@ public sealed record TimesheetEntryDto
 
     public Guid ProjectId { get; init; }
 
+    public string ProjectName { get; init; } = string.Empty;
+
     public Guid CategoryId { get; init; }
 
     public string CategoryName { get; init; } = string.Empty;
@@ -110,4 +112,134 @@ public sealed record EndTimesheetRequest
     /// Optional note appended to the existing notes.
     /// </summary>
     public string? AppendNotes { get; init; }
+}
+
+/// <summary>
+/// Summary totals for a timesheet report.
+/// </summary>
+public sealed record TimesheetReportTotals
+{
+    public long TotalDurationSeconds { get; init; }
+
+    public int EntryCount { get; init; }
+
+    public int OpenEntryCount { get; init; }
+}
+
+/// <summary>
+/// Timesheet duration rolled up by category.
+/// </summary>
+public sealed record TimesheetCategoryBreakdownRow
+{
+    public Guid CategoryId { get; init; }
+
+    public string CategoryName { get; init; } = string.Empty;
+
+    public long DurationSeconds { get; init; }
+
+    public int EntryCount { get; init; }
+}
+
+/// <summary>
+/// Timesheet duration rolled up by project.
+/// </summary>
+public sealed record TimesheetProjectBreakdownRow
+{
+    public Guid ProjectId { get; init; }
+
+    public string ProjectName { get; init; } = string.Empty;
+
+    public string? ClientName { get; init; }
+
+    public long DurationSeconds { get; init; }
+
+    public int EntryCount { get; init; }
+}
+
+/// <summary>
+/// Timesheet duration rolled up by client.
+/// </summary>
+public sealed record TimesheetClientBreakdownRow
+{
+    public string ClientName { get; init; } = string.Empty;
+
+    public long DurationSeconds { get; init; }
+
+    public int EntryCount { get; init; }
+
+    public int ProjectCount { get; init; }
+}
+
+/// <summary>
+/// Timesheet duration rolled up by UTC day.
+/// </summary>
+public sealed record TimesheetDailyBreakdownRow
+{
+    public DateOnly Day { get; init; }
+
+    public long DurationSeconds { get; init; }
+
+    public int EntryCount { get; init; }
+}
+
+/// <summary>
+/// Timesheet report across all projects.
+/// </summary>
+public sealed record TimesheetOverallReport
+{
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public TimesheetReportTotals Totals { get; init; } = new();
+
+    public IReadOnlyList<TimesheetCategoryBreakdownRow> ByCategory { get; init; } = [];
+
+    public IReadOnlyList<TimesheetProjectBreakdownRow> ByProject { get; init; } = [];
+
+    public IReadOnlyList<TimesheetClientBreakdownRow> ByClient { get; init; } = [];
+
+    public IReadOnlyList<TimesheetDailyBreakdownRow> ByDay { get; init; } = [];
+}
+
+/// <summary>
+/// Timesheet report for one project.
+/// </summary>
+public sealed record TimesheetProjectReport
+{
+    public Guid ProjectId { get; init; }
+
+    public string ProjectName { get; init; } = string.Empty;
+
+    public string? ClientName { get; init; }
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public TimesheetReportTotals Totals { get; init; } = new();
+
+    public IReadOnlyList<TimesheetCategoryBreakdownRow> ByCategory { get; init; } = [];
+
+    public IReadOnlyList<TimesheetDailyBreakdownRow> ByDay { get; init; } = [];
+}
+
+/// <summary>
+/// Timesheet report for one client (all matching projects).
+/// </summary>
+public sealed record TimesheetClientReport
+{
+    public string ClientName { get; init; } = string.Empty;
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public TimesheetReportTotals Totals { get; init; } = new();
+
+    public IReadOnlyList<TimesheetProjectBreakdownRow> ByProject { get; init; } = [];
+
+    public IReadOnlyList<TimesheetCategoryBreakdownRow> ByCategory { get; init; } = [];
+
+    public IReadOnlyList<TimesheetDailyBreakdownRow> ByDay { get; init; } = [];
 }

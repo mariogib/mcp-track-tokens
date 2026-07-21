@@ -6,6 +6,8 @@ import { ProjectDetailsPage } from './pages/ProjectDetailsPage';
 import { ProjectChartDetailPage } from './pages/ProjectChartDetailPage';
 import { OverviewChartDetailPage } from './pages/OverviewChartDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { TimesheetPage } from './pages/TimesheetPage';
+import { TimesheetReportsPage } from './pages/TimesheetReportsPage';
 import { ImportedUsagePage } from './pages/ImportedUsagePage';
 import { UnallocatedActivityPage } from './pages/UnallocatedActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -24,6 +26,11 @@ export default function App() {
           path="projects/:projectId/charts/:chartKey"
           element={<ProjectChartDetailPage />}
         />
+        <Route path="timesheet" element={<TimesheetPage />} />
+        <Route path="timesheet/reports/overall" element={<TimesheetReportsPage />} />
+        <Route path="timesheet/reports/projects" element={<TimesheetReportsPage />} />
+        <Route path="timesheet/reports/clients" element={<TimesheetReportsPage />} />
+        <Route path="timesheet/reports" element={<Navigate to="/timesheet/reports/overall" replace />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="imported-usage" element={<ImportedUsagePage />} />
         <Route path="imports" element={<Navigate to="/imported-usage" replace />} />

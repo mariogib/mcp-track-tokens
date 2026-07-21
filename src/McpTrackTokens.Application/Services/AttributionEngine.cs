@@ -9,7 +9,7 @@ namespace McpTrackTokens.Application.Services;
 
 /// <summary>
 /// Attributes imported usage to a project by linking each row to the closest
-/// prompt at or before the usage timestamp (second precision).
+/// prior prompt that uses the same model (second precision).
 /// Prompts are never consumed: several usage rows may share one prompt.
 /// </summary>
 public sealed class AttributionEngine : IAttributionEngine
@@ -43,7 +43,10 @@ public sealed class AttributionEngine : IAttributionEngine
         ArgumentNullException.ThrowIfNull(usageRecord);
 
         var prompt = await _events
-            .FindClosestPriorPromptWithProjectAsync(usageRecord.TimestampUtc, cancellationToken)
+            .FindClosestPriorPromptWithProjectAsync(
+                usageRecord.TimestampUtc,
+                usageRecord.Model,
+                cancellationToken)
             .ConfigureAwait(false);
 
         if (prompt?.ProjectId is Guid projectId)
@@ -51,6 +54,9 @@ public sealed class AttributionEngine : IAttributionEngine
             var usageSecond = TimestampPrecision.RoundToSecond(usageRecord.TimestampUtc);
             var promptSecond = TimestampPrecision.RoundToSecond(prompt.TimestampUtc);
             var deltaSeconds = (usageSecond - promptSecond).TotalSeconds;
+            var modelLabel = string.IsNullOrWhiteSpace(usageRecord.Model)
+                ? "(no model)"
+                : usageRecord.Model.Trim();
             return [CreateSingle(
                 usageRecord,
                 projectId,
@@ -58,9 +64,12 @@ public sealed class AttributionEngine : IAttributionEngine
                 prompt.Id,
                 AttributionMethod.ClosestPromptMatch,
                 AttributionConfidence.High,
-                $"Linked to closest prior prompt {prompt.Id:D} at {promptSecond:yyyy-MM-dd HH:mm:ss}Z (usage {usageSecond:yyyy-MM-dd HH:mm:ss}Z, Δ {deltaSeconds:0} s); project from that prompt.")];
+                $"Linked to closest prior prompt {prompt.Id:D} with matching model '{modelLabel}' at {promptSecond:yyyy-MM-dd HH:mm:ss}Z (usage {usageSecond:yyyy-MM-dd HH:mm:ss}Z, Δ {deltaSeconds:0} s); project from that prompt.")];
         }
 
+        var unmatchedModel = string.IsNullOrWhiteSpace(usageRecord.Model)
+            ? "(no model)"
+            : usageRecord.Model.Trim();
         return [CreateSingle(
             usageRecord,
             projectId: null,
@@ -68,7 +77,7 @@ public sealed class AttributionEngine : IAttributionEngine
             activityEventId: null,
             AttributionMethod.Unallocated,
             AttributionConfidence.Unallocated,
-            "No prompt with a project found at or before this usage timestamp (second precision).")];
+            $"No prompt with a project and matching model '{unmatchedModel}' found at or before this usage timestamp (second precision).")];
     }
 
     /// <inheritdoc />

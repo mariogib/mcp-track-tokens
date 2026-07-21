@@ -122,6 +122,8 @@ export function mapCursorStatus(
 /**
  * Resolve model from Cursor's evolving payload shapes.
  * Prefers human-readable slug (`model`) then structured ids / nested objects.
+ * Cursor Auto mode reports `default`; usage exports often use `Auto`.
+ * Canonical stored name is lowercase `auto`.
  */
 export function resolveModel(payload: Record<string, unknown>): string | undefined {
   const direct =
@@ -131,23 +133,30 @@ export function resolveModel(payload: Record<string, unknown>): string | undefin
     asString(payload.model_name) ??
     asString(payload.modelName);
   if (direct) {
-    return direct;
+    return normalizeModelName(direct);
   }
 
   const nested = payload.model;
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     const obj = nested as Record<string, unknown>;
-    return (
+    const nestedName =
       asString(obj.slug) ??
       asString(obj.name) ??
       asString(obj.id) ??
       asString(obj.model) ??
       asString(obj.modelId) ??
-      asString(obj.model_id)
-    );
+      asString(obj.model_id);
+    return nestedName ? normalizeModelName(nestedName) : undefined;
   }
 
   return undefined;
+}
+
+/** Map Cursor aliases to the canonical lowercase usage name. */
+export function normalizeModelName(model: string): string {
+  const trimmed = model.trim();
+  const key = trimmed.toLowerCase();
+  return key === 'default' || key === 'auto' ? 'auto' : trimmed;
 }
 
 /**

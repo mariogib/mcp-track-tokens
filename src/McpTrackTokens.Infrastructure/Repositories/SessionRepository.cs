@@ -89,11 +89,25 @@ public sealed class SessionRepository : ISessionRepository
         DateTimeOffset? fromUtc = null,
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
+        => await ListAsync(projectId, fromUtc, toUtc, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<EditorSession>> ListAsync(
+        Guid? projectId = null,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default)
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
+        var query = _db.EditorSessions.AsNoTracking();
+        if (projectId is Guid pid)
+        {
+            query = query.Where(s => s.ProjectId == pid);
+        }
+
         return await SqliteDateTimeQuery.MaterializeAsync(
-            _db.EditorSessions.AsNoTracking().Where(s => s.ProjectId == projectId),
+            query,
             s => (from is null || s.StartedAtUtc >= from || (s.EndedAtUtc != null && s.EndedAtUtc >= from)) &&
                  (to is null || s.StartedAtUtc <= to),
             items => items.OrderByDescending(s => s.StartedAtUtc),

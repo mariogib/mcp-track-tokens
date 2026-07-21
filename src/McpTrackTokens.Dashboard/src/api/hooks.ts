@@ -7,8 +7,10 @@ import type {
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
+  EndTimesheetRequest,
   ExportRequestDto,
   ReconciliationRequestDto,
+  StartTimesheetRequest,
   UpdateSettingsRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
@@ -42,8 +44,19 @@ export const queryKeys = {
     ['projects', id, 'prompts', from, to] as const,
   projectSessions: (id: string, from?: string, to?: string) =>
     ['projects', id, 'sessions', from, to] as const,
+  sessions: (projectId?: string, from?: string, to?: string) =>
+    ['sessions', projectId ?? 'all', from, to] as const,
+  sessionPrompts: (id: string) => ['sessions', id, 'prompts'] as const,
   projectTimesheet: (id: string, from?: string, to?: string) =>
     ['projects', id, 'timesheet', from, to] as const,
+  timesheetEntries: (projectId?: string, from?: string, to?: string) =>
+    ['timesheet-entries', projectId ?? 'all', from, to] as const,
+  timesheetOverallReport: (from: string, to: string) =>
+    ['timesheet-reports', 'overall', from, to] as const,
+  timesheetProjectReport: (projectId: string, from: string, to: string) =>
+    ['timesheet-reports', 'project', projectId, from, to] as const,
+  timesheetClientReport: (clientName: string, from: string, to: string) =>
+    ['timesheet-reports', 'client', clientName, from, to] as const,
   activeSession: ['sessions', 'active'] as const,
   unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
   importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
@@ -217,6 +230,25 @@ export function useProjectSessionsQuery(id: string | undefined, fromUtc?: string
   });
 }
 
+export function useSessionsQuery(
+  params?: { projectId?: string; fromUtc?: string; toUtc?: string },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.sessions(params?.projectId, params?.fromUtc, params?.toUtc),
+    queryFn: ({ signal }) => api.getSessions(params, signal),
+    enabled,
+  });
+}
+
+export function useSessionPromptsQuery(id: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.sessionPrompts(id ?? ''),
+    queryFn: ({ signal }) => api.getSessionPrompts(id!, signal),
+    enabled: enabled && Boolean(id),
+  });
+}
+
 export function useCreateProjectSessionMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -276,6 +308,29 @@ export function useProjectTimesheetQuery(id: string | undefined, fromUtc?: strin
   });
 }
 
+export function useTimesheetEntriesQuery(
+  params?: { projectId?: string; fromUtc?: string; toUtc?: string },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.timesheetEntries(params?.projectId, params?.fromUtc, params?.toUtc),
+    queryFn: ({ signal }) => api.getTimesheetEntries(params, signal),
+    enabled,
+  });
+}
+
+function invalidateTimesheetQueries(
+  qc: ReturnType<typeof useQueryClient>,
+  projectId?: string | null,
+) {
+  void qc.invalidateQueries({ queryKey: ['timesheet-entries'] });
+  if (projectId) {
+    void qc.invalidateQueries({ queryKey: ['projects', projectId, 'timesheet'] });
+  } else {
+    void qc.invalidateQueries({ queryKey: ['projects'] });
+  }
+}
+
 export function useCreateTimesheetEntryMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -287,7 +342,27 @@ export function useCreateTimesheetEntryMutation() {
       body: CreateTimesheetEntryRequest;
     }) => api.createProjectTimesheetEntry(projectId, body),
     onSuccess: (_data, variables) => {
-      void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'timesheet'] });
+      invalidateTimesheetQueries(qc, variables.projectId);
+    },
+  });
+}
+
+export function useStartTimesheetMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: StartTimesheetRequest) => api.startTimesheet(body),
+    onSuccess: (data) => {
+      invalidateTimesheetQueries(qc, data.projectId);
+    },
+  });
+}
+
+export function useEndTimesheetMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: EndTimesheetRequest) => api.endTimesheet(body),
+    onSuccess: (data) => {
+      invalidateTimesheetQueries(qc, data.projectId);
     },
   });
 }
@@ -298,7 +373,7 @@ export function useUpdateTimesheetEntryMutation() {
     mutationFn: ({ id, body }: { id: string; body: UpdateTimesheetEntryRequest }) =>
       api.updateTimesheetEntry(id, body),
     onSuccess: (data) => {
-      void qc.invalidateQueries({ queryKey: ['projects', data.projectId, 'timesheet'] });
+      invalidateTimesheetQueries(qc, data.projectId);
     },
   });
 }
@@ -309,12 +384,42 @@ export function useDeleteTimesheetEntryMutation() {
     mutationFn: ({ id }: { id: string; projectId?: string | null }) =>
       api.deleteTimesheetEntry(id),
     onSuccess: (_data, variables) => {
-      if (variables.projectId) {
-        void qc.invalidateQueries({ queryKey: ['projects', variables.projectId, 'timesheet'] });
-      } else {
-        void qc.invalidateQueries({ queryKey: ['projects'] });
-      }
+      invalidateTimesheetQueries(qc, variables.projectId);
     },
+  });
+}
+
+export function useTimesheetOverallReportQuery(fromUtc: string, toUtc: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getTimesheetOverallReport(fromUtc, toUtc, signal),
+    enabled,
+  });
+}
+
+export function useTimesheetProjectReportQuery(
+  projectId: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.timesheetProjectReport(projectId ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getTimesheetProjectReport(projectId!, fromUtc, toUtc, signal),
+    enabled: enabled && Boolean(projectId),
+  });
+}
+
+export function useTimesheetClientReportQuery(
+  clientName: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.timesheetClientReport(clientName ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getTimesheetClientReport(clientName!, fromUtc, toUtc, signal),
+    enabled: enabled && Boolean(clientName),
   });
 }
 

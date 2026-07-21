@@ -465,6 +465,7 @@ export function ProjectDetailsPage() {
                     <th>Linked usages</th>
                     <th>Total Tokens</th>
                     <th>Cost</th>
+                    <th>Calculated cost</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -490,6 +491,11 @@ export function ProjectDetailsPage() {
                       <td>
                         {p.hasLinkedUsage || p.reportedCost != null
                           ? formatCurrency(p.reportedCost ?? 0)
+                          : '—'}
+                      </td>
+                      <td>
+                        {p.hasLinkedUsage || p.calculatedTokenCost != null
+                          ? formatCurrency(p.calculatedTokenCost ?? 0)
                           : '—'}
                       </td>
                     </tr>

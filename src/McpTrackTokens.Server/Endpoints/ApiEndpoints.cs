@@ -1,6 +1,9 @@
 using FluentValidation;
+using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
+using McpTrackTokens.Application.Options;
+using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 using McpTrackTokens.Domain.Exceptions;
@@ -45,8 +48,14 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
+        api.MapGet("/sessions", GetSessionsAsync);
+        api.MapGet("/sessions/{id:guid}/prompts", GetSessionPromptsAsync);
         api.MapPut("/sessions/{id:guid}", UpdateSessionAsync);
         api.MapDelete("/sessions/{id:guid}", DeleteSessionAsync);
+        api.MapGet("/timesheet-entries", GetTimesheetEntriesAsync);
+        api.MapGet("/timesheet/reports/overall", GetTimesheetOverallReportAsync);
+        api.MapGet("/timesheet/reports/projects/{id:guid}", GetTimesheetProjectReportAsync);
+        api.MapGet("/timesheet/reports/clients/{clientName}", GetTimesheetClientReportAsync);
         api.MapPost("/timesheet/start", StartTimesheetAsync);
         api.MapPost("/timesheet/end", EndTimesheetAsync);
         api.MapPut("/timesheet-entries/{id:guid}", UpdateTimesheetEntryAsync);
@@ -584,6 +593,18 @@ public static class ApiEndpoints
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
     }
 
+    private static async Task<IResult> GetSessionsAsync(
+        ISessionRepository sessions,
+        Guid? projectId,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var list = await sessions.ListAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
+    }
+
     private static async Task<IResult> CreateProjectSessionAsync(
         Guid id,
         CreateProjectSessionRequest request,
@@ -634,6 +655,26 @@ public static class ApiEndpoints
         }
     }
 
+    private static async Task<IResult> GetSessionPromptsAsync(
+        Guid id,
+        ISessionRepository sessions,
+        IActivityEventRepository events,
+        CancellationToken cancellationToken)
+    {
+        var session = await sessions.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (session is null)
+        {
+            return Results.NotFound();
+        }
+
+        var prompts = await events.ListBySessionAsync(id, cancellationToken).ConfigureAwait(false);
+        return Results.Ok(prompts
+            .Where(e => e.EventType == ActivityEventType.PromptSubmitted)
+            .OrderByDescending(e => e.TimestampUtc)
+            .Select(ToPromptDto)
+            .ToList());
+    }
+
     private static async Task<IResult> GetProjectTimesheetEntriesAsync(
         Guid id,
         ITimesheetManagementService timesheets,
@@ -646,6 +687,84 @@ public static class ApiEndpoints
             var list = await timesheets.ListForProjectAsync(id, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetEntriesAsync(
+        ITimesheetManagementService timesheets,
+        Guid? projectId,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var list = await timesheets.ListAsync(projectId, fromUtc, toUtc, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetOverallReportAsync(
+        ITimesheetReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports.GetOverallReportAsync(from, to, cancellationToken).ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetProjectReportAsync(
+        Guid id,
+        ITimesheetReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports.GetProjectReportAsync(id, from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetClientReportAsync(
+        string clientName,
+        ITimesheetReportService reports,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var decoded = Uri.UnescapeDataString(clientName);
+            var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+            var report = await reports.GetClientReportAsync(decoded, from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
         }
         catch (Exception ex)
         {
@@ -742,6 +861,7 @@ public static class ApiEndpoints
         IActivityEventRepository events,
         IUsageAttributionRepository attributions,
         IExternalUsageRepository usage,
+        IOptions<TrackingOptions> trackingOptions,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
         CancellationToken cancellationToken)
@@ -774,6 +894,10 @@ public static class ApiEndpoints
             }
         }
 
+        var rates = trackingOptions.Value.CursorTokenRates.Count > 0
+            ? trackingOptions.Value.CursorTokenRates
+            : CursorTokenCostCalculator.CreateDefaultRates();
+
         var usageByPrompt = linked
             .Where(a => a.ActivityEventId is Guid)
             .GroupBy(a => a.ActivityEventId!.Value)
@@ -783,25 +907,38 @@ public static class ApiEndpoints
                 {
                     long tokens = 0;
                     decimal cost = 0m;
+                    decimal calculated = 0m;
                     foreach (var attr in g)
                     {
                         if (attr.AllocatedTotalTokens > 0 || attr.AllocatedCost > 0)
                         {
                             tokens += attr.AllocatedTotalTokens;
                             cost += attr.AllocatedCost;
-                            continue;
+                        }
+                        else if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var fallback))
+                        {
+                            tokens += fallback.TotalTokens
+                                ?? ((fallback.InputTokens ?? 0) + (fallback.OutputTokens ?? 0)
+                                    + (fallback.CachedInputTokens ?? 0) + (fallback.ReasoningTokens ?? 0));
+                            cost += fallback.ReportedCost ?? 0m;
                         }
 
-                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record))
+                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record) &&
+                            CursorTokenCostCalculator.ResolveRate(rates, record.Model) is { } rate)
                         {
-                            tokens += record.TotalTokens
-                                ?? ((record.InputTokens ?? 0) + (record.OutputTokens ?? 0)
-                                    + (record.CachedInputTokens ?? 0) + (record.ReasoningTokens ?? 0));
-                            cost += record.ReportedCost ?? 0m;
+                            calculated += CursorTokenCostCalculator.Estimate(
+                                record,
+                                attr.AllocationPercentage > 0m ? attr.AllocationPercentage : 100m,
+                                rate);
                         }
                     }
 
-                    return (Tokens: tokens, Cost: cost, Count: g.Count(), Linked: true);
+                    return (
+                        Tokens: tokens,
+                        Cost: cost,
+                        CalculatedTokenCost: Math.Round(calculated, 6, MidpointRounding.AwayFromZero),
+                        Count: g.Count(),
+                        Linked: true);
                 });
 
         return Results.Ok(prompts.Select(e =>
@@ -820,11 +957,29 @@ public static class ApiEndpoints
                 e.RepositoryPath,
                 totalTokens = linkedUsage.Linked ? linkedUsage.Tokens : (long?)null,
                 reportedCost = linkedUsage.Linked ? linkedUsage.Cost : (decimal?)null,
+                calculatedTokenCost = linkedUsage.Linked ? linkedUsage.CalculatedTokenCost : (decimal?)null,
                 linkedUsageCount = linkedUsage.Linked ? linkedUsage.Count : 0,
                 hasLinkedUsage = linkedUsage.Linked
             };
         }).ToList());
     }
+
+    private static object ToPromptDto(PromptActivityEvent e) => new
+    {
+        e.Id,
+        e.TimestampUtc,
+        eventType = e.EventType.ToString(),
+        editor = e.Editor.ToString(),
+        e.Model,
+        e.Branch,
+        status = e.Status.ToString(),
+        e.DurationMilliseconds,
+        e.RepositoryPath,
+        totalTokens = (long?)null,
+        reportedCost = (decimal?)null,
+        linkedUsageCount = 0,
+        hasLinkedUsage = false
+    };
 
     private static async Task<IResult> GetActiveSessionsAsync(
         ISessionRepository sessions,

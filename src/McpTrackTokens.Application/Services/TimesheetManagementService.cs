@@ -81,7 +81,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         var entry = TimesheetEntry.Start(project.Id, category.Id, started, request.Notes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry, category.Name);
+        return ToDto(entry, category.Name, project.Name);
     }
 
     /// <inheritdoc />
@@ -130,20 +130,38 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     }
 
     /// <inheritdoc />
-    public async Task<IReadOnlyList<TimesheetEntryDto>> ListForProjectAsync(
+    public Task<IReadOnlyList<TimesheetEntryDto>> ListForProjectAsync(
         Guid projectId,
         DateTimeOffset? fromUtc = null,
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
-    {
-        _ = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
-            ?? throw new EntityNotFoundException(nameof(Project), projectId);
+        => ListAsync(projectId, fromUtc, toUtc, cancellationToken);
 
-        var list = await _timesheets.ListByProjectAsync(projectId, fromUtc, toUtc, cancellationToken)
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetEntryDto>> ListAsync(
+        Guid? projectId = null,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId is Guid id)
+        {
+            _ = await _projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new EntityNotFoundException(nameof(Project), id);
+        }
+
+        var list = await _timesheets.ListAsync(projectId, fromUtc, toUtc, cancellationToken)
             .ConfigureAwait(false);
-        var names = await LoadCategoryNamesAsync(list.Select(e => e.CategoryId), cancellationToken)
+        var categoryNames = await LoadCategoryNamesAsync(list.Select(e => e.CategoryId), cancellationToken)
             .ConfigureAwait(false);
-        return list.Select(e => ToDto(e, names.GetValueOrDefault(e.CategoryId, string.Empty))).ToList();
+        var projectNames = await LoadProjectNamesAsync(list.Select(e => e.ProjectId), cancellationToken)
+            .ConfigureAwait(false);
+        return list
+            .Select(e => ToDto(
+                e,
+                categoryNames.GetValueOrDefault(e.CategoryId, string.Empty),
+                projectNames.GetValueOrDefault(e.ProjectId, string.Empty)))
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -155,7 +173,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         ArgumentNullException.ThrowIfNull(request);
         await _createValidator.ValidateAndThrowAsync(request, cancellationToken).ConfigureAwait(false);
 
-        _ = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
+        var project = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
             ?? throw new EntityNotFoundException(nameof(Project), projectId);
 
         var category = await ResolveCategoryAsync(
@@ -176,7 +194,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
 
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return ToDto(entry, category.Name);
+        return ToDto(entry, category.Name, project.Name);
     }
 
     /// <inheritdoc />
@@ -378,13 +396,31 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             .ToDictionary(c => c.Id, c => c.Name);
     }
 
+    private async Task<Dictionary<Guid, string>> LoadProjectNamesAsync(
+        IEnumerable<Guid> projectIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = projectIds.Where(id => id != Guid.Empty).Distinct().ToHashSet();
+        if (ids.Count == 0)
+        {
+            return new Dictionary<Guid, string>();
+        }
+
+        var all = await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
+        return all
+            .Where(p => ids.Contains(p.Id))
+            .ToDictionary(p => p.Id, p => p.Name);
+    }
+
     private async Task<TimesheetEntryDto> ToDtoAsync(
         TimesheetEntry entry,
         CancellationToken cancellationToken)
     {
         var category = await _categories.GetByIdAsync(entry.CategoryId, cancellationToken)
             .ConfigureAwait(false);
-        return ToDto(entry, category?.Name ?? string.Empty);
+        var project = await _projects.GetByIdAsync(entry.ProjectId, cancellationToken)
+            .ConfigureAwait(false);
+        return ToDto(entry, category?.Name ?? string.Empty, project?.Name ?? string.Empty);
     }
 
     private async Task<Project> ResolveProjectAsync(
@@ -418,10 +454,14 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 "Could not resolve a project from the current workspace. Register the project or pass projectId.");
     }
 
-    private static TimesheetEntryDto ToDto(TimesheetEntry entry, string categoryName) => new()
+    private static TimesheetEntryDto ToDto(
+        TimesheetEntry entry,
+        string categoryName,
+        string projectName = "") => new()
     {
         Id = entry.Id,
         ProjectId = entry.ProjectId,
+        ProjectName = projectName,
         CategoryId = entry.CategoryId,
         CategoryName = categoryName,
         StartedAtUtc = entry.StartedAtUtc,

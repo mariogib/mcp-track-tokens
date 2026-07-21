@@ -31,10 +31,15 @@ import type {
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
+  EndTimesheetRequest,
   SessionDto,
   SettingsDto,
+  StartTimesheetRequest,
   TimesheetCategoryDto,
+  TimesheetClientReport,
   TimesheetEntryDto,
+  TimesheetOverallReport,
+  TimesheetProjectReport,
   TrackingStatusDto,
   UpdateTimesheetCategoryRequest,
   AssignActivityRequestDto,
@@ -301,6 +306,22 @@ export const api = {
       signal,
     }),
 
+  getSessions: (
+    params?: { projectId?: string; fromUtc?: string; toUtc?: string },
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<SessionDto[]>('/api/v1/sessions', {
+      query: {
+        projectId: params?.projectId,
+        fromUtc: params?.fromUtc,
+        toUtc: params?.toUtc,
+      },
+      signal,
+    }),
+
+  getSessionPrompts: (id: string, signal?: AbortSignal) =>
+    apiRequest<PromptEventDto[]>(`/api/v1/sessions/${id}/prompts`, { signal }),
+
   createProjectSession: (
     projectId: string,
     body: CreateProjectSessionRequest,
@@ -336,12 +357,43 @@ export const api = {
       signal,
     }),
 
+  getTimesheetEntries: (
+    params?: {
+      projectId?: string;
+      fromUtc?: string;
+      toUtc?: string;
+    },
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetEntryDto[]>('/api/v1/timesheet-entries', {
+      query: {
+        projectId: params?.projectId,
+        fromUtc: params?.fromUtc,
+        toUtc: params?.toUtc,
+      },
+      signal,
+    }),
+
   createProjectTimesheetEntry: (
     projectId: string,
     body: CreateTimesheetEntryRequest,
     signal?: AbortSignal,
   ) =>
     apiRequest<TimesheetEntryDto>(`/api/v1/projects/${projectId}/timesheet-entries`, {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  startTimesheet: (body: StartTimesheetRequest, signal?: AbortSignal) =>
+    apiRequest<TimesheetEntryDto>('/api/v1/timesheet/start', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  endTimesheet: (body: EndTimesheetRequest, signal?: AbortSignal) =>
+    apiRequest<TimesheetEntryDto>('/api/v1/timesheet/end', {
       method: 'POST',
       body,
       signal,
@@ -359,6 +411,37 @@ export const api = {
       method: 'DELETE',
       signal,
     }),
+
+  getTimesheetOverallReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<TimesheetOverallReport>('/api/v1/timesheet/reports/overall', {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getTimesheetProjectReport: (
+    projectId: string,
+    fromUtc: string,
+    toUtc: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetProjectReport>(`/api/v1/timesheet/reports/projects/${projectId}`, {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getTimesheetClientReport: (
+    clientName: string,
+    fromUtc: string,
+    toUtc: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetClientReport>(
+      `/api/v1/timesheet/reports/clients/${encodeURIComponent(clientName)}`,
+      {
+        query: { fromUtc, toUtc },
+        signal,
+      },
+    ),
 
   updateProject: (id: string, body: UpdateProjectRequest, signal?: AbortSignal) =>
     apiRequest<ProjectDetailDto>(`/api/v1/projects/${id}`, {

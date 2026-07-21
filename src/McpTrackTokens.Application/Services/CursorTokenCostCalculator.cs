@@ -11,6 +11,26 @@ public static class CursorTokenCostCalculator
     private const decimal Million = 1_000_000m;
 
     /// <summary>
+    /// Canonicalizes known model aliases (e.g. Cursor <c>default</c>/<c>Auto</c> → <c>auto</c>).
+    /// </summary>
+    public static string? NormalizeModelName(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
+        var trimmed = model.Trim();
+        if (string.Equals(trimmed, "default", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(trimmed, "auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return "auto";
+        }
+
+        return trimmed;
+    }
+
+    /// <summary>
     /// Resolves the rate row for a model name (exact match, normalized contains, then <c>*</c>/<c>Auto</c>).
     /// </summary>
     public static CursorModelTokenRate? ResolveRate(
@@ -22,7 +42,7 @@ public static class CursorTokenCostCalculator
             return null;
         }
 
-        var name = string.IsNullOrWhiteSpace(model) ? "unknown" : model.Trim();
+        var name = NormalizeModelName(model) ?? "unknown";
         var exact = rates.FirstOrDefault(r =>
             string.Equals(r.Model, name, StringComparison.OrdinalIgnoreCase));
         if (exact is not null)
@@ -37,7 +57,8 @@ public static class CursorTokenCostCalculator
             var bestScore = 0;
             foreach (var rate in rates)
             {
-                if (rate.Model is "*" or "Auto")
+                if (rate.Model is "*" ||
+                    string.Equals(rate.Model, "Auto", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -72,7 +93,10 @@ public static class CursorTokenCostCalculator
                    string.Equals(r.Model, "Auto", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string NormalizeModelKey(string value)
+    /// <summary>
+    /// Normalizes a model name for fuzzy comparison (letters, digits, dots; lowercased).
+    /// </summary>
+    public static string NormalizeModelKey(string value)
     {
         Span<char> buffer = stackalloc char[value.Length];
         var n = 0;

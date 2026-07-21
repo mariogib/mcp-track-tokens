@@ -166,6 +166,15 @@ public interface ITimesheetManagementService
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists timesheet entries across projects for the dashboard.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetEntryDto>> ListAsync(
+        Guid? projectId = null,
+        DateTimeOffset? fromUtc = null,
+        DateTimeOffset? toUtc = null,
+        CancellationToken cancellationToken = default);
+
     Task<TimesheetEntryDto> CreateForProjectAsync(
         Guid projectId,
         CreateTimesheetEntryRequest request,
@@ -187,6 +196,29 @@ public interface ITimesheetManagementService
     Task EnsureAutocreatedOpenEntryAsync(
         Guid projectId,
         DateTimeOffset? startedAtUtc = null,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Builds timesheet duration reports for clients, projects, and overall rollups.
+/// </summary>
+public interface ITimesheetReportService
+{
+    Task<TimesheetOverallReport> GetOverallReportAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetProjectReport> GetProjectReportAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<TimesheetClientReport> GetClientReportAsync(
+        string clientName,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
         CancellationToken cancellationToken = default);
 }
 
