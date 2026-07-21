@@ -256,6 +256,12 @@ export interface UnallocatedUsageReport {
   items: UnallocatedItemDto[];
 }
 
+export interface DeleteUnallocatedUsageResultDto {
+  fromUtc: string;
+  toUtc: string;
+  deletedCount: number;
+}
+
 export interface ImportedUsageItemDto {
   id: string;
   timestampUtc: string;
@@ -548,6 +554,15 @@ export interface CursorModelTokenRateDto {
   cacheReadPerMillion: number;
   cacheWritePerMillion: number;
   reasoningPerMillion?: number | null;
+}
+
+export interface CursorDocsPricingFetchResultDto {
+  sourceUrl: string;
+  fetchedAtUtc: string;
+  count: number;
+  saved?: boolean;
+  warnings: string[];
+  rates: CursorModelTokenRateDto[];
 }
 
 export interface UpdateSettingsRequest {

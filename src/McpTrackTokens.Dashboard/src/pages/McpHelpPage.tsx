@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MCP_PROMPTS, MCP_RESOURCES, MCP_TOOLS } from '../data/mcpCatalog';
+import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 
 const TABS = ['Tools', 'Resources', 'Prompts'] as const;
-type Tab = (typeof TABS)[number];
 
 async function copyText(value: string): Promise<boolean> {
   try {
@@ -64,7 +64,7 @@ function CopyTextButton({
 }
 
 export function McpHelpPage() {
-  const [tab, setTab] = useState<Tab>('Tools');
+  const [tab, setTab] = useTabSearchParam(TABS, 'Tools');
 
   const toolGroups = useMemo(() => {
     const map = new Map<string, typeof MCP_TOOLS>();

@@ -54,6 +54,7 @@ public static class ApiEndpoints
         api.MapGet("/unallocated", GetUnallocatedAsync);
         api.MapGet("/unallocated/activity", GetUnallocatedActivityAsync);
         api.MapGet("/unallocated/usage", GetUnallocatedUsageAsync);
+        api.MapDelete("/unallocated/usage", DeleteUnallocatedUsageAsync);
         api.MapGet("/usage/imported", GetImportedUsageAsync);
         api.MapPost("/activity/assign", AssignActivityAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
@@ -872,6 +873,30 @@ public static class ApiEndpoints
         var usage = await reports.GetUnallocatedUsageAsync(from, to, limit, cancellationToken)
             .ConfigureAwait(false);
         return Results.Ok(usage);
+    }
+
+    private static async Task<IResult> DeleteUnallocatedUsageAsync(
+        IExternalUsageRepository usage,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        try
+        {
+            var deletedCount = await usage.DeleteUnallocatedAsync(from, to, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new DeleteUnallocatedUsageResultDto
+            {
+                FromUtc = from,
+                ToUtc = to,
+                DeletedCount = deletedCount
+            });
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static async Task<IResult> GetImportedUsageAsync(

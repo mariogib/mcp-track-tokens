@@ -42,6 +42,8 @@ import type {
   UnallocatedBundle,
   UnallocatedItemDto,
   UnallocatedUsageReport,
+  DeleteUnallocatedUsageResultDto,
+  CursorDocsPricingFetchResultDto,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateSettingsRequest,
@@ -386,6 +388,13 @@ export const api = {
       signal,
     }),
 
+  deleteUnallocatedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+    apiRequest<DeleteUnallocatedUsageResultDto>('/api/v1/unallocated/usage', {
+      method: 'DELETE',
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
   importedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<ImportedUsageReport>('/api/v1/usage/imported', {
       query: { fromUtc, toUtc },
@@ -489,6 +498,12 @@ export const api = {
     apiRequest<SettingsDto>('/api/v1/settings', {
       method: 'PUT',
       body,
+      signal,
+    }),
+
+  fetchCursorTokenRates: (signal?: AbortSignal) =>
+    apiRequest<CursorDocsPricingFetchResultDto>('/api/v1/settings/cursor-token-rates/fetch', {
+      method: 'POST',
       signal,
     }),
 

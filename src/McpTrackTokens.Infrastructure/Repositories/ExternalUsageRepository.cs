@@ -94,4 +94,29 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
             take: limit,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
+
+    /// <inheritdoc />
+    public async Task<int> DeleteUnallocatedAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var records = await ListUnallocatedAsync(fromUtc, toUtc, limit: null, cancellationToken)
+            .ConfigureAwait(false);
+        if (records.Count == 0)
+        {
+            return 0;
+        }
+
+        var ids = records.Select(r => r.Id).ToHashSet();
+        await _db.UsageAttributions
+            .Where(a => ids.Contains(a.ExternalUsageRecordId))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _db.ExternalUsageRecords
+            .Where(r => ids.Contains(r.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
 }

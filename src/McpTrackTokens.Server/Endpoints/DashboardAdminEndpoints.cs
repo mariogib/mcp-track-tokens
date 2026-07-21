@@ -22,6 +22,7 @@ public static class DashboardAdminEndpoints
         api.MapGet("/status", GetStatusAsync);
         api.MapGet("/settings", GetSettings);
         api.MapPut("/settings", UpdateSettingsAsync);
+        api.MapPost("/settings/cursor-token-rates/fetch", FetchCursorTokenRatesAsync);
         api.MapGet("/api-keys", ListApiKeysAsync);
         api.MapPost("/api-keys", CreateApiKeyAsync);
         api.MapDelete("/api-keys/{id:guid}", RevokeApiKeyAsync);
@@ -50,6 +51,68 @@ public static class DashboardAdminEndpoints
     private static IResult GetSettings(IOptions<TrackingOptions> optionsAccessor)
     {
         return Results.Ok(ToSettingsDto(optionsAccessor.Value));
+    }
+
+    private static async Task<IResult> FetchCursorTokenRatesAsync(
+        ICursorDocsPricingClient pricingClient,
+        IOptions<TrackingOptions> optionsAccessor,
+        ICursorTokenRateStore rateStore,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await pricingClient.FetchRatesAsync(cancellationToken).ConfigureAwait(false);
+            var options = optionsAccessor.Value;
+            options.CursorTokenRates = result.Rates
+                .Where(r => !string.IsNullOrWhiteSpace(r.Model))
+                .Select(r => new CursorModelTokenRate
+                {
+                    Model = r.Model.Trim(),
+                    InputPerMillion = Math.Max(0m, r.InputPerMillion),
+                    OutputPerMillion = Math.Max(0m, r.OutputPerMillion),
+                    CacheReadPerMillion = Math.Max(0m, r.CacheReadPerMillion),
+                    CacheWritePerMillion = Math.Max(0m, r.CacheWritePerMillion),
+                    ReasoningPerMillion = r.ReasoningPerMillion is null
+                        ? null
+                        : Math.Max(0m, r.ReasoningPerMillion.Value)
+                })
+                .GroupBy(r => r.Model, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Last())
+                .OrderBy(r => r.Model, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (options.CursorTokenRates.Count == 0)
+            {
+                options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
+            }
+
+            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
+
+            return Results.Ok(new
+            {
+                sourceUrl = result.SourceUrl,
+                fetchedAtUtc = result.FetchedAtUtc,
+                count = options.CursorTokenRates.Count,
+                saved = true,
+                warnings = result.Warnings,
+                rates = options.CursorTokenRates.Select(r => new CursorModelTokenRateDto
+                {
+                    Model = r.Model,
+                    InputPerMillion = r.InputPerMillion,
+                    OutputPerMillion = r.OutputPerMillion,
+                    CacheReadPerMillion = r.CacheReadPerMillion,
+                    CacheWritePerMillion = r.CacheWritePerMillion,
+                    ReasoningPerMillion = r.ReasoningPerMillion
+                }).ToList()
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(
+                detail: ex.Message,
+                statusCode: StatusCodes.Status502BadGateway,
+                title: "Failed to fetch Cursor pricing");
+        }
     }
 
     private static async Task<IResult> UpdateSettingsAsync(

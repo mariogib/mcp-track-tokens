@@ -418,6 +418,17 @@ export function useUpdateSettingsMutation() {
   });
 }
 
+export function useFetchCursorTokenRatesMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.fetchCursorTokenRates(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.settings });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
 export function useCreateApiKeyMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -470,6 +481,21 @@ export function useReconciliationMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: ReconciliationRequestDto) => api.runReconciliation(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useDeleteUnallocatedUsageMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ fromUtc, toUtc }: { fromUtc: string; toUtc: string }) =>
+      api.deleteUnallocatedUsage(fromUtc, toUtc),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: ['imported-usage'] });

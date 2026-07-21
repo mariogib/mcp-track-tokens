@@ -106,6 +106,27 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     }
 
     /// <inheritdoc />
+    public async Task<DateTimeOffset?> GetLatestPromptTimestampForProjectAsync(
+        Guid projectId,
+        DateTimeOffset fromUtcInclusive,
+        DateTimeOffset toUtcExclusive,
+        CancellationToken cancellationToken = default)
+    {
+        var from = fromUtcInclusive.ToUniversalTime();
+        var to = toUtcExclusive.ToUniversalTime();
+        var matches = await SqliteDateTimeQuery.MaterializeAsync(
+            _db.PromptActivityEvents.AsNoTracking()
+                .Where(e =>
+                    e.ProjectId == projectId &&
+                    e.EventType == ActivityEventType.PromptSubmitted),
+            e => e.TimestampUtc >= from && e.TimestampUtc < to,
+            items => items.OrderByDescending(e => e.TimestampUtc),
+            take: 1,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+        return matches.FirstOrDefault()?.TimestampUtc;
+    }
+
+    /// <inheritdoc />
     public Task<PromptActivityEvent?> FindByExternalRequestIdAsync(
         string externalRequestId,
         CancellationToken cancellationToken = default)

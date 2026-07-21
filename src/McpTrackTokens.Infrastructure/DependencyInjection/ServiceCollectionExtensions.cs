@@ -10,6 +10,7 @@ using McpTrackTokens.Infrastructure.Export;
 using McpTrackTokens.Infrastructure.Git;
 using McpTrackTokens.Infrastructure.Import;
 using McpTrackTokens.Infrastructure.Persistence;
+using McpTrackTokens.Infrastructure.Pricing;
 using McpTrackTokens.Infrastructure.Repositories;
 using McpTrackTokens.Infrastructure.Security;
 
@@ -61,6 +62,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ICursorUsageFormatDetector, CursorUsageFormatDetector>();
         services.TryAddSingleton<ICursorUsageColumnMapper, CursorUsageColumnMapper>();
         services.TryAddSingleton<ICursorTokenRateStore, CursorTokenRateStore>();
+        services.AddHttpClient<ICursorDocsPricingClient, CursorDocsPricingClient>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
         services.TryAddScoped<IExternalUsageNormalizer, ExternalUsageNormalizer>();
         services.TryAddScoped<ICursorUsageImporter, CursorUsageImporter>();
         services.TryAddScoped<IReportExporter, ReportExporter>();

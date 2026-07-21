@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
-type HelpTab = (typeof HELP_TABS)[number];
 
 function CodeBlock({ children }: { children: string }) {
   return (
@@ -23,7 +23,7 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function HelpPage() {
-  const [tab, setTab] = useState<HelpTab>('Cursor setup');
+  const [tab, setTab] = useTabSearchParam(HELP_TABS, 'Cursor setup');
 
   return (
     <Page>
@@ -58,7 +58,7 @@ export function HelpPage() {
             <p>
               Start with the <strong>Cursor setup</strong> tab to connect Cursor. Then open{' '}
               <Link to="/settings">Settings</Link> to confirm your API key, and use{' '}
-              <Link to="/imports">Imports</Link> for Cursor usage exports. For the MCP tool,
+              <Link to="/imported-usage">Imported usage</Link> for Cursor usage exports. For the MCP tool,
               resource, and prompt catalog, open <Link to="/help/mcp">MCP Help</Link>.
             </p>
             <ul>
@@ -211,28 +211,25 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                   the export Cursor provides for the period you care about.
                 </li>
                 <li>
-                  Open the dashboard <Link to="/imports">Imports</Link> page.
+                  Open the dashboard <Link to="/imported-usage">Imported usage</Link> page.
                 </li>
-                <li>Choose the export file and run <strong>Preview</strong>.</li>
+                <li>
+                  In <strong>Upload &amp; map</strong>, choose the export file and run{' '}
+                  <strong>Preview</strong>.
+                </li>
                 <li>
                   Confirm or adjust column mappings, then import (use dry-run first if you want a
                   safe check).
                 </li>
                 <li>
-                  Review imported rows on <Link to="/imported-usage">Imported usage</Link>.
-                </li>
-                <li>
-                  Allocate unassigned costs on <Link to="/reconciliation">Reconciliation</Link> when
-                  needed, then check project costs under <Link to="/projects">Projects</Link>.
+                  Review imported rows below the upload section, then use{' '}
+                  <strong>Allocate all</strong> when needed and check project costs under{' '}
+                  <Link to="/projects">Projects</Link>.
                 </li>
               </ol>
               <p className="hint">
                 Related pages:{' '}
-                <Link to="/imports">Imports</Link>
-                {' · '}
                 <Link to="/imported-usage">Imported usage</Link>
-                {' · '}
-                <Link to="/reconciliation">Reconciliation</Link>
                 {' · '}
                 <Link to="/projects">Projects</Link>
                 {' · '}

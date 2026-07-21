@@ -17,8 +17,10 @@ import {
   useStatusQuery,
   useTimesheetCategoriesQuery,
   useUpdateSettingsMutation,
+  useFetchCursorTokenRatesMutation,
   useUpdateTimesheetCategoryMutation,
 } from '../api/hooks';
+import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { api } from '../api/client';
 import type {
   CursorModelTokenRateDto,
@@ -132,8 +134,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-type SettingsTab = (typeof SETTINGS_TABS)[number];
-
 const DEFAULT_TOKEN_RATES: CursorModelTokenRateDto[] = [
   {
     model: 'Auto',
@@ -208,6 +208,7 @@ export function SettingsPage() {
   const timesheetCategories = useTimesheetCategoriesQuery();
   const integrations = useIntegrationsQuery();
   const updateSettings = useUpdateSettingsMutation();
+  const fetchCursorRates = useFetchCursorTokenRatesMutation();
   const createKey = useCreateApiKeyMutation();
   const revokeKey = useRevokeApiKeyMutation();
   const createCategory = useCreateTimesheetCategoryMutation();
@@ -215,7 +216,7 @@ export function SettingsPage() {
   const deleteCategory = useDeleteTimesheetCategoryMutation();
   const restoreUpload = useRestoreDatabaseUploadMutation();
 
-  const [tab, setTab] = useState<SettingsTab>('Connection');
+  const [tab, setTab] = useTabSearchParam(SETTINGS_TABS, 'Connection');
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [localKey, setLocalKey] = useState(() => getStoredApiKey() ?? '');
   const [newKeyName, setNewKeyName] = useState('Dashboard');
@@ -680,7 +681,15 @@ export function SettingsPage() {
               <p>
                 Record rates in currency units per 1,000,000 tokens. Model names should match Cursor
                 usage exports. Use <span className="mono">*</span> as the fallback when no model
-                matches.
+                matches. Column order matches Cursor’s{' '}
+                <a
+                  href="https://cursor.com/docs/models-and-pricing"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Models &amp; Pricing
+                </a>{' '}
+                (opens in a new tab).
               </p>
             </div>
           </div>
@@ -697,6 +706,50 @@ export function SettingsPage() {
             </SettingCheck>
 
             <div className="row">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                title="Download model rates from cursor.com/docs/models-and-pricing and save them"
+                disabled={fetchCursorRates.isPending || updateSettings.isPending}
+                onClick={() => {
+                  setMessage(null);
+                  fetchCursorRates.mutate(undefined, {
+                    onSuccess: (result) => {
+                      setDraft((d) =>
+                        d
+                          ? {
+                              ...d,
+                              cursorTokenRates: result.rates.map((r) => ({
+                                model: r.model,
+                                inputPerMillion: r.inputPerMillion,
+                                outputPerMillion: r.outputPerMillion,
+                                cacheReadPerMillion: r.cacheReadPerMillion,
+                                cacheWritePerMillion: r.cacheWritePerMillion,
+                                reasoningPerMillion: r.reasoningPerMillion ?? null,
+                              })),
+                            }
+                          : d,
+                      );
+                      const warningText =
+                        result.warnings?.length > 0
+                          ? ` Warnings: ${result.warnings.join(' ')}`
+                          : '';
+                      setMessage(
+                        `Fetched and saved ${result.count} rates from Cursor docs.${warningText}`,
+                      );
+                    },
+                    onError: (err) => {
+                      setMessage(
+                        err instanceof Error
+                          ? err.message
+                          : 'Failed to fetch Cursor pricing docs.',
+                      );
+                    },
+                  });
+                }}
+              >
+                {fetchCursorRates.isPending ? 'Getting rates…' : 'Get Rates'}
+              </button>
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -739,27 +792,82 @@ export function SettingsPage() {
               </button>
             </div>
 
+            {fetchCursorRates.isError ? (
+              <ErrorState
+                message={
+                  fetchCursorRates.error instanceof Error
+                    ? fetchCursorRates.error.message
+                    : 'Failed to fetch Cursor pricing docs'
+                }
+              />
+            ) : null}
+
             <div className="table-wrap">
-              <table className="data">
+              <table className="data token-rates">
+                <colgroup>
+                  <col className="token-rates-col-model" />
+                  <col className="token-rates-col-rate" />
+                  <col className="token-rates-col-rate" />
+                  <col className="token-rates-col-rate" />
+                  <col className="token-rates-col-rate" />
+                  <col className="token-rates-col-rate" />
+                  <col className="token-rates-col-actions" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th className="setting-label" title="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches.">
-                      Model <SettingHelp text="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches." />
+                    <th
+                      className="setting-label"
+                      title="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches."
+                    >
+                      <span className="setting-label-text">
+                        Model{' '}
+                        <SettingHelp text="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches." />
+                      </span>
                     </th>
-                    <th className="setting-label" title="Price per 1,000,000 input tokens in your currency units.">
-                      Input / 1M <SettingHelp text="Price per 1,000,000 input tokens in your currency units." />
+                    <th
+                      className="setting-label"
+                      title="Price per 1,000,000 input tokens in your currency units."
+                    >
+                      <span className="setting-label-text">
+                        Input / 1M{' '}
+                        <SettingHelp text="Price per 1,000,000 input tokens in your currency units." />
+                      </span>
                     </th>
-                    <th className="setting-label" title="Price per 1,000,000 output tokens in your currency units.">
-                      Output / 1M <SettingHelp text="Price per 1,000,000 output tokens in your currency units." />
+                    <th
+                      className="setting-label"
+                      title="Price per 1,000,000 cache-write tokens."
+                    >
+                      <span className="setting-label-text">
+                        Cache write / 1M{' '}
+                        <SettingHelp text="Price per 1,000,000 cache-write tokens." />
+                      </span>
                     </th>
-                    <th className="setting-label" title="Price per 1,000,000 cache-read tokens.">
-                      Cache read / 1M <SettingHelp text="Price per 1,000,000 cache-read tokens." />
+                    <th
+                      className="setting-label"
+                      title="Price per 1,000,000 cache-read tokens."
+                    >
+                      <span className="setting-label-text">
+                        Cache read / 1M{' '}
+                        <SettingHelp text="Price per 1,000,000 cache-read tokens." />
+                      </span>
                     </th>
-                    <th className="setting-label" title="Price per 1,000,000 cache-write tokens.">
-                      Cache write / 1M <SettingHelp text="Price per 1,000,000 cache-write tokens." />
+                    <th
+                      className="setting-label"
+                      title="Price per 1,000,000 output tokens in your currency units."
+                    >
+                      <span className="setting-label-text">
+                        Output / 1M{' '}
+                        <SettingHelp text="Price per 1,000,000 output tokens in your currency units." />
+                      </span>
                     </th>
-                    <th className="setting-label" title="Optional price per 1,000,000 reasoning tokens when the export includes them.">
-                      Reasoning / 1M <SettingHelp text="Optional price per 1,000,000 reasoning tokens when the export includes them." />
+                    <th
+                      className="setting-label"
+                      title="Optional price per 1,000,000 reasoning tokens when the export includes them."
+                    >
+                      <span className="setting-label-text">
+                        Reasoning / 1M{' '}
+                        <SettingHelp text="Optional price per 1,000,000 reasoning tokens when the export includes them." />
+                      </span>
                     </th>
                     <th />
                   </tr>
@@ -792,11 +900,13 @@ export function SettingsPage() {
                           type="number"
                           step="0.01"
                           min={0}
-                          value={rate.outputPerMillion}
+                          value={rate.cacheWritePerMillion}
                           onChange={(e) =>
-                            updateRate(index, { outputPerMillion: Number(e.target.value) })
+                            updateRate(index, {
+                              cacheWritePerMillion: Number(e.target.value),
+                            })
                           }
-                          aria-label={`Output rate ${index + 1}`}
+                          aria-label={`Cache write rate ${index + 1}`}
                         />
                       </td>
                       <td>
@@ -818,13 +928,11 @@ export function SettingsPage() {
                           type="number"
                           step="0.01"
                           min={0}
-                          value={rate.cacheWritePerMillion}
+                          value={rate.outputPerMillion}
                           onChange={(e) =>
-                            updateRate(index, {
-                              cacheWritePerMillion: Number(e.target.value),
-                            })
+                            updateRate(index, { outputPerMillion: Number(e.target.value) })
                           }
-                          aria-label={`Cache write rate ${index + 1}`}
+                          aria-label={`Output rate ${index + 1}`}
                         />
                       </td>
                       <td>

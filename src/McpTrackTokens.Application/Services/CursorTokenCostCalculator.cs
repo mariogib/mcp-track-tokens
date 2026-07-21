@@ -11,7 +11,7 @@ public static class CursorTokenCostCalculator
     private const decimal Million = 1_000_000m;
 
     /// <summary>
-    /// Resolves the rate row for a model name (exact match, then <c>*</c>, then <c>Auto</c>).
+    /// Resolves the rate row for a model name (exact match, normalized contains, then <c>*</c>/<c>Auto</c>).
     /// </summary>
     public static CursorModelTokenRate? ResolveRate(
         IReadOnlyList<CursorModelTokenRate> rates,
@@ -30,9 +30,61 @@ public static class CursorTokenCostCalculator
             return exact;
         }
 
+        var usageKey = NormalizeModelKey(name);
+        if (usageKey.Length > 0)
+        {
+            CursorModelTokenRate? best = null;
+            var bestScore = 0;
+            foreach (var rate in rates)
+            {
+                if (rate.Model is "*" or "Auto")
+                {
+                    continue;
+                }
+
+                var rateKey = NormalizeModelKey(rate.Model);
+                if (rateKey.Length == 0)
+                {
+                    continue;
+                }
+
+                if (usageKey == rateKey ||
+                    usageKey.Contains(rateKey, StringComparison.Ordinal) ||
+                    rateKey.Contains(usageKey, StringComparison.Ordinal))
+                {
+                    var score = Math.Min(usageKey.Length, rateKey.Length);
+                    if (score > bestScore)
+                    {
+                        best = rate;
+                        bestScore = score;
+                    }
+                }
+            }
+
+            if (best is not null)
+            {
+                return best;
+            }
+        }
+
         return rates.FirstOrDefault(r => r.Model == "*")
                ?? rates.FirstOrDefault(r =>
                    string.Equals(r.Model, "Auto", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeModelKey(string value)
+    {
+        Span<char> buffer = stackalloc char[value.Length];
+        var n = 0;
+        foreach (var ch in value)
+        {
+            if (char.IsLetterOrDigit(ch) || ch == '.')
+            {
+                buffer[n++] = char.ToLowerInvariant(ch);
+            }
+        }
+
+        return new string(buffer[..n]);
     }
 
     /// <summary>

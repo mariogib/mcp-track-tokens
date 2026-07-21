@@ -517,6 +517,18 @@ th.setting-label,
   cursor: help;
 }
 
+/* Keep table headers as table-cells so columns align with body inputs. */
+table.data th.setting-label {
+  display: table-cell;
+  vertical-align: middle;
+}
+
+table.data th.setting-label .setting-label-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .field input,
 .field textarea {
   border: 1px solid var(--border);
@@ -625,6 +637,38 @@ table.data td input::placeholder {
 
 table.data td input.mono {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+table.data.token-rates {
+  table-layout: fixed;
+  min-width: 56rem;
+}
+
+table.data.token-rates .token-rates-col-model {
+  width: 18%;
+}
+
+table.data.token-rates .token-rates-col-rate {
+  width: 13%;
+}
+
+table.data.token-rates .token-rates-col-actions {
+  width: 7rem;
+}
+
+table.data.token-rates th,
+table.data.token-rates td {
+  white-space: normal;
+  vertical-align: middle;
+}
+
+table.data.token-rates td input {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+table.data.token-rates td:last-child {
+  white-space: nowrap;
 }
 
 .badge {

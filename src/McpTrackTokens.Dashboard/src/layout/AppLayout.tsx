@@ -18,14 +18,7 @@ const navItems: NavEntry[] = [
   { to: '/', label: 'Overview', end: true },
   { to: '/projects', label: 'Projects' },
   { to: '/reports', label: 'Reports' },
-  {
-    label: 'Imports',
-    children: [
-      { to: '/imports', label: 'Upload & map', end: true },
-      { to: '/imported-usage', label: 'Imported usage' },
-      { to: '/reconciliation', label: 'Reconciliation' },
-    ],
-  },
+  { to: '/imported-usage', label: 'Imported usage' },
   { to: '/settings', label: 'Settings' },
   {
     label: 'Help',
@@ -56,12 +49,11 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
       return { title: 'Projects', subtitle: 'Tracked repositories and cost rollups' };
     case '/reports':
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
-    case '/imports':
-      return { title: 'Imports', subtitle: 'Upload and map Cursor usage exports' };
     case '/imported-usage':
-      return { title: 'Imported usage', subtitle: 'All rows imported from Cursor usage exports' };
-    case '/reconciliation':
-      return { title: 'Reconciliation', subtitle: 'Allocate unassigned usage with confidence review' };
+      return {
+        title: 'Imported usage',
+        subtitle: 'Upload Cursor exports, map columns, and review imported rows',
+      };
     case '/unallocated':
       return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
     case '/settings':

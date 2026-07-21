@@ -14,11 +14,13 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
 {
     internal const string AutocreatedNotes = "autocreated";
     internal const string AutoclosedNotes = "autoclosed";
+    internal const string DayBoundaryNotes = "day-boundary";
 
     private readonly IProjectRepository _projects;
     private readonly IProjectDetectionService _projectDetection;
     private readonly ITimesheetEntryRepository _timesheets;
     private readonly ITimesheetCategoryRepository _categories;
+    private readonly IActivityEventRepository _events;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<CreateTimesheetEntryRequest> _createValidator;
     private readonly IValidator<UpdateTimesheetEntryRequest> _updateValidator;
@@ -30,6 +32,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         IProjectDetectionService projectDetection,
         ITimesheetEntryRepository timesheets,
         ITimesheetCategoryRepository categories,
+        IActivityEventRepository events,
         IUnitOfWork unitOfWork,
         IValidator<CreateTimesheetEntryRequest> createValidator,
         IValidator<UpdateTimesheetEntryRequest> updateValidator,
@@ -40,6 +43,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         _projectDetection = projectDetection;
         _timesheets = timesheets;
         _categories = categories;
+        _events = events;
         _unitOfWork = unitOfWork;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
@@ -186,15 +190,36 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             return;
         }
 
+        var activityAt = (startedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        var activityDay = DateOnly.FromDateTime(activityAt.UtcDateTime);
         var openForProject = await _timesheets.ListOpenByProjectAsync(projectId, cancellationToken)
             .ConfigureAwait(false);
+
         if (openForProject.Count > 0)
         {
-            return;
+            var crossedDay = false;
+            foreach (var open in openForProject.OrderBy(e => e.StartedAtUtc))
+            {
+                var startDay = DateOnly.FromDateTime(open.StartedAtUtc.UtcDateTime);
+                if (startDay >= activityDay)
+                {
+                    continue;
+                }
+
+                var closeAt = await ResolveDayBoundaryCloseAsync(projectId, open, startDay, cancellationToken)
+                    .ConfigureAwait(false);
+                open.End(closeAt, DayBoundaryNotes);
+                await _timesheets.UpdateAsync(open, cancellationToken).ConfigureAwait(false);
+                crossedDay = true;
+            }
+
+            if (!crossedDay)
+            {
+                return;
+            }
         }
 
-        var started = (startedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
-        await CloseAllOpenEntriesAsync(started, AutoclosedNotes, exceptEntryId: null, cancellationToken)
+        await CloseAllOpenEntriesAsync(activityAt, AutoclosedNotes, exceptEntryId: null, cancellationToken)
             .ConfigureAwait(false);
 
         var category = await ResolveCategoryAsync(
@@ -203,8 +228,39 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             requireActive: false,
             cancellationToken).ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(projectId, category.Id, started, AutocreatedNotes);
+        var entry = TimesheetEntry.Start(projectId, category.Id, activityAt, AutocreatedNotes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<DateTimeOffset> ResolveDayBoundaryCloseAsync(
+        Guid projectId,
+        TimesheetEntry open,
+        DateOnly startDay,
+        CancellationToken cancellationToken)
+    {
+        var dayStart = new DateTimeOffset(startDay.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var dayEnd = dayStart.AddDays(1);
+        var from = open.StartedAtUtc > dayStart ? open.StartedAtUtc : dayStart;
+        var lastPrompt = await _events
+            .GetLatestPromptTimestampForProjectAsync(projectId, from, dayEnd, cancellationToken)
+            .ConfigureAwait(false);
+
+        var closeAt = lastPrompt?.ToUniversalTime() ?? open.StartedAtUtc;
+        if (closeAt < open.StartedAtUtc)
+        {
+            closeAt = open.StartedAtUtc;
+        }
+
+        if (closeAt >= dayEnd)
+        {
+            closeAt = dayEnd.AddTicks(-1);
+            if (closeAt < open.StartedAtUtc)
+            {
+                closeAt = open.StartedAtUtc;
+            }
+        }
+
+        return closeAt;
     }
 
     /// <inheritdoc />

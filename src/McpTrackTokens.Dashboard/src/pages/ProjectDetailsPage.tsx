@@ -32,6 +32,7 @@ import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeFi
 import { MetricCard } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 import {
   formatCurrency,
@@ -56,8 +57,6 @@ const TABS = [
   'Exports',
   'Settings',
 ] as const;
-
-type Tab = (typeof TABS)[number];
 
 const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
 const SESSION_EDITORS = ['Cursor', 'VisualStudioCode', 'Other'] as const;
@@ -154,7 +153,7 @@ function draftFromTimesheet(entry: TimesheetEntryDto): TimesheetDraft {
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>('Overview');
+  const [tab, setTab] = useTabSearchParam(TABS, 'Overview');
   const range = useMemo(() => lastDaysRange(30), []);
 
   const project = useProjectQuery(projectId);

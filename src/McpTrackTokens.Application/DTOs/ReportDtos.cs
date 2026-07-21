@@ -369,6 +369,18 @@ public sealed record UnallocatedUsageReport
 }
 
 /// <summary>
+/// Result of deleting unallocated imported usage rows.
+/// </summary>
+public sealed record DeleteUnallocatedUsageResultDto
+{
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public int DeletedCount { get; init; }
+}
+
+/// <summary>
 /// A single imported external usage row.
 /// </summary>
 public sealed record ImportedUsageItemDto

@@ -6,9 +6,7 @@ import { ProjectDetailsPage } from './pages/ProjectDetailsPage';
 import { ProjectChartDetailPage } from './pages/ProjectChartDetailPage';
 import { OverviewChartDetailPage } from './pages/OverviewChartDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { ImportsPage } from './pages/ImportsPage';
 import { ImportedUsagePage } from './pages/ImportedUsagePage';
-import { ReconciliationPage } from './pages/ReconciliationPage';
 import { UnallocatedActivityPage } from './pages/UnallocatedActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpPage } from './pages/HelpPage';
@@ -27,9 +25,9 @@ export default function App() {
           element={<ProjectChartDetailPage />}
         />
         <Route path="reports" element={<ReportsPage />} />
-        <Route path="imports" element={<ImportsPage />} />
         <Route path="imported-usage" element={<ImportedUsagePage />} />
-        <Route path="reconciliation" element={<ReconciliationPage />} />
+        <Route path="imports" element={<Navigate to="/imported-usage" replace />} />
+        <Route path="reconciliation" element={<Navigate to="/imported-usage" replace />} />
         <Route path="unallocated" element={<UnallocatedActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<HelpPage />} />

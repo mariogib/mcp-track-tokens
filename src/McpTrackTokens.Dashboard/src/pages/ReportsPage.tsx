@@ -20,6 +20,7 @@ import {
 } from '../components/Charts';
 import { MetricCard } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 import {
   formatCurrency,
@@ -31,7 +32,6 @@ import {
 } from '../utils/format';
 
 const SECTIONS = ['Clients', 'Projects'] as const;
-type Section = (typeof SECTIONS)[number];
 
 type RangePreset = '7d' | '30d' | '90d' | 'month';
 
@@ -117,7 +117,7 @@ function resolveRange(preset: RangePreset): { fromUtc: string; toUtc: string; la
 }
 
 export function ReportsPage() {
-  const [section, setSection] = useState<Section>('Clients');
+  const [section, setSection] = useTabSearchParam(SECTIONS, 'Clients');
   const [clientReport, setClientReport] = useState<ClientReportId>('client-billing');
   const [projectReport, setProjectReport] = useState<ProjectReportId>('project-cost');
   const [rangePreset, setRangePreset] = useState<RangePreset>('30d');

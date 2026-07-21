@@ -180,6 +180,15 @@ public interface IActivityEventRepository
         Guid editorSessionId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Latest project prompt in <c>[fromUtc, toUtc)</c>, if any.
+    /// </summary>
+    Task<DateTimeOffset?> GetLatestPromptTimestampForProjectAsync(
+        Guid projectId,
+        DateTimeOffset fromUtcInclusive,
+        DateTimeOffset toUtcExclusive,
+        CancellationToken cancellationToken = default);
+
     Task<PromptActivityEvent?> FindByExternalRequestIdAsync(
         string externalRequestId,
         CancellationToken cancellationToken = default);
@@ -264,6 +273,15 @@ public interface IExternalUsageRepository
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         int? limit = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes unallocated usage rows (and their attribution placeholders) in the range.
+    /// Returns the number of usage records removed.
+    /// </summary>
+    Task<int> DeleteUnallocatedAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
         CancellationToken cancellationToken = default);
 }
 

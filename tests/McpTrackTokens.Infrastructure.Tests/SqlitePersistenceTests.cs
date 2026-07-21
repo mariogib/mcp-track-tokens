@@ -329,6 +329,72 @@ public sealed class SqlitePersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeleteUnallocated_RemovesOnlyUnallocatedRowsAndPlaceholders()
+    {
+        using var scope = _services.CreateScope();
+        var detection = scope.ServiceProvider.GetRequiredService<IProjectDetectionService>();
+        var usageRepo = scope.ServiceProvider.GetRequiredService<IExternalUsageRepository>();
+        var attributions = scope.ServiceProvider.GetRequiredService<IUsageAttributionRepository>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var project = await detection.RegisterAsync(new CreateProjectRequest { Name = "Delete Unalloc Project" });
+        var at = DateTimeOffset.Parse("2026-07-18T12:00:00Z");
+        var withPlaceholder = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            at,
+            externalRecordId: $"del-placeholder-{Guid.NewGuid():N}",
+            totalTokens: 500,
+            reportedCost: 0m);
+        var withProject = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            at.AddSeconds(1),
+            externalRecordId: $"del-alloc-{Guid.NewGuid():N}",
+            totalTokens: 600,
+            reportedCost: 0m);
+        var neverAttributed = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            at.AddSeconds(2),
+            externalRecordId: $"del-never-{Guid.NewGuid():N}",
+            totalTokens: 700,
+            reportedCost: 0m);
+
+        await usageRepo.AddRangeAsync([withPlaceholder, withProject, neverAttributed]);
+        await unitOfWork.SaveChangesAsync();
+
+        await attributions.AddRangeAsync(
+        [
+            UsageAttribution.Create(
+                withPlaceholder.Id,
+                AttributionMethod.Unallocated,
+                AttributionConfidence.Unallocated,
+                0m,
+                allocatedCost: 0m,
+                allocatedTotalTokens: 500,
+                reason: "No prompt in window."),
+            UsageAttribution.Create(
+                withProject.Id,
+                AttributionMethod.ClosestPromptMatch,
+                AttributionConfidence.High,
+                100m,
+                allocatedCost: 0m,
+                allocatedTotalTokens: 600,
+                projectId: project.Id,
+                reason: "Linked.")
+        ]);
+        await unitOfWork.SaveChangesAsync();
+
+        var deleted = await usageRepo.DeleteUnallocatedAsync(at.AddMinutes(-1), at.AddMinutes(1));
+
+        deleted.Should().Be(2);
+        (await usageRepo.GetByIdAsync(withPlaceholder.Id)).Should().BeNull();
+        (await usageRepo.GetByIdAsync(neverAttributed.Id)).Should().BeNull();
+        (await usageRepo.GetByIdAsync(withProject.Id)).Should().NotBeNull();
+        (await attributions.ListByUsageRecordAsync(withPlaceholder.Id)).Should().BeEmpty();
+        (await attributions.ListByUsageRecordAsync(withProject.Id)).Should().ContainSingle();
+        (await usageRepo.ListUnallocatedAsync(at.AddMinutes(-1), at.AddMinutes(1))).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Reconciliation_LinksUsageToClosestPriorPrompt_RoundedToSecond()
     {
         using var scope = _services.CreateScope();
