@@ -104,6 +104,15 @@ p {
   font-size: 0.5rem;
 }
 
+/* Closed icon rail: 3× the open-menu icon size so glyphs stay readable. */
+.admin-layout.sidebar-collapsed .sidebar-nav .nav-icon {
+  font-size: 1.875rem;
+}
+
+.admin-layout.sidebar-collapsed .sidebar-nav .nav-submenu .nav-icon {
+  font-size: 1.5rem;
+}
+
 .sidebar-header .logo-image {
   width: auto;
 }
