@@ -807,22 +807,6 @@ table.data.token-rates td:last-child {
   flex-wrap: wrap;
 }
 
-.link-button {
-  background: none;
-  border: 0;
-  color: var(--accent);
-  cursor: pointer;
-  font: inherit;
-  padding: 0;
-  text-decoration: underline;
-  text-underline-offset: 0.18em;
-}
-
-.link-button:hover,
-.link-button:focus-visible {
-  color: var(--accent-hover);
-}
-
 .clickable-row {
   cursor: pointer;
 }

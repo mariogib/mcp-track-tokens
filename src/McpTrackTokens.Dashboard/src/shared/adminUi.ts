@@ -5,6 +5,7 @@ import {
   createBreadcrumb,
   createBrowseListControls,
   createCard,
+  createTextLink,
 } from '@lunarq/frontend-shared/components';
 import {
   applyThemeVariables,
@@ -18,6 +19,9 @@ export const AdminShell = createAdminShell(React, NavLink);
 
 /** Shared breadcrumb trail bound to React Router Link. */
 export const Breadcrumb = createBreadcrumb(React, Link);
+
+/** Shared theme-aware text link bound to React Router Link. */
+export const TextLink = createTextLink(React, Link);
 
 /** Shared browse toolbar (table/grid; calendar optional per page). */
 export const BrowseListControls = createBrowseListControls(React);

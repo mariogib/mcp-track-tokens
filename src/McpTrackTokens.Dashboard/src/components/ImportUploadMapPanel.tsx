@@ -5,6 +5,7 @@ import type { ImportPreviewDto, ImportResultDto } from '../api/types';
 import { EmptyState, ErrorState } from './States';
 import { MetricCard, Panel } from './MetricCard';
 import { StatusBadge } from './StatusBadge';
+import { TextLink } from '../shared/adminUi';
 import { formatNumber } from '../utils/format';
 
 const TARGET_FIELDS = [
@@ -92,13 +93,9 @@ export function ImportUploadMapPanel() {
             any missing rows.
           </p>
           <p>
-            <a
-              href="https://cursor.com/dashboard/usage"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <TextLink href="https://cursor.com/dashboard/usage" external>
               Open Cursor usage dashboard
-            </a>{' '}
+            </TextLink>{' '}
             to export your usage file.
           </p>
         </div>

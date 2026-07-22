@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   useCreateTimesheetEntryMutation,
   useDeleteTimesheetEntryMutation,
@@ -15,6 +14,7 @@ import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeFi
 import { Panel, TablePanel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
+import { TextLink } from '../shared/adminUi';
 import { type RangePreset, resolveRange } from '../utils/dateRange';
 import { formatDateTime, formatDurationMs } from '../utils/format';
 
@@ -507,9 +507,9 @@ export function TimesheetPage() {
                   return (
                     <tr key={entry.id}>
                       <td>
-                        <Link to={`/projects/${entry.projectId}?tab=Timesheet`}>
+                        <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
                           {projectLabel}
-                        </Link>
+                        </TextLink>
                       </td>
                       <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
                       <td>{formatDateTime(entry.startedAtUtc)}</td>

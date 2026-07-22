@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { Panel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
+import { TextLink } from '../shared/adminUi';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
 
@@ -57,8 +57,8 @@ export function HelpPage() {
           <Panel className="stack">
             <p>
               Start with the <strong>Cursor setup</strong> tab to connect Cursor. Then open{' '}
-              <Link to="/settings">Settings</Link> to confirm your API key, and use{' '}
-              <Link to="/imported-usage">Imported usage</Link> for Cursor usage exports. For the MCP
+              <TextLink to="/settings">Settings</TextLink> to confirm your API key, and use{' '}
+              <TextLink to="/imported-usage">Imported usage</TextLink> for Cursor usage exports. For the MCP
               tool, resource, and prompt catalog, open the <strong>MCP Help</strong> tab.
             </p>
             <ul>
@@ -164,7 +164,7 @@ export function HelpPage() {
                 <code className="mono">sessionStart</code>, <code className="mono">stop</code>, …).
                 After a Cursor upgrade, run MCP tool{' '}
                 <code className="mono">check_cursor_hooks</code> (see{' '}
-                <Link to="/help?view=mcp-help&tab=tools">MCP Help → Tools</Link>) to confirm the mapping still works.
+                <TextLink to="/help?view=mcp-help&tab=tools">MCP Help → Tools</TextLink>) to confirm the mapping still works.
               </p>
             </Step>
 
@@ -177,7 +177,7 @@ export function HelpPage() {
               <CodeBlock>{`MCP_TRACK_TOKENS_API_KEY=OverTheMoon
 MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
               <p>
-                Use the same key under <Link to="/settings">Settings → Connection</Link> in the
+                Use the same key under <TextLink to="/settings">Settings → Connection</TextLink> in the
                 desktop dashboard.
               </p>
             </Step>
@@ -206,11 +206,11 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
             <Step title="6. Verify">
               <ul>
                 <li>
-                  <Link to="/settings">Settings → Integrations</Link> shows Cursor hooks configured
+                  <TextLink to="/settings">Settings → Integrations</TextLink> shows Cursor hooks configured
                   or inferred from activity.
                 </li>
                 <li>
-                  Submit a prompt in Cursor, then check <Link to="/">Overview</Link> for new
+                  Submit a prompt in Cursor, then check <TextLink to="/">Overview</TextLink> for new
                   activity.
                 </li>
               </ul>
@@ -227,7 +227,7 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                   the export Cursor provides for the period you care about.
                 </li>
                 <li>
-                  Open the dashboard <Link to="/imported-usage">Imported usage</Link> page.
+                  Open the dashboard <TextLink to="/imported-usage">Imported usage</TextLink> page.
                 </li>
                 <li>
                   In <strong>Upload &amp; map</strong>, choose the export file and run{' '}
@@ -240,16 +240,16 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 <li>
                   Review imported rows below the upload section, then use{' '}
                   <strong>Allocate all</strong> when needed and check project costs under{' '}
-                  <Link to="/projects">Projects</Link>.
+                  <TextLink to="/projects">Projects</TextLink>.
                 </li>
               </ol>
               <p className="hint">
                 Related pages:{' '}
-                <Link to="/imported-usage">Imported usage</Link>
+                <TextLink to="/imported-usage">Imported usage</TextLink>
                 {' · '}
-                <Link to="/projects">Projects</Link>
+                <TextLink to="/projects">Projects</TextLink>
                 {' · '}
-                <Link to="/">Overview</Link>
+                <TextLink to="/">Overview</TextLink>
               </p>
             </Step>
           </Panel>

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAggregatedOverviewCharts } from '../api/useAggregatedOverviewCharts';
 import {
   ChartCard,
@@ -17,7 +17,7 @@ import {
   type OverviewChartKey,
 } from '../data/overviewCharts';
 import { Page } from '../layout/AppLayout';
-import { Breadcrumb } from '../shared/adminUi';
+import { Breadcrumb, TextLink } from '../shared/adminUi';
 import {
   parseRangePreset,
   resolveRange,
@@ -230,9 +230,9 @@ export function OverviewChartDetailPage() {
                 : ''}
             </p>
           </div>
-          <Link className="btn btn-secondary" to={`/${backQuery}`}>
+          <TextLink to={`/${backQuery}`} variant="muted">
             Back to overview
-          </Link>
+          </TextLink>
         </div>
 
         <Panel className="stack">
@@ -478,7 +478,7 @@ export function OverviewChartDetailPage() {
               <article key={row.projectId || row.name} className="analysis-browse-tile">
                 <strong>
                   {row.projectId ? (
-                    <Link to={`/projects/${row.projectId}`}>{row.name}</Link>
+                    <TextLink to={`/projects/${row.projectId}`}>{row.name}</TextLink>
                   ) : (
                     row.name
                   )}
@@ -660,7 +660,7 @@ function ProjectTable({
             <tr key={row.projectId || row.name}>
               <td>
                 {row.projectId ? (
-                  <Link to={`/projects/${row.projectId}`}>{row.name}</Link>
+                  <TextLink to={`/projects/${row.projectId}`}>{row.name}</TextLink>
                 ) : (
                   row.name
                 )}

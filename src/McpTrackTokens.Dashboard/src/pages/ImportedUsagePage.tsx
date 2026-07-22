@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   useDeleteUnallocatedUsageMutation,
   useImportedUsageQuery,
@@ -13,6 +12,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
+import { TextLink } from '../shared/adminUi';
 import {
   formatCurrency,
   formatDateTime,
@@ -269,9 +269,9 @@ function ImportedUsageList() {
                       </td>
                       <td>
                         {item.projectId ? (
-                          <Link to={`/projects/${item.projectId}`}>
+                          <TextLink to={`/projects/${item.projectId}`}>
                             {item.projectName ?? item.projectId}
-                          </Link>
+                          </TextLink>
                         ) : (
                           '—'
                         )}

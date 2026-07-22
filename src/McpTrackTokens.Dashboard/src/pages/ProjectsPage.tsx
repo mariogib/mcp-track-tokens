@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { BrowseListControls, TextLink } from '../shared/adminUi';
 import { exportToExcel } from '@lunarq/frontend-shared/utils';
 import type { BrowseViewMode } from '@lunarq/frontend-shared/components';
 import {
@@ -20,7 +21,6 @@ import {
   formatNumber,
 } from '../utils/format';
 import { Page } from '../layout/AppLayout';
-import { BrowseListControls } from '../shared/adminUi';
 
 type EditDraft = {
   name: string;
@@ -244,12 +244,13 @@ export function ProjectsPage() {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <Link
-          to={`/projects/${project.id}`}
+        <button
+          type="button"
           className="btn btn-secondary btn-compact"
+          onClick={() => navigate(`/projects/${project.id}`)}
         >
           Open
-        </Link>
+        </button>
         <button
           type="button"
           className="btn btn-secondary btn-compact"
@@ -357,12 +358,12 @@ export function ProjectsPage() {
                   }}
                 >
                   <div className="projects-browse-tile-header">
-                    <Link
+                    <TextLink
                       to={detailPath}
-                      onClick={(event) => event.stopPropagation()}
+                      onClick={(event) => (event as MouseEvent).stopPropagation()}
                     >
                       {project.name}
-                    </Link>
+                    </TextLink>
                     <StatusBadge
                       label={project.isActive ? 'Active' : 'Inactive'}
                       tone={project.isActive ? 'success' : 'neutral'}
@@ -434,7 +435,7 @@ export function ProjectsPage() {
                   return (
                     <tr key={project.id}>
                       <td>
-                        <Link to={`/projects/${project.id}`}>{project.name}</Link>
+                        <TextLink to={`/projects/${project.id}`}>{project.name}</TextLink>
                       </td>
                       <td>{project.clientName ?? '—'}</td>
                       <td>{formatNumber(project.repositoryCount)}</td>
@@ -476,7 +477,7 @@ export function ProjectsPage() {
             <div>
               <h2>Edit project</h2>
               <p>
-                Updating <Link to={`/projects/${editing.id}`}>{editing.name}</Link>
+                Updating <TextLink to={`/projects/${editing.id}`}>{editing.name}</TextLink>
               </p>
             </div>
             <button

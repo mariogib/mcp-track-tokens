@@ -32,6 +32,7 @@ import { ErrorState, LoadingState } from '../components/States';
 import { Panel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
+import { TextLink } from '../shared/adminUi';
 import {
   deleteLocalBackupFile,
   getStoredBackupFolder,
@@ -705,13 +706,9 @@ export function SettingsPage() {
                 Record rates in currency units per 1,000,000 tokens. Model names should match Cursor
                 usage exports. Use <span className="mono">*</span> as the fallback when no model
                 matches. Column order matches Cursor’s{' '}
-                <a
-                  href="https://cursor.com/docs/models-and-pricing"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+                <TextLink href="https://cursor.com/docs/models-and-pricing" external>
                   Models &amp; Pricing
-                </a>{' '}
+                </TextLink>{' '}
                 (opens in a new tab).
               </p>
             </div>

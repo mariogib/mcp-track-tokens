@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   useClientCostQuery,
   useClientTokenCostQuery,
@@ -22,6 +21,7 @@ import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
+import { TextLink } from '../shared/adminUi';
 import {
   formatCurrency,
   formatDurationMs,
@@ -501,7 +501,7 @@ function ClientBillingReport({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{formatNumber(project.promptCount)}</td>
                     <td>{formatDurationSeconds(project.activeProjectTimeSeconds)}</td>
@@ -616,7 +616,7 @@ function ClientTokenCostReportView({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{formatNumber(project.totalTokens)}</td>
                     <td>{formatCurrency(project.estimatedCost, project.currency)}</td>
@@ -840,7 +840,7 @@ function ProjectCostReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">{data.clientName ? `Client: ${data.clientName}` : 'No client assigned'}</p>
         </div>
@@ -922,7 +922,7 @@ function ProjectActivityReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">Activity for the selected range.</p>
         </div>
@@ -1001,7 +1001,7 @@ function ProjectTokenCostReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">
             Calculated from Settings → Cursor token costs × attributed tokens
@@ -1164,7 +1164,7 @@ function ProjectsMonthlyReport({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{project.clientName?.trim() || '—'}</td>
                     <td>{formatNumber(project.promptCount)}</td>

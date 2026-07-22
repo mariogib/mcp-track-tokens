@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
   useCreateTimesheetEntryMutation,
@@ -35,7 +35,7 @@ import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
-import { Breadcrumb } from '../shared/adminUi';
+import { Breadcrumb, TextLink } from '../shared/adminUi';
 import {
   formatCurrency,
   formatDateTime,
@@ -1825,7 +1825,7 @@ export function ProjectDetailsPage() {
                 }
               />
               <p className="muted" style={{ marginTop: '0.75rem' }}>
-                <Link to="/settings">Edit Cursor token rates in Settings</Link>
+                <TextLink to="/settings">Edit Cursor token rates in Settings</TextLink>
               </p>
             </>
           )}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   useProjectActivityQuery,
   useProjectCostQuery,
@@ -21,7 +21,7 @@ import {
   type ProjectChartKey,
 } from '../data/projectCharts';
 import { Page } from '../layout/AppLayout';
-import { Breadcrumb } from '../shared/adminUi';
+import { Breadcrumb, TextLink } from '../shared/adminUi';
 import {
   parseRangePreset,
   resolveRange,
@@ -230,9 +230,9 @@ export function ProjectChartDetailPage() {
                 : ''}
             </p>
           </div>
-          <Link className="btn btn-secondary" to={`/projects/${projectId}`}>
+          <TextLink to={`/projects/${projectId}`} variant="muted">
             Back to project
-          </Link>
+          </TextLink>
         </div>
 
         <Panel className="stack">

@@ -1,11 +1,11 @@
 import { type ReactNode } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey, setStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
-import { AdminShell, ThemeButton } from '../shared/adminUi';
+import { AdminShell, TextLink, ThemeButton } from '../shared/adminUi';
 
 const navItems: AdminNavItem[] = [
   { to: '/', label: 'Overview', icon: '⌂', end: true },
@@ -108,8 +108,8 @@ export function AppLayout() {
       location.pathname !== '/settings' &&
       location.pathname !== '/help' ? (
         <div className="warning-banner" role="status">
-          No API key saved yet. Open <Link to="/settings">Settings</Link> and save your tracking Bearer
-          key (default for the Windows install is <code>OverTheMoon</code>).
+          No API key saved yet. Open <TextLink to="/settings">Settings</TextLink> and save your
+          tracking Bearer key (default for the Windows install is <code>OverTheMoon</code>).
         </div>
       ) : null}
       <Outlet />

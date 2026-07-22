@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
   useProjectsQuery,
   useReportClientsQuery,
@@ -21,6 +21,7 @@ import type {
 import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
 import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { TextLink } from '../shared/adminUi';
 import { parseRangePreset, resolveRange } from '../utils/dateRange';
 import {
   formatDateTime,
@@ -117,7 +118,7 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
           {rows.map((row) => (
             <tr key={row.projectId}>
               <td>
-                <Link to={`/projects/${row.projectId}?tab=Timesheet`}>{row.projectName}</Link>
+                <TextLink to={`/projects/${row.projectId}?tab=Timesheet`}>{row.projectName}</TextLink>
               </td>
               <td>{row.clientName?.trim() ? row.clientName : '—'}</td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
@@ -156,13 +157,7 @@ function ClientTable({
             <tr key={row.clientName}>
               <td>
                 {onClientClick ? (
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => onClientClick(row.clientName)}
-                  >
-                    {row.clientName}
-                  </button>
+                  <TextLink onClick={() => onClientClick(row.clientName)}>{row.clientName}</TextLink>
                 ) : (
                   row.clientName
                 )}
@@ -203,13 +198,7 @@ function DailyTable({
             <tr key={row.day}>
               <td>
                 {onDayClick ? (
-                  <button
-                    type="button"
-                    className="link-button"
-                    onClick={() => onDayClick(row.day)}
-                  >
-                    {row.day}
-                  </button>
+                  <TextLink onClick={() => onDayClick(row.day)}>{row.day}</TextLink>
                 ) : (
                   row.day
                 )}
