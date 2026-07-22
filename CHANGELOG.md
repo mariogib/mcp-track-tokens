@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Get Rates** (Settings → Cursor token costs): more resilient Cursor docs download (URL / User-Agent fallbacks) and parsing of current docs where Auto is listed as **Auto Cost** in the model table (maps to Auto / `*`).
+
 ### Added
 
 - MCP tool `check_cursor_hooks` to verify hook install, `hooks.json` event names, Cursor version, and recent ingest (also listed on Dashboard → MCP Help → Tools). The check **ingests a `Heartbeat` probe event** stamped with the detected Cursor version so end-to-end ingest is verified.

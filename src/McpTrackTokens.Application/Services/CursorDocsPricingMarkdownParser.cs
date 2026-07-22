@@ -36,6 +36,7 @@ public static partial class CursorDocsPricingMarkdownParser
         }
 
         rates.AddRange(ParseModelPricingTable(markdown, warnings));
+        EnsureAutoFallbackRates(rates);
 
         return rates
             .Where(r => !string.IsNullOrWhiteSpace(r.Model))
@@ -69,10 +70,6 @@ public static partial class CursorDocsPricingMarkdownParser
                 CacheWritePerMillion = auto.CacheWritePerMillion
             });
         }
-        else
-        {
-            warnings.Add("Auto pricing table was not found; Auto/* fallback rates were not added.");
-        }
 
         var tableRates = ParseModelPricingTable(markdown, warnings);
         if (tableRates.Count == 0)
@@ -81,6 +78,12 @@ public static partial class CursorDocsPricingMarkdownParser
         }
 
         rates.AddRange(tableRates);
+        EnsureAutoFallbackRates(rates);
+
+        if (!rates.Any(r => r.Model.Equals("Auto", StringComparison.OrdinalIgnoreCase)))
+        {
+            warnings.Add("Auto pricing was not found; Auto/* fallback rates were not added.");
+        }
 
         var normalized = rates
             .Where(r => !string.IsNullOrWhiteSpace(r.Model))
@@ -91,6 +94,43 @@ public static partial class CursorDocsPricingMarkdownParser
             .ToList();
 
         return (normalized, warnings);
+    }
+
+    /// <summary>
+    /// Newer Cursor docs list Auto as "Auto Cost" in the model table instead of a separate Auto pricing section.
+    /// </summary>
+    private static void EnsureAutoFallbackRates(List<CursorModelTokenRate> rates)
+    {
+        var auto = rates.FirstOrDefault(r =>
+            r.Model.Equals("Auto", StringComparison.OrdinalIgnoreCase));
+        if (auto is null)
+        {
+            return;
+        }
+
+        if (!rates.Any(r => r.Model == "*"))
+        {
+            rates.Add(new CursorModelTokenRate
+            {
+                Model = "*",
+                InputPerMillion = auto.InputPerMillion,
+                OutputPerMillion = auto.OutputPerMillion,
+                CacheReadPerMillion = auto.CacheReadPerMillion,
+                CacheWritePerMillion = auto.CacheWritePerMillion
+            });
+        }
+    }
+
+    private static string NormalizeModelName(string model)
+    {
+        var trimmed = model.Trim();
+        if (trimmed.Equals("Auto Cost", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("AutoCost", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Auto";
+        }
+
+        return trimmed;
     }
 
     private static bool TryParseAutoRates(string markdown, out CursorModelTokenRate auto)
@@ -185,7 +225,7 @@ public static partial class CursorDocsPricingMarkdownParser
             }
 
             // Model | Provider | Input | Cache write | Cache read | Output | Notes
-            var model = ExtractModelName(cells[0]);
+            var model = NormalizeModelName(ExtractModelName(cells[0]));
             if (string.IsNullOrWhiteSpace(model) ||
                 model.Equals("Model", StringComparison.OrdinalIgnoreCase))
             {
