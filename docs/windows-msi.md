@@ -35,6 +35,7 @@ Typical options (defaults are ON):
 - Start MCP Track Tokens when Windows starts
 - Install Cursor hooks
 - Install VS Code / Cursor extension
+- **Upgrade / keep existing SQLite database** (recommended) — leaves `%USERPROFILE%\.mcp-track-tokens\` intact when upgrading or reinstalling. Uncheck only for a clean database reset.
 - Start MCP Track Tokens now (exit dialog)
 
 Install layout (under `Program Files\MCP Track Tokens\`):
@@ -43,6 +44,11 @@ Install layout (under `Program Files\MCP Track Tokens\`):
 - Desktop: `Desktop\mcp-track-tokens-desktop.exe`
 - Integrations: `integrations\` (hooks, VSIX, HTTP MCP sample)
 
+## Upgrades
+
+Running a newer MSI with the same `UpgradeCode` performs a major upgrade: Program Files binaries are replaced. After accepting the license you will see **Setup options**, including **Keep existing SQLite database** (on by default). Tracking data under `%USERPROFILE%\.mcp-track-tokens\` is kept unless you uncheck that option. Uninstall also leaves that folder in place.
+
+Wizard path on upgrade: Welcome → License → **Setup options** → Ready to install (install folder is not re-prompted).
 ## After install
 
 1. Confirm the tray icon is running.

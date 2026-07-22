@@ -5,7 +5,7 @@
   <Package
       Name="MCP Track Tokens"
       Manufacturer="MCP Track Tokens"
-      Version="1.0.5.0"
+      Version="1.0.7.0"
       UpgradeCode="A7C4E2B1-6D8F-4A19-9E3C-2B5F8D1A4C70"
       Scope="perMachine"
       Compressed="yes">
@@ -14,6 +14,7 @@
         Description="Deploys the MCP Track Tokens local stack on Windows: HTTP API, HTTP MCP server (/mcp), SQLite database, web dashboard (wwwroot), desktop shell, plus optional Cursor hooks and VS Code/Cursor extension."
         Manufacturer="MCP Track Tokens" />
 
+    <!-- Early remove of the previous MSI; user data lives under %USERPROFILE%\.mcp-track-tokens and is never part of the product payload. -->
     <MajorUpgrade
         DowngradeErrorMessage="A newer version of MCP Track Tokens is already installed."
         Schedule="afterInstallInitialize" />
@@ -25,10 +26,11 @@
     <Property Id="ARPHELPLINK" Value="https://github.com/mariogib/mcp-track-tokens" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/mariogib/mcp-track-tokens" />
 
-    <!-- Defaults: all options ON -->
+    <!-- Defaults: all options ON (keep database on upgrade/install). -->
     <Property Id="STARTWITHWINDOWS" Value="1" Secure="yes" />
     <Property Id="INSTALLHOOKS" Value="1" Secure="yes" />
     <Property Id="INSTALLEXTENSION" Value="1" Secure="yes" />
+    <Property Id="KEEPDATABASE" Value="1" Secure="yes" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start MCP Track Tokens now" />
 
@@ -40,7 +42,7 @@
 
     <!-- Deferred quiet-exec payload: property Id must match the CustomAction Id. -->
     <SetProperty Id="InstallIntegrations"
-                 Value="&quot;[ToolsFolder]mcp-track-tokens-setup-integrations.exe&quot; --install-dir &quot;[INSTALLFOLDER]&quot; --hooks [INSTALLHOOKS] --extension [INSTALLEXTENSION]"
+                 Value="&quot;[ToolsFolder]mcp-track-tokens-setup-integrations.exe&quot; --install-dir &quot;[INSTALLFOLDER]&quot; --hooks [INSTALLHOOKS] --extension [INSTALLEXTENSION] --keep-database [KEEPDATABASE]"
                  Before="InstallIntegrations"
                  Sequence="execute" />
 
@@ -66,6 +68,7 @@
     <WixVariable Id="WixUILicenseRtf" Value="assets\License.rtf" />
 
     <UI>
+      <DialogRef Id="OptionsDlg" />
       <Publish Dialog="ExitDialog"
                Control="Finish"
                Event="DoAction"

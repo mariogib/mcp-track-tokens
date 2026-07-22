@@ -196,7 +196,9 @@ dotnet build $setupProject -c $Configuration `
     -p:DesktopPublishDir="$desktopPublishDir\" `
     -p:IntegrationsContentDir="$integrationsContentDir\" `
     -p:IntegrationsHelperDir="$integrationsHelperDir\"
-
+if ($LASTEXITCODE -ne 0) {
+    throw "WiX MSI build failed with exit code $LASTEXITCODE"
+}
 $builtMsi = Get-ChildItem -Path (Join-Path $root 'setup\McpTrackTokens.Tray.Setup\bin') -Recurse -Filter '*.msi' |
     Sort-Object LastWriteTime -Descending |
     Select-Object -First 1

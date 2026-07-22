@@ -8,10 +8,21 @@
         <Control Id="Description" Type="Text" X="25" Y="23" Width="330" Height="20" Transparent="yes" NoPrefix="yes" Text="The host deploys API, MCP, and dashboard locally. Choose extras below." />
         <Control Id="BannerLine" Type="Line" X="0" Y="44" Width="370" Height="0" />
 
+        <Control Id="UpgradeNote"
+                 Type="Text"
+                 X="25"
+                 Y="50"
+                 Width="320"
+                 Height="18"
+                 Hidden="yes"
+                 Text="{\WixUI_Font_Title}Upgrade detected — Program Files will be replaced."
+                 ShowCondition="WIX_UPGRADE_DETECTED"
+                 HideCondition="NOT WIX_UPGRADE_DETECTED" />
+
         <Control Id="AutostartCheck"
                  Type="CheckBox"
                  X="25"
-                 Y="60"
+                 Y="72"
                  Width="320"
                  Height="17"
                  Property="STARTWITHWINDOWS"
@@ -21,7 +32,7 @@
         <Control Id="HooksCheck"
                  Type="CheckBox"
                  X="25"
-                 Y="90"
+                 Y="95"
                  Width="320"
                  Height="17"
                  Property="INSTALLHOOKS"
@@ -31,20 +42,30 @@
         <Control Id="ExtensionCheck"
                  Type="CheckBox"
                  X="25"
-                 Y="120"
+                 Y="118"
                  Width="320"
                  Height="17"
                  Property="INSTALLEXTENSION"
                  CheckBoxValue="1"
                  Text="Install VS Code / Cursor extension" />
 
+        <Control Id="KeepDatabaseCheck"
+                 Type="CheckBox"
+                 X="25"
+                 Y="141"
+                 Width="320"
+                 Height="28"
+                 Property="KEEPDATABASE"
+                 CheckBoxValue="1"
+                 Text="Keep existing SQLite database (recommended for upgrades)" />
+
         <Control Id="OptionsHelp"
                  Type="Text"
                  X="25"
-                 Y="150"
+                 Y="175"
                  Width="320"
-                 Height="70"
-                 Text="Core install includes HTTP API, HTTP MCP (http://127.0.0.1:5187/mcp), SQLite, and the web/desktop dashboard. Setup also writes an MCP example config (merge into Cursor mcp.json manually). Hooks/extension are optional." />
+                 Height="48"
+                 Text="Tracking data lives in %USERPROFILE%\.mcp-track-tokens\ (outside Program Files). Leave “Keep existing SQLite database” checked to preserve it. Uncheck only for a clean database reset." />
 
         <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="Next" />
@@ -54,11 +75,47 @@
         </Control>
       </Dialog>
 
-      <!-- Insert OptionsDlg between InstallDir and VerifyReady (higher Order overrides WixUI defaults). -->
-      <Publish Dialog="InstallDirDlg" Control="Next" Event="NewDialog" Value="OptionsDlg" Order="5" />
-      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="InstallDirDlg" />
-      <Publish Dialog="OptionsDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="OptionsDlg" Order="5" />
+      <!--
+        Sequence:
+          Fresh:   Welcome → License → Options → InstallDir → VerifyReady
+          Upgrade: Welcome → License → Options → VerifyReady  (skip folder picker)
+        Options used to sit after InstallDir only, so upgrades never saw it.
+      -->
+      <Publish Dialog="LicenseAgreementDlg"
+               Control="Next"
+               Event="NewDialog"
+               Value="OptionsDlg"
+               Order="5"
+               Condition="LicenseAccepted = &quot;1&quot;" />
+
+      <Publish Dialog="OptionsDlg" Control="Back" Event="NewDialog" Value="LicenseAgreementDlg" />
+      <Publish Dialog="OptionsDlg"
+               Control="Next"
+               Event="NewDialog"
+               Value="InstallDirDlg"
+               Order="2"
+               Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="OptionsDlg"
+               Control="Next"
+               Event="NewDialog"
+               Value="VerifyReadyDlg"
+               Order="3"
+               Condition="WIX_UPGRADE_DETECTED" />
+
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="OptionsDlg" Order="5" />
+
+      <Publish Dialog="VerifyReadyDlg"
+               Control="Back"
+               Event="NewDialog"
+               Value="OptionsDlg"
+               Order="5"
+               Condition="WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="VerifyReadyDlg"
+               Control="Back"
+               Event="NewDialog"
+               Value="InstallDirDlg"
+               Order="4"
+               Condition="NOT Installed AND NOT WIX_UPGRADE_DETECTED" />
     </UI>
   </Fragment>
 </Wix>

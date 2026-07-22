@@ -25,6 +25,11 @@ internal static class Program
             WriteHostDeployNotes(options.InstallDir);
             WriteHttpMcpExample(options.InstallDir);
 
+            if (!options.KeepDatabase)
+            {
+                PurgeUserData();
+            }
+
             if (options.InstallHooks)
             {
                 InstallHooks(options.InstallDir);
@@ -60,6 +65,10 @@ internal static class Program
               • Web dashboard     http://127.0.0.1:5187/  (wwwroot)
               • Desktop shell     Desktop\mcp-track-tokens-desktop.exe
               • SQLite database   %USERPROFILE%\.mcp-track-tokens\mcp-track-tokens.db
+
+            Upgrades replace Program Files only. The SQLite database is kept by default
+            (Setup option “Upgrade / keep existing SQLite database”). Uncheck that option
+            only when you want a clean database. Uninstall leaves the database in place.
 
             Start "MCP Track Tokens Host" from the Start Menu (or enable Start with Windows).
             Open the dashboard from the tray menu or the Desktop shortcut.
@@ -233,6 +242,33 @@ internal static class Program
             "Extension settings were not modified.");
     }
 
+    private static void PurgeUserData()
+    {
+        var dataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".mcp-track-tokens");
+
+        if (!Directory.Exists(dataDir))
+        {
+            Console.WriteLine($"No user data folder to purge at {dataDir}");
+            return;
+        }
+
+        try
+        {
+            Directory.Delete(dataDir, recursive: true);
+            Console.WriteLine($"Purged user data folder {dataDir}");
+            TryWriteNote(
+                "database-purged.txt",
+                $"Deleted {dataDir} because Setup option “Upgrade / keep existing SQLite database” was unchecked.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to purge {dataDir}: {ex.Message}");
+            TryWriteNote("database-purge-error.txt", ex.ToString());
+        }
+    }
+
     private static string? FindEditorCli()
     {
         foreach (var name in new[] { "cursor.cmd", "cursor.exe", "cursor", "code.cmd", "code.exe", "code" })
@@ -311,12 +347,14 @@ internal static class Program
         public string InstallDir { get; init; } = "";
         public bool InstallHooks { get; init; }
         public bool InstallExtension { get; init; }
+        public bool KeepDatabase { get; init; } = true;
 
         public static Options Parse(string[] args)
         {
             var installDir = "";
             var hooks = false;
             var extension = false;
+            var keepDatabase = true;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -333,6 +371,10 @@ internal static class Program
                     case "--extension":
                         extension = ReadFlag(args, ref i, defaultValue: false);
                         break;
+                    case "--keep-database":
+                        // Present without "1" (unchecked MSI checkbox) means purge.
+                        keepDatabase = ReadFlag(args, ref i, defaultValue: false);
+                        break;
                 }
             }
 
@@ -340,7 +382,8 @@ internal static class Program
             {
                 InstallDir = installDir,
                 InstallHooks = hooks,
-                InstallExtension = extension
+                InstallExtension = extension,
+                KeepDatabase = keepDatabase
             };
         }
 
@@ -352,6 +395,12 @@ internal static class Program
             }
 
             var value = args[++index];
+            // Unchecked WiX checkbox leaves an empty token after the switch.
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
             return value is "1" or "true" or "yes" or "TRUE" or "Yes";
         }
     }

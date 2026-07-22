@@ -262,7 +262,7 @@ export function HelpPage() {
             <Step title="6. Verify">
               <ul>
                 <li>
-                  <TextLink to="/settings">Settings → Integrations</TextLink> shows Cursor hooks configured
+                  <TextLink to="/settings?tab=integrations">Settings → Integrations</TextLink> shows Cursor hooks configured
                   or inferred from activity.
                 </li>
                 <li>
