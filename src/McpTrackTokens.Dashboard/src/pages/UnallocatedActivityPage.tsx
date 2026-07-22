@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   useAssignActivityMutation,
   useProjectsQuery,
@@ -7,7 +6,6 @@ import {
 } from '../api/hooks';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { Panel, TablePanel } from '../components/MetricCard';
-import { Page } from '../layout/AppLayout';
 import {
   formatDateTime,
   formatDurationMs,
@@ -15,7 +13,8 @@ import {
   lastDaysRange,
 } from '../utils/format';
 
-export function UnallocatedActivityPage() {
+/** Unallocated activity assign UI (embedded under Imported usage tabs). */
+export function UnallocatedActivityPanel() {
   const range = useMemo(() => lastDaysRange(30), []);
   const unallocated = useUnallocatedQuery(range.fromUtc, range.toUtc);
   const projects = useProjectsQuery();
@@ -79,99 +78,94 @@ export function UnallocatedActivityPage() {
   }
 
   return (
-    <Page>
-      <section className="page-section">
-        <div className="section-header">
-          <div>
-            <h2>Unallocated activity</h2>
-            <p>Select events and assign them to a tracked project.</p>
-          </div>
-          <Link to="/" className="btn btn-secondary">
-            Back to overview
-          </Link>
+    <section className="page-section">
+      <div className="section-header">
+        <div>
+          <h2>Unallocated activity</h2>
+          <p>Select events and assign them to a tracked project.</p>
         </div>
+      </div>
 
-        <Panel className="stack">
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="activity-project">Project</label>
-              <select
-                id="activity-project"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-              >
-                <option value="">Select project…</option>
-                {activeProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field" style={{ justifyContent: 'flex-end' }}>
-              <label className="label">&nbsp;</label>
-              <button
-                type="button"
-                className="btn"
-                disabled={!projectId || selectedIds.size === 0 || assign.isPending}
-                onClick={onAssign}
-              >
-                {assign.isPending
-                  ? 'Assigning…'
-                  : `Assign ${selectedIds.size || ''} selected`}
-              </button>
-            </div>
+      <Panel className="stack">
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="activity-project">Project</label>
+            <select
+              id="activity-project"
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+            >
+              <option value="">Select project…</option>
+              {activeProjects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
-          {message ? <p className="hint">{message}</p> : null}
-        </Panel>
+          <div className="field" style={{ justifyContent: 'flex-end' }}>
+            <label className="label">&nbsp;</label>
+            <button
+              type="button"
+              className="btn"
+              disabled={!projectId || selectedIds.size === 0 || assign.isPending}
+              onClick={onAssign}
+            >
+              {assign.isPending
+                ? 'Assigning…'
+                : `Assign ${selectedIds.size || ''} selected`}
+            </button>
+          </div>
+        </div>
+        {message ? <p className="hint">{message}</p> : null}
+      </Panel>
 
-        {items.length === 0 ? (
-          <EmptyState message="No unallocated activity in the last 30 days." />
-        ) : (
-          <TablePanel>
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>
+      {items.length === 0 ? (
+        <EmptyState message="No unallocated activity in the last 30 days." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={items.length > 0 && selectedIds.size === items.length}
+                    onChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </th>
+                <th>When</th>
+                <th>Type</th>
+                <th>Editor</th>
+                <th>Model</th>
+                <th>Workspace</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id} className={selectedIds.has(item.id) ? 'is-selected' : undefined}>
+                  <td>
                     <input
                       type="checkbox"
-                      checked={items.length > 0 && selectedIds.size === items.length}
-                      onChange={toggleAll}
-                      aria-label="Select all"
+                      checked={selectedIds.has(item.id)}
+                      onChange={() => toggle(item.id)}
+                      aria-label={`Select ${item.id}`}
                     />
-                  </th>
-                  <th>When</th>
-                  <th>Type</th>
-                  <th>Editor</th>
-                  <th>Model</th>
-                  <th>Workspace</th>
-                  <th>Duration</th>
+                  </td>
+                  <td>{formatDateTime(item.timestampUtc)}</td>
+                  <td>{item.eventType ?? item.kind}</td>
+                  <td>{item.editor ?? '—'}</td>
+                  <td>{item.model ?? '—'}</td>
+                  <td className="mono">{item.workspacePath ?? item.repositoryPath ?? '—'}</td>
+                  <td>{formatDurationMs(item.durationMilliseconds)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className={selectedIds.has(item.id) ? 'is-selected' : undefined}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(item.id)}
-                        onChange={() => toggle(item.id)}
-                        aria-label={`Select ${item.id}`}
-                      />
-                    </td>
-                    <td>{formatDateTime(item.timestampUtc)}</td>
-                    <td>{item.eventType ?? item.kind}</td>
-                    <td>{item.editor ?? '—'}</td>
-                    <td>{item.model ?? '—'}</td>
-                    <td className="mono">{item.workspacePath ?? item.repositoryPath ?? '—'}</td>
-                    <td>{formatDurationMs(item.durationMilliseconds)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </TablePanel>
-        )}
-      </section>
-    </Page>
+              ))}
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </section>
   );
 }

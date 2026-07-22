@@ -17,7 +17,7 @@ const navItems: AdminNavItem[] = [
   { to: '/help', label: 'Help', icon: '?' },
 ];
 
-function titleForPath(pathname: string): { title: string; subtitle: string } {
+function titleForPath(pathname: string, search: string): { title: string; subtitle: string } {
   if (pathname.startsWith('/projects/')) {
     return { title: 'Project details', subtitle: 'Activity, usage, cost, and configuration' };
   }
@@ -31,13 +31,19 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
       };
     case '/reports':
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
-    case '/imported-usage':
+    case '/imported-usage': {
+      const tab = new URLSearchParams(search).get('tab');
+      if (tab === 'unallocated') {
+        return {
+          title: 'Imported usage',
+          subtitle: 'Assign unallocated prompt and agent events to projects',
+        };
+      }
       return {
         title: 'Imported usage',
         subtitle: 'Upload Cursor exports and review imported rows',
       };
-    case '/unallocated':
-      return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
+    }
     case '/settings':
       return { title: 'Settings', subtitle: 'Tracking preferences, privacy, and API keys' };
     case '/help':
@@ -56,7 +62,7 @@ export function AppLayout() {
   useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();
-  const page = titleForPath(location.pathname);
+  const page = titleForPath(location.pathname, location.search);
   const healthy =
     health.data?.healthy === true ||
     health.data?.status === 'Healthy' ||

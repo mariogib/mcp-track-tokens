@@ -232,7 +232,7 @@ export function OverviewPage() {
             label="Unallocated activity"
             value={formatNumber(unallocatedActivityCount)}
             hint="Click to assign events to projects"
-            to="/unallocated"
+            to="/imported-usage?tab=unallocated"
           />
           <MetricCard
             label="Unallocated usage"

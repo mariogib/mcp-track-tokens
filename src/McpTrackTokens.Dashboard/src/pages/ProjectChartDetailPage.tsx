@@ -12,7 +12,8 @@ import {
   NamedPieChart,
 } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
+import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
+import { MetricCard, Panel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import {
   isProjectChartKey,
@@ -20,6 +21,7 @@ import {
   type ProjectChartKey,
 } from '../data/projectCharts';
 import { Page } from '../layout/AppLayout';
+import { Breadcrumb } from '../shared/adminUi';
 import {
   parseRangePreset,
   resolveRange,
@@ -213,13 +215,13 @@ export function ProjectChartDetailPage() {
       <section className="page-section">
         <div className="section-header">
           <div>
-            <p>
-              <Link to="/projects">Projects</Link>
-              {' / '}
-              <Link to={`/projects/${projectId}`}>{project.data.name}</Link>
-              {' / '}
-              {chartTitle}
-            </p>
+            <Breadcrumb
+              items={[
+                { label: 'Projects', to: '/projects' },
+                { label: project.data.name, to: `/projects/${projectId}` },
+                { label: chartTitle },
+              ]}
+            />
             <h2>{chartTitle}</h2>
             <p className="muted">
               {range.label}
@@ -367,31 +369,120 @@ export function ProjectChartDetailPage() {
         </ChartCard>
       </section>
 
-      <section className="page-section">
-        <h3>Detail data</h3>
-        <TablePanel>
-          {def.kind === 'line' ? (
-            <DayTable rows={activeLineData} chartKey={chartKey} currency={currency} />
-          ) : null}
-          {def.kind === 'pie' ? (
+      {def.kind === 'line' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search days..."
+          rows={activeLineData}
+          getSearchText={(row) =>
+            [row.day, row.dayKey, row.prompts, row.activeMinutes, row.agentMinutes, row.tokens, row.cost]
+              .map(String)
+              .join(' ')
+          }
+          exportFilename={`project-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Day', key: 'day' },
+            { header: 'Prompts', key: 'prompts' },
+            { header: 'Active (min)', key: 'activeMinutes' },
+            { header: 'Agent (min)', key: 'agentMinutes' },
+            { header: 'Tokens', key: 'tokens' },
+            { header: 'Cost', key: 'cost' },
+          ]}
+          toExportRow={(row) => ({
+            day: String(row.day),
+            prompts: Number(row.prompts),
+            activeMinutes: Number(row.activeMinutes),
+            agentMinutes: Number(row.agentMinutes),
+            tokens: Number(row.tokens),
+            cost: Number(row.cost),
+          })}
+          renderTable={(rows) => <DayTable rows={rows} chartKey={chartKey} currency={currency} />}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={String(row.dayKey)} className="analysis-browse-tile">
+                <strong>{String(row.day)}</strong>
+                <span>Prompts {formatNumber(Number(row.prompts))}</span>
+                <span>Active {formatNumber(Number(row.activeMinutes))} min</span>
+                <span>Tokens {formatNumber(Number(row.tokens))}</span>
+                <span>
+                  {chartKey === 'cost-day' || Number(row.cost) > 0
+                    ? formatCurrency(Number(row.cost), currency)
+                    : '—'}
+                </span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
+
+      {def.kind === 'pie' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search models..."
+          rows={pieData}
+          getSearchText={(row) => `${row.name} ${row.cost}`}
+          exportFilename={`project-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Model', key: 'name' },
+            {
+              header: chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost',
+              key: 'cost',
+            },
+          ]}
+          toExportRow={(row) => ({ name: row.name, cost: row.cost })}
+          renderTable={(rows) => (
             <NamedValueTable
-              rows={pieData}
+              rows={rows}
               nameHeader="Model"
               valueHeader={chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost'}
               currency={currency}
             />
-          ) : null}
-          {def.kind === 'bar' ? (
+          )}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={row.name} className="analysis-browse-tile">
+                <strong>{row.name}</strong>
+                <span>{formatCurrency(row.cost, currency)}</span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
+
+      {def.kind === 'bar' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search branches..."
+          rows={branchSeries}
+          getSearchText={(row) => `${row.name} ${row.prompts}`}
+          exportFilename={`project-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Branch', key: 'name' },
+            { header: 'Prompts', key: 'prompts' },
+          ]}
+          toExportRow={(row) => ({ name: row.name, prompts: row.prompts })}
+          renderTable={(rows) => (
             <NamedValueTable
-              rows={branchSeries.map((r) => ({ name: r.name, cost: r.prompts }))}
+              rows={rows.map((r) => ({ name: r.name, cost: r.prompts }))}
               nameHeader="Branch"
               valueHeader="Prompts"
               currency={currency}
               asNumber
             />
-          ) : null}
-        </TablePanel>
-      </section>
+          )}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={row.name} className="analysis-browse-tile">
+                <strong>{row.name}</strong>
+                <span>Prompts {formatNumber(row.prompts)}</span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
     </Page>
   );
 }

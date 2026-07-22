@@ -1,7 +1,11 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import { createAdminShell } from '@lunarq/frontend-shared/admin';
-import { createCard } from '@lunarq/frontend-shared/components';
+import {
+  createBreadcrumb,
+  createBrowseListControls,
+  createCard,
+} from '@lunarq/frontend-shared/components';
 import {
   applyThemeVariables,
   BUILTIN_THEME_PRESETS,
@@ -11,6 +15,12 @@ import {
 
 /** Shared admin shell bound to this app's React + React Router. */
 export const AdminShell = createAdminShell(React, NavLink);
+
+/** Shared breadcrumb trail bound to React Router Link. */
+export const Breadcrumb = createBreadcrumb(React, Link);
+
+/** Shared browse toolbar (table/grid; calendar optional per page). */
+export const BrowseListControls = createBrowseListControls(React);
 
 /** Keep app-local tokens in sync when ThemeButton applies a preset. */
 function applyDashboardTheme(theme: ThemeResponseBase): void {

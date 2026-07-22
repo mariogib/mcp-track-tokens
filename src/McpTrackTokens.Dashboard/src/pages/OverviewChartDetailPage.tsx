@@ -8,7 +8,8 @@ import {
   NamedPieChart,
 } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
+import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
+import { MetricCard, Panel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import {
   isOverviewChartKey,
@@ -16,6 +17,7 @@ import {
   type OverviewChartKey,
 } from '../data/overviewCharts';
 import { Page } from '../layout/AppLayout';
+import { Breadcrumb } from '../shared/adminUi';
 import {
   parseRangePreset,
   resolveRange,
@@ -214,11 +216,12 @@ export function OverviewChartDetailPage() {
       <section className="page-section">
         <div className="section-header">
           <div>
-            <p>
-              <Link to={`/${backQuery}`}>Overview</Link>
-              {' / '}
-              {chartTitle}
-            </p>
+            <Breadcrumb
+              items={[
+                { label: 'Overview', to: `/${backQuery}` },
+                { label: chartTitle },
+              ]}
+            />
             <h2>{chartTitle}</h2>
             <p className="muted">
               Across {formatNumber(projectIds.length)} projects · {range.label}
@@ -374,25 +377,118 @@ export function OverviewChartDetailPage() {
         </ChartCard>
       </section>
 
-      <section className="page-section">
-        <h3>Detail data</h3>
-        <TablePanel>
-          {def.kind === 'line' ? (
-            <DayTable rows={filteredDaySeries} chartKey={chartKey} currency={currency} />
-          ) : null}
-          {def.kind === 'pie' ? (
+      {def.kind === 'line' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search days..."
+          rows={filteredDaySeries}
+          getSearchText={(row) =>
+            [row.day, row.dayKey, row.prompts, row.activeMinutes, row.agentMinutes, row.tokens, row.cost]
+              .map(String)
+              .join(' ')
+          }
+          exportFilename={`overview-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Day', key: 'day' },
+            { header: 'Prompts', key: 'prompts' },
+            { header: 'Active (min)', key: 'activeMinutes' },
+            { header: 'Agent (min)', key: 'agentMinutes' },
+            { header: 'Tokens', key: 'tokens' },
+            { header: 'Cost', key: 'cost' },
+          ]}
+          toExportRow={(row) => ({
+            day: String(row.day),
+            prompts: Number(row.prompts),
+            activeMinutes: Number(row.activeMinutes),
+            agentMinutes: Number(row.agentMinutes),
+            tokens: Number(row.tokens),
+            cost: Number(row.cost),
+          })}
+          renderTable={(rows) => <DayTable rows={rows} chartKey={chartKey} currency={currency} />}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={String(row.dayKey)} className="analysis-browse-tile">
+                <strong>{String(row.day)}</strong>
+                <span>Prompts {formatNumber(Number(row.prompts))}</span>
+                <span>Active {formatNumber(Number(row.activeMinutes))} min</span>
+                <span>Tokens {formatNumber(Number(row.tokens))}</span>
+                <span>
+                  {chartKey === 'cost-day' || Number(row.cost) > 0
+                    ? formatCurrency(Number(row.cost), currency)
+                    : '—'}
+                </span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
+
+      {def.kind === 'pie' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search models..."
+          rows={pieData}
+          getSearchText={(row) => `${row.name} ${row.cost}`}
+          exportFilename={`overview-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Model', key: 'name' },
+            {
+              header: chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost',
+              key: 'cost',
+            },
+          ]}
+          toExportRow={(row) => ({ name: row.name, cost: row.cost })}
+          renderTable={(rows) => (
             <NamedValueTable
-              rows={pieData}
+              rows={rows}
               nameHeader="Model"
               valueHeader={chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost'}
               currency={currency}
             />
-          ) : null}
-          {def.kind === 'bar' ? (
-            <ProjectTable rows={filteredProjectSeries} />
-          ) : null}
-        </TablePanel>
-      </section>
+          )}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={row.name} className="analysis-browse-tile">
+                <strong>{row.name}</strong>
+                <span>{formatCurrency(row.cost, currency)}</span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
+
+      {def.kind === 'bar' ? (
+        <AnalysisDetailBrowse
+          heading="Detail data"
+          searchPlaceholder="Search projects..."
+          rows={filteredProjectSeries}
+          getSearchText={(row) => `${row.name} ${row.prompts}`}
+          exportFilename={`overview-${chartKey}-detail.xlsx`}
+          exportTitle={chartTitle}
+          exportColumns={[
+            { header: 'Project', key: 'name' },
+            { header: 'Prompts', key: 'prompts' },
+          ]}
+          toExportRow={(row) => ({ name: row.name, prompts: row.prompts })}
+          renderTable={(rows) => <ProjectTable rows={rows} />}
+          renderGrid={(rows) =>
+            rows.map((row) => (
+              <article key={row.projectId || row.name} className="analysis-browse-tile">
+                <strong>
+                  {row.projectId ? (
+                    <Link to={`/projects/${row.projectId}`}>{row.name}</Link>
+                  ) : (
+                    row.name
+                  )}
+                </strong>
+                <span>Prompts {formatNumber(row.prompts)}</span>
+              </article>
+            ))
+          }
+        />
+      ) : null}
     </Page>
   );
 }

@@ -85,6 +85,7 @@ export function TimesheetPage() {
   const [rangePreset, setRangePreset] = useState<RangePreset>('30d');
   const range = useMemo(() => resolveRange(rangePreset), [rangePreset]);
   const [projectFilter, setProjectFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const projects = useProjectsQuery();
   const timesheetCategories = useTimesheetCategoriesQuery(true);
@@ -116,6 +117,16 @@ export function TimesheetPage() {
     }
     return map;
   }, [projects.data]);
+
+  const filteredEntries = useMemo(() => {
+    const list = Array.isArray(entries.data) ? entries.data : [];
+    if (!statusFilter) {
+      return list;
+    }
+    return list.filter((entry) =>
+      statusFilter === 'open' ? entry.isOpen : !entry.isOpen,
+    );
+  }, [entries.data, statusFilter]);
 
   const openEditor = (entry?: TimesheetEntryDto) => {
     if (entry) {
@@ -192,6 +203,18 @@ export function TimesheetPage() {
                   {p.name}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="timesheet-status-filter">Status</label>
+            <select
+              id="timesheet-status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
         </Panel>
@@ -457,6 +480,8 @@ export function TimesheetPage() {
           />
         ) : !Array.isArray(entries.data) || entries.data.length === 0 ? (
           <EmptyState message={`No timesheet entries in ${range.label.toLowerCase()}.`} />
+        ) : filteredEntries.length === 0 ? (
+          <EmptyState message="No timesheet entries match the current status filter." />
         ) : (
           <TablePanel>
             <table className="data">
@@ -473,7 +498,7 @@ export function TimesheetPage() {
                 </tr>
               </thead>
               <tbody>
-                {entries.data.map((entry) => {
+                {filteredEntries.map((entry) => {
                   const projectLabel =
                     entry.projectName?.trim() ||
                     projectNameById.get(entry.projectId) ||

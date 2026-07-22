@@ -526,12 +526,37 @@ function DaySessionsDialog({
     fromUtc: bounds.fromUtc,
     toUtc: bounds.toUtc,
   });
+  const [statusFilter, setStatusFilter] = useState('');
   const allowedProjectIds = useMemo(() => new Set(projectIds ?? []), [projectIds]);
-  const visibleSessions = (sessions.data ?? []).filter(
-    (session) =>
-      allowedProjectIds.size === 0 ||
-      (session.projectId ? allowedProjectIds.has(session.projectId) : false),
-  );
+  const visibleSessions = useMemo(() => {
+    return (sessions.data ?? []).filter((session) => {
+      const matchesProject =
+        allowedProjectIds.size === 0 ||
+        (session.projectId ? allowedProjectIds.has(session.projectId) : false);
+      if (!matchesProject) {
+        return false;
+      }
+      if (!statusFilter) {
+        return true;
+      }
+      const status = session.status ?? (session.isActive ? 'Active' : '—');
+      return status === statusFilter;
+    });
+  }, [allowedProjectIds, sessions.data, statusFilter]);
+
+  const sessionStatusOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const session of sessions.data ?? []) {
+      if (
+        allowedProjectIds.size > 0 &&
+        !(session.projectId && allowedProjectIds.has(session.projectId))
+      ) {
+        continue;
+      }
+      values.add(session.status ?? (session.isActive ? 'Active' : '—'));
+    }
+    return [...values].sort((a, b) => a.localeCompare(b));
+  }, [allowedProjectIds, sessions.data]);
 
   return (
     <DialogFrame
@@ -545,9 +570,33 @@ function DaySessionsDialog({
         <ErrorState
           message={sessions.error instanceof Error ? sessions.error.message : 'Failed to load sessions'}
         />
-      ) : visibleSessions.length === 0 ? (
+      ) : (sessions.data ?? []).length === 0 ||
+        (sessions.data ?? []).every(
+          (session) =>
+            allowedProjectIds.size > 0 &&
+            !(session.projectId && allowedProjectIds.has(session.projectId)),
+        ) ? (
         <EmptyState message="No sessions were active on this day for this report." />
       ) : (
+        <div className="stack">
+          <div className="field" style={{ maxWidth: '14rem' }}>
+            <label htmlFor="report-session-status-filter">Status</label>
+            <select
+              id="report-session-status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              {sessionStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+          {visibleSessions.length === 0 ? (
+            <EmptyState message="No sessions match the current status filter." />
+          ) : (
         <TablePanel>
           <table className="data">
             <thead>
@@ -587,6 +636,8 @@ function DaySessionsDialog({
             </tbody>
           </table>
         </TablePanel>
+          )}
+        </div>
       )}
     </DialogFrame>
   );
@@ -602,6 +653,23 @@ function SessionPromptsDialog({
   onClose: () => void;
 }) {
   const prompts = useSessionPromptsQuery(session.id);
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const statusOptions = useMemo(() => {
+    const values = new Set<string>();
+    for (const prompt of prompts.data ?? []) {
+      values.add(prompt.status?.trim() || '—');
+    }
+    return [...values].sort((a, b) => a.localeCompare(b));
+  }, [prompts.data]);
+
+  const filteredPrompts = useMemo(() => {
+    const list = prompts.data ?? [];
+    if (!statusFilter) {
+      return list;
+    }
+    return list.filter((prompt) => (prompt.status?.trim() || '—') === statusFilter);
+  }, [prompts.data, statusFilter]);
 
   return (
     <DialogFrame
@@ -618,6 +686,25 @@ function SessionPromptsDialog({
       ) : !prompts.data || prompts.data.length === 0 ? (
         <EmptyState message="No prompt submissions were recorded for this session." />
       ) : (
+        <div className="stack">
+          <div className="field" style={{ maxWidth: '14rem' }}>
+            <label htmlFor="report-prompt-status-filter">Status</label>
+            <select
+              id="report-prompt-status-filter"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+          {filteredPrompts.length === 0 ? (
+            <EmptyState message="No prompts match the current status filter." />
+          ) : (
         <TablePanel>
           <table className="data">
             <thead>
@@ -631,7 +718,7 @@ function SessionPromptsDialog({
               </tr>
             </thead>
             <tbody>
-              {prompts.data.map((prompt: PromptEventDto) => (
+              {filteredPrompts.map((prompt: PromptEventDto) => (
                 <tr key={prompt.id}>
                   <td>{formatDateTime(prompt.timestampUtc)}</td>
                   <td>{prompt.model?.trim() ? prompt.model : '—'}</td>
@@ -648,6 +735,8 @@ function SessionPromptsDialog({
             </tbody>
           </table>
         </TablePanel>
+          )}
+        </div>
       )}
     </DialogFrame>
   );

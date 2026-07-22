@@ -8,7 +8,6 @@ import { OverviewChartDetailPage } from './pages/OverviewChartDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { TimesheetLandingPage } from './pages/TimesheetLandingPage';
 import { ImportedUsagePage } from './pages/ImportedUsagePage';
-import { UnallocatedActivityPage } from './pages/UnallocatedActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { HelpLandingPage } from './pages/HelpLandingPage';
 
@@ -58,7 +57,10 @@ export default function App() {
         <Route path="imported-usage" element={<ImportedUsagePage />} />
         <Route path="imports" element={<Navigate to="/imported-usage" replace />} />
         <Route path="reconciliation" element={<Navigate to="/imported-usage" replace />} />
-        <Route path="unallocated" element={<UnallocatedActivityPage />} />
+        <Route
+          path="unallocated"
+          element={<Navigate to="/imported-usage?tab=unallocated" replace />}
+        />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<HelpLandingPage />} />
         <Route path="help/mcp" element={<RedirectMcpHelp />} />

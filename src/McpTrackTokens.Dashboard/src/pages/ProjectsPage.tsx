@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { exportToExcel } from '@lunarq/frontend-shared/utils';
+import type { BrowseViewMode } from '@lunarq/frontend-shared/components';
 import {
   useDeleteProjectMutation,
   useProjectsQuery,
@@ -18,6 +20,7 @@ import {
   formatNumber,
 } from '../utils/format';
 import { Page } from '../layout/AppLayout';
+import { BrowseListControls } from '../shared/adminUi';
 
 type EditDraft = {
   name: string;
@@ -44,6 +47,7 @@ function toDraft(project: ProjectDto): EditDraft {
 }
 
 export function ProjectsPage() {
+  const navigate = useNavigate();
   const now = new Date();
   const projects = useProjectsQuery();
   const summary = useReportsSummaryQuery(now.getUTCFullYear(), now.getUTCMonth() + 1);
@@ -53,13 +57,74 @@ export function ProjectsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<BrowseViewMode>('grid');
+  const [searchValue, setSearchValue] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
-  const list = [...(projects.data ?? [])].sort((a, b) => {
-    const ta = a.lastActivityAtUtc ? Date.parse(a.lastActivityAtUtc) : 0;
-    const tb = b.lastActivityAtUtc ? Date.parse(b.lastActivityAtUtc) : 0;
-    if (tb !== ta) return tb - ta;
-    return a.name.localeCompare(b.name);
-  });
+  const list = useMemo(() => {
+    return [...(projects.data ?? [])].sort((a, b) => {
+      const ta = a.lastActivityAtUtc ? Date.parse(a.lastActivityAtUtc) : 0;
+      const tb = b.lastActivityAtUtc ? Date.parse(b.lastActivityAtUtc) : 0;
+      if (tb !== ta) return tb - ta;
+      return a.name.localeCompare(b.name);
+    });
+  }, [projects.data]);
+
+  const costByProject = useMemo(
+    () => new Map((summary.data?.projects ?? []).map((p) => [p.projectId, p] as const)),
+    [summary.data?.projects],
+  );
+
+  const clientOptions = useMemo(() => {
+    const clients = new Set<string>();
+    let hasUnassigned = false;
+    for (const project of list) {
+      const client = project.clientName?.trim();
+      if (client) {
+        clients.add(client);
+      } else {
+        hasUnassigned = true;
+      }
+    }
+    return {
+      clients: [...clients].sort((a, b) => a.localeCompare(b)),
+      hasUnassigned,
+    };
+  }, [list]);
+
+  const filteredList = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+
+    return list.filter((project) => {
+      const clientName = project.clientName?.trim() ?? '';
+      const matchesClient =
+        !clientFilter ||
+        (clientFilter === '__none__' ? !clientName : clientName === clientFilter);
+      const matchesStatus =
+        !statusFilter ||
+        (statusFilter === 'active' ? project.isActive : !project.isActive);
+      if (!matchesClient || !matchesStatus) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const haystack = [
+        project.name,
+        project.slug,
+        clientName,
+        project.billingCode ?? '',
+        project.isActive ? 'active' : 'inactive',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [clientFilter, list, searchValue, statusFilter]);
+
   const editing = list.find((p) => p.id === editingId) ?? null;
 
   useEffect(() => {
@@ -82,10 +147,6 @@ export function ProjectsPage() {
       />
     );
   }
-
-  const costByProject = new Map(
-    (summary.data?.projects ?? []).map((p) => [p.projectId, p] as const),
-  );
 
   async function onSaveEdit(event: React.FormEvent) {
     event.preventDefault();
@@ -134,20 +195,220 @@ export function ProjectsPage() {
     }
   }
 
+  async function onExportToExcel() {
+    const timestamp = new Date().toISOString();
+    await exportToExcel({
+      filename: 'projects.xlsx',
+      title: 'Projects',
+      timestamp,
+      columns: [
+        { header: 'Name', key: 'name' },
+        { header: 'Client', key: 'clientName' },
+        { header: 'Slug', key: 'slug' },
+        { header: 'Repos', key: 'repositoryCount' },
+        { header: 'Prompts', key: 'promptCount' },
+        { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
+        { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
+        { header: 'Calculated cost', key: 'calculatedTokenCost' },
+        { header: 'Cost', key: 'totalAiCost' },
+        { header: 'Currency', key: 'currency' },
+        { header: 'Last activity', key: 'lastActivityAtUtc' },
+        { header: 'Status', key: 'status' },
+      ],
+      data: filteredList.map((project) => {
+        const cost = costByProject.get(project.id);
+        return {
+          name: project.name,
+          clientName: project.clientName ?? '',
+          slug: project.slug,
+          repositoryCount: project.repositoryCount,
+          promptCount: cost?.promptCount ?? project.promptCount,
+          agentDurationMilliseconds:
+            cost?.agentDurationMilliseconds ?? project.agentDurationMilliseconds,
+          activeProjectTimeSeconds:
+            cost?.activeProjectTimeSeconds ?? project.activeProjectTimeSeconds,
+          calculatedTokenCost: cost?.calculatedTokenCost ?? 0,
+          totalAiCost: cost?.totalAiCost ?? project.totalAiCost,
+          currency: cost?.currency ?? project.currency,
+          lastActivityAtUtc: project.lastActivityAtUtc ?? '',
+          status: project.isActive ? 'Active' : 'Inactive',
+        };
+      }),
+    });
+  }
+
+  function renderProjectActions(project: ProjectDto) {
+    return (
+      <div
+        className="row-actions"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+      >
+        <Link
+          to={`/projects/${project.id}`}
+          className="btn btn-secondary btn-compact"
+        >
+          Open
+        </Link>
+        <button
+          type="button"
+          className="btn btn-secondary btn-compact"
+          onClick={() => {
+            setActionMessage(null);
+            setEditingId(project.id);
+          }}
+        >
+          Edit
+        </button>
+        <button
+          type="button"
+          className="btn btn-danger btn-compact"
+          disabled={deleteMutation.isPending}
+          onClick={() => void onDelete(project)}
+        >
+          Delete
+        </button>
+      </div>
+    );
+  }
+
   return (
     <Page>
       <section className="page-section">
-        <div className="section-header">
-          <div>
-            <h2>All projects</h2>
-            <p>{formatNumber(list.length)} registered projects</p>
-          </div>
-        </div>
+        <BrowseListControls
+          heading="All projects"
+          viewMode={viewMode === 'calendar' ? 'table' : viewMode}
+          onViewModeChange={(next) => {
+            if (next === 'calendar') {
+              setViewMode('table');
+              return;
+            }
+            setViewMode(next);
+          }}
+          allowCalendarView={false}
+          searchValue={searchValue}
+          searchPlaceholder="Search projects..."
+          onSearchChange={setSearchValue}
+          onExportToExcel={() => void onExportToExcel()}
+          exportLabel="Export to Excel"
+          exportDisabled={filteredList.length === 0}
+          filters={[
+            {
+              id: 'projects-client-filter',
+              label: 'Client',
+              value: clientFilter,
+              onChange: setClientFilter,
+              options: [
+                { value: '', label: 'All clients' },
+                ...clientOptions.clients.map((client) => ({
+                  value: client,
+                  label: client,
+                })),
+                ...(clientOptions.hasUnassigned
+                  ? [{ value: '__none__', label: 'No client' }]
+                  : []),
+              ],
+            },
+            {
+              id: 'projects-status-filter',
+              label: 'Status',
+              value: statusFilter,
+              onChange: setStatusFilter,
+              options: [
+                { value: '', label: 'All statuses' },
+                { value: 'active', label: 'Active' },
+                { value: 'inactive', label: 'Inactive' },
+              ],
+            },
+          ]}
+        />
+
+        <p className="section-meta">
+          Showing {formatNumber(filteredList.length)} of {formatNumber(list.length)} registered projects
+          {clientFilter || statusFilter
+            ? ` · filters: client=${clientFilter === '__none__' ? 'none' : clientFilter || 'all'}, status=${statusFilter || 'all'}`
+            : ''}
+        </p>
 
         {actionMessage ? <p className="form-message">{actionMessage}</p> : null}
 
         {list.length === 0 ? (
           <EmptyState message="No projects yet. Register one from the CLI, MCP tool, or editor extension." />
+        ) : filteredList.length === 0 ? (
+          <EmptyState message="No projects match the current search or filters." />
+        ) : viewMode === 'grid' ? (
+          <div className="projects-browse-grid">
+            {filteredList.map((project) => {
+              const cost = costByProject.get(project.id);
+              const detailPath = `/projects/${project.id}`;
+              return (
+                <article
+                  key={project.id}
+                  className="projects-browse-tile projects-browse-tile-interactive"
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Open project ${project.name}`}
+                  onClick={() => navigate(detailPath)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      navigate(detailPath);
+                    }
+                  }}
+                >
+                  <div className="projects-browse-tile-header">
+                    <Link
+                      to={detailPath}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {project.name}
+                    </Link>
+                    <StatusBadge
+                      label={project.isActive ? 'Active' : 'Inactive'}
+                      tone={project.isActive ? 'success' : 'neutral'}
+                    />
+                  </div>
+                  <p>{project.clientName ?? 'No client'}</p>
+                  <dl className="projects-browse-tile-stats">
+                    <div>
+                      <dt>Prompts</dt>
+                      <dd>{formatNumber(cost?.promptCount ?? project.promptCount)}</dd>
+                    </div>
+                    <div>
+                      <dt>Active time</dt>
+                      <dd>
+                        {formatDurationSeconds(
+                          cost?.activeProjectTimeSeconds ?? project.activeProjectTimeSeconds,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Calculated</dt>
+                      <dd>
+                        {formatCurrency(
+                          cost?.calculatedTokenCost ?? 0,
+                          cost?.currency ?? project.currency,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Cost</dt>
+                      <dd>
+                        {formatCurrency(
+                          cost?.totalAiCost ?? project.totalAiCost,
+                          cost?.currency ?? project.currency,
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="projects-browse-tile-meta">
+                    Last activity {formatDateTime(project.lastActivityAtUtc)}
+                  </p>
+                  {renderProjectActions(project)}
+                </article>
+              );
+            })}
+          </div>
         ) : (
           <TablePanel>
             <table className="data">
@@ -159,6 +420,7 @@ export function ProjectsPage() {
                   <th>Prompts</th>
                   <th>Agent duration</th>
                   <th>Active time</th>
+                  <th>Calculated cost</th>
                   <th>Cost</th>
                   <th>Last activity</th>
                   <th>Status</th>
@@ -166,8 +428,9 @@ export function ProjectsPage() {
                 </tr>
               </thead>
               <tbody>
-                {list.map((project) => {
+                {filteredList.map((project) => {
                   const cost = costByProject.get(project.id);
+                  const currency = cost?.currency ?? project.currency;
                   return (
                     <tr key={project.id}>
                       <td>
@@ -186,11 +449,9 @@ export function ProjectsPage() {
                           cost?.activeProjectTimeSeconds ?? project.activeProjectTimeSeconds,
                         )}
                       </td>
+                      <td>{formatCurrency(cost?.calculatedTokenCost ?? 0, currency)}</td>
                       <td>
-                        {formatCurrency(
-                          cost?.totalAiCost ?? project.totalAiCost,
-                          cost?.currency ?? project.currency,
-                        )}
+                        {formatCurrency(cost?.totalAiCost ?? project.totalAiCost, currency)}
                       </td>
                       <td>{formatDateTime(project.lastActivityAtUtc)}</td>
                       <td>
@@ -199,28 +460,7 @@ export function ProjectsPage() {
                           tone={project.isActive ? 'success' : 'neutral'}
                         />
                       </td>
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-compact"
-                            onClick={() => {
-                              setActionMessage(null);
-                              setEditingId(project.id);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-compact"
-                            disabled={deleteMutation.isPending}
-                            onClick={() => void onDelete(project)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+                      <td>{renderProjectActions(project)}</td>
                     </tr>
                   );
                 })}

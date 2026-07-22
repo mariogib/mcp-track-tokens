@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   API_KEY_STORAGE,
   getStoredApiKey,
@@ -225,6 +225,8 @@ export function SettingsPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [categoryDraft, setCategoryDraft] = useState({ name: '', sortOrder: 0, isActive: true });
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
+  const [categoryStatusFilter, setCategoryStatusFilter] = useState('');
+  const [apiKeyStatusFilter, setApiKeyStatusFilter] = useState('');
   const [createdPlaintext, setCreatedPlaintext] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [backupFolderLabel, setBackupFolderLabel] = useState(
@@ -237,6 +239,26 @@ export function SettingsPage() {
   const [backupListReady, setBackupListReady] = useState(false);
 
   const backupInfo = useDatabaseBackupInfoQuery(undefined, true);
+
+  const filteredCategories = useMemo(() => {
+    const list = timesheetCategories.data ?? [];
+    if (!categoryStatusFilter) {
+      return list;
+    }
+    return list.filter((category) =>
+      categoryStatusFilter === 'active' ? category.isActive : !category.isActive,
+    );
+  }, [categoryStatusFilter, timesheetCategories.data]);
+
+  const filteredApiKeys = useMemo(() => {
+    const list = apiKeys.data ?? [];
+    if (!apiKeyStatusFilter) {
+      return list;
+    }
+    return list.filter((key) =>
+      apiKeyStatusFilter === 'active' ? key.isActive : !key.isActive,
+    );
+  }, [apiKeyStatusFilter, apiKeys.data]);
 
   useEffect(() => {
     if (settings.data) {
@@ -1049,6 +1071,19 @@ export function SettingsPage() {
             ) : timesheetCategories.isLoading ? (
               <LoadingState label="Loading categories…" />
             ) : (
+              <div className="stack">
+                <div className="field" style={{ maxWidth: '14rem' }}>
+                  <label htmlFor="category-status-filter">Status</label>
+                  <select
+                    id="category-status-filter"
+                    value={categoryStatusFilter}
+                    onChange={(e) => setCategoryStatusFilter(e.target.value)}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
               <div className="table-wrap">
                 <table className="data">
                   <thead>
@@ -1060,7 +1095,7 @@ export function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(timesheetCategories.data ?? []).map((category: TimesheetCategoryDto) => {
+                    {filteredCategories.map((category: TimesheetCategoryDto) => {
                       const editing = editingCategoryId === category.id;
                       return (
                         <tr key={category.id}>
@@ -1217,6 +1252,7 @@ export function SettingsPage() {
                   </tbody>
                 </table>
               </div>
+              </div>
             )}
           </Panel>
         </section>
@@ -1289,6 +1325,19 @@ export function SettingsPage() {
                 }
               />
             ) : (
+              <div className="stack">
+                <div className="field" style={{ maxWidth: '14rem' }}>
+                  <label htmlFor="api-key-status-filter">Status</label>
+                  <select
+                    id="api-key-status-filter"
+                    value={apiKeyStatusFilter}
+                    onChange={(e) => setApiKeyStatusFilter(e.target.value)}
+                  >
+                    <option value="">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="revoked">Revoked</option>
+                  </select>
+                </div>
               <div className="table-wrap">
                 <table className="data">
                   <thead>
@@ -1302,7 +1351,7 @@ export function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(apiKeys.data ?? []).map((key) => (
+                    {filteredApiKeys.map((key) => (
                       <tr key={key.id}>
                         <td>{key.name}</td>
                         <td>{formatDateTime(key.createdAtUtc)}</td>
@@ -1329,6 +1378,7 @@ export function SettingsPage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
               </div>
             )}
           </Panel>
