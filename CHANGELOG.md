@@ -5,6 +5,12 @@ All notable changes to MCP Track Tokens are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- MCP tool `check_cursor_hooks` to verify hook install, `hooks.json` event names, Cursor version, and recent ingest (also listed on Dashboard → MCP Help → Tools). The check **ingests a `Heartbeat` probe event** stamped with the detected Cursor version so end-to-end ingest is verified.
+
 ## [1.0.0] — 2026-07-17
 
 ### Added

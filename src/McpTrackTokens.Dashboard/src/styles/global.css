@@ -601,6 +601,16 @@ table.data td {
   white-space: nowrap;
 }
 
+table.data th.cell-wrap,
+table.data td.cell-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 12rem;
+  max-width: 36rem;
+  vertical-align: top;
+}
+
 table.data th {
   font-size: 0.78rem;
   text-transform: uppercase;

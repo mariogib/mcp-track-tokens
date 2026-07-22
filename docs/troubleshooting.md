@@ -2,11 +2,12 @@
 
 ## Server will not start
 
-1. Confirm .NET 8 runtime/SDK: `dotnet --info`.
-2. Check port **5187** is free: another `mcp-track-tokens` instance may be bound.
-3. Inspect logs under `~/.mcp-track-tokens/logs/`.
-4. Run migrations: `mcp-track-tokens migrate`.
-5. Verify `MCP_TRACK_TOKENS_DATABASE_PATH` is writable.
+1. **Windows MSI:** confirm the tray icon is running (Start Menu → MCP Track Tokens Host). See [windows-msi.md](windows-msi.md).
+2. Confirm .NET 8 runtime/SDK: `dotnet --info` (CLI/dev installs).
+3. Check port **5187** is free: another `mcp-track-tokens` or tray instance may be bound.
+4. Inspect logs under `~/.mcp-track-tokens/logs/`.
+5. Run migrations: `mcp-track-tokens migrate` (CLI) or rely on tray `MigrateOnStartup`.
+6. Verify `MCP_TRACK_TOKENS_DATABASE_PATH` is writable.
 
 ## Health checks
 
@@ -67,11 +68,20 @@ If `/health` works but `/ready` fails, check SQLite path permissions or Postgres
 ## MCP tools missing in Cursor
 
 - Stdio config must point at `mcp-track-tokens serve --stdio` (or `dotnet run … -- serve --stdio`).
-- HTTP MCP is off by default (`EnableHttpMcp`); enable only if you intentionally use `/mcp`.
+- HTTP MCP: tray/MSI enables `/mcp` by default (`EnableHttpMcp=true`). CLI HTTP hosts need it set explicitly if you use HTTP MCP.
 - Restart Cursor after editing MCP config.
 - Verify the process starts: run the same command in a terminal.
 - If logs show `Failed to open SSE stream: Not Found`: `GET /mcp` must return **405** (SSE unsupported in stateless mode), not SPA-fallback **404**. Reinstall/restart the tray, then Reconnect MCP.
 - If logs show `-32001 Session not found` / `Failed to start MCP session reinitialization`: the tray restarted and Cursor still holds a stateful session id. Prefer **stateless** HTTP MCP (current default). Reconnect MCP in Cursor (or reload the window) after upgrading.
+
+## Cursor hooks not firing / no activity
+
+- Run MCP tool `check_cursor_hooks` (Dashboard → MCP Help → Tools lists it). Fix any `incompatible` checks first.
+- Confirm `~/.cursor/hooks.json` uses current Cursor event names (`beforeSubmitPrompt`, `sessionStart`, `sessionEnd`, `stop`, …), not legacy keys like `promptSubmitted`.
+- Require top-level `"version": 1` in `hooks.json` (Cursor 3.x rejects the file without it).
+- Scripts must exist under `~/.cursor/mcp-track-tokens-hooks/dist/` (or your `run.cmd` wrapper).
+- Set `MCP_TRACK_TOKENS_API_KEY` for the Cursor process; tray/API must be healthy at `http://127.0.0.1:5187/health`.
+- See [cursor-hooks.md](cursor-hooks.md) for the full event mapping.
 
 ## Docker
 

@@ -154,8 +154,27 @@ if (-not (Test-Path (Join-Path $publishDir 'mcp-track-tokens-tray.exe'))) {
     throw "Tray publish failed — mcp-track-tokens-tray.exe not found in $publishDir"
 }
 
-if (-not (Test-Path (Join-Path $publishDir 'wwwroot\index.html'))) {
+$serverDll = Join-Path $publishDir 'McpTrackTokens.Server.dll'
+if (-not (Test-Path $serverDll)) {
+    throw "McpTrackTokens.Server.dll missing from tray publish ($publishDir). API/MCP host must ship in the MSI."
+}
+
+$wwwrootIndex = Join-Path $publishDir 'wwwroot\index.html'
+if (-not (Test-Path $wwwrootIndex)) {
     throw "Dashboard wwwroot missing from publish output. Ensure the dashboard build succeeded."
+}
+
+$trayAppSettings = Join-Path $publishDir 'appsettings.json'
+if (-not (Test-Path $trayAppSettings)) {
+    throw "Tray appsettings.json missing from $publishDir"
+}
+$appSettingsText = Get-Content -Raw -Path $trayAppSettings
+if ($appSettingsText -notmatch '5187') {
+    throw "Tray appsettings.json must bind/serve on port 5187 (ServerUrl/BindAddress)."
+}
+if ($appSettingsText -notmatch '"ServerUrl"\s*:\s*"http://127\.0\.0\.1:5187"' -and
+    $appSettingsText -notmatch '"BindAddress"\s*:\s*"http://127\.0\.0\.1:5187"') {
+    throw "Tray appsettings.json must include ServerUrl or BindAddress http://127.0.0.1:5187 for MSI deployment."
 }
 
 if (-not (Test-Path (Join-Path $desktopPublishDir 'mcp-track-tokens-desktop.exe'))) {

@@ -116,7 +116,7 @@ export function McpHelpPage() {
                     <thead>
                       <tr>
                         <th>Tool</th>
-                        <th>Description</th>
+                        <th className="cell-wrap">Description</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -128,7 +128,7 @@ export function McpHelpPage() {
                               <CopyTextButton value={tool.name} label="Copy tool name" />
                             </div>
                           </td>
-                          <td>{tool.description}</td>
+                          <td className="cell-wrap">{tool.description}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -151,7 +151,7 @@ export function McpHelpPage() {
                   <tr>
                     <th>Name</th>
                     <th>URI</th>
-                    <th>Description</th>
+                    <th className="cell-wrap">Description</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -164,7 +164,7 @@ export function McpHelpPage() {
                           <CopyTextButton value={resource.uri} label="Copy resource URI" />
                         </div>
                       </td>
-                      <td>{resource.description}</td>
+                      <td className="cell-wrap">{resource.description}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -185,8 +185,8 @@ export function McpHelpPage() {
                   <tr>
                     <th>Prompt</th>
                     <th>Arguments</th>
-                    <th>Description</th>
-                    <th>Example</th>
+                    <th className="cell-wrap">Description</th>
+                    <th className="cell-wrap">Example</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -201,8 +201,8 @@ export function McpHelpPage() {
                       <td>
                         <code className="mono">{prompt.args}</code>
                       </td>
-                      <td>{prompt.description}</td>
-                      <td>
+                      <td className="cell-wrap">{prompt.description}</td>
+                      <td className="cell-wrap">
                         <div className="mcp-prompt-example">
                           <p className="mcp-prompt-example-text">{prompt.example}</p>
                           <CopyTextButton value={prompt.example} label="Copy example" />

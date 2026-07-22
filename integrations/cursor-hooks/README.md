@@ -23,6 +23,8 @@ dotnet run --project src/McpTrackTokens.Cli -- install-cursor-hooks --yes
 
 Or use `scripts/install-windows.ps1 -InstallHooks`. The CLI copies this package into `~/.cursor/mcp-track-tokens-hooks` and writes an **example** config — merge hook paths into your Cursor hooks settings yourself (names are version-dependent).
 
+After install (or a Cursor upgrade), call MCP tool `check_cursor_hooks` to verify event names and script paths still match the installed Cursor version.
+
 ## Behaviour
 
 1. Parse stdin JSON via tolerant adapters (`src/adapters.ts`).

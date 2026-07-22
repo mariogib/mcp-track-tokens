@@ -14,6 +14,7 @@ MCP Track Tokens is a local-first stack that records **editor activity**, import
 | Dashboard | `src/McpTrackTokens.Dashboard` | React + Vite UI → copied to Server `wwwroot` |
 | Extension | `extensions/mcp-track-tokens-vscode` | Sessions, `@track`, commands |
 | Hooks | `integrations/cursor-hooks` | Cursor stdin hooks → `POST /api/v1/events` |
+| Windows MSI | `setup/McpTrackTokens.Tray.Setup` | Deploys tray host (API + HTTP MCP + dashboard), desktop shell, optional hooks/VSIX |
 
 ## Runtime defaults
 
@@ -26,7 +27,7 @@ MCP Track Tokens is a local-first stack that records **editor activity**, import
 | Hook queue | `~/.mcp-track-tokens/queue/` |
 | MCP server name | `mcp-track-tokens` `1.0.0` |
 
-Configuration section: `Tracking` in `src/McpTrackTokens.Server/appsettings.json`.  
+Configuration section: `Tracking` in `src/McpTrackTokens.Server/appsettings.json` (tray uses `src/McpTrackTokens.Tray/appsettings.json`).  
 Environment overrides: `MCP_TRACK_TOKENS_*` via `TrackingEnvironmentVariables`.
 
 ## Request paths
@@ -66,21 +67,24 @@ Attribution **correlates** them; it does not prove a 1:1 mapping to internal Cur
 
 ## Hosting modes
 
-1. **HTTP** (`serve --http`) — API, dashboard static files, optional HTTP MCP when `EnableHttpMcp=true`.
-2. **Stdio MCP** (`serve --stdio`) — tool surface for Cursor/VS Code MCP config.
-3. **CLI host** — short-lived process for migrate/import/export without long-running HTTP.
+1. **Windows MSI (recommended on Windows)** — tray host (`mcp-track-tokens-tray.exe`) runs `TrackingHost` in-process with HTTP API, HTTP MCP (`/mcp`), and dashboard `wwwroot` at `http://127.0.0.1:5187`. Desktop shell opens that URL. See [windows-msi.md](windows-msi.md).
+2. **HTTP CLI** (`serve --http`) — same stack via `mcp-track-tokens` for development.
+3. **Stdio MCP** (`serve --stdio`) — tool surface spawned by the editor when not using HTTP MCP.
+4. **Docker Compose** — optional containerized HTTP host (not required for MSI users).
+5. **CLI utilities** — short-lived migrate/import/export without a long-running HTTP process.
 
-Typical desktop setup: one HTTP server for hooks/UI + one stdio MCP process spawned by the editor.
+Typical Windows desktop setup: install the MSI, point Cursor at `http://127.0.0.1:5187/mcp`, and merge Cursor hooks. Do not run a second stdio MCP process against a different database.
 
 ## Layering rules
 
 - Domain has no infrastructure dependencies.
 - Application defines interfaces (`IReportService`, `ICursorUsageImporter`, …).
 - Infrastructure implements persistence and CSV mapping.
-- Server/CLI compose DI via `AddApplication()` + `AddInfrastructure()`.
+- Server/CLI/Tray compose DI via `AddApplication()` + `AddInfrastructure()`.
 
 ## Related docs
 
+- [Windows MSI](windows-msi.md)
 - [Privacy](privacy.md)
 - [Cursor hooks](cursor-hooks.md)
 - [Usage imports](usage-imports.md)

@@ -62,6 +62,12 @@ export const MCP_TOOLS: McpToolHelp[] = [
     group: 'Status & activity',
   },
   {
+    name: 'check_cursor_hooks',
+    description:
+      'Checks whether Cursor hooks are installed and use event names compatible with the installed Cursor version. Inspects ~/.cursor/hooks.json, installed mcp-track-tokens-hooks scripts, Cursor app version, and recent Cursor ingest activity. Completes the check by ingesting a Heartbeat probe event stamped with the detected Cursor version.',
+    group: 'Status & activity',
+  },
+  {
     name: 'get_project_activity',
     description: 'Returns project activity for a date range.',
     group: 'Status & activity',

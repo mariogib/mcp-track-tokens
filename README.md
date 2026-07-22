@@ -15,6 +15,7 @@ MCP Track Tokens correlates **editor activity** (prompts, agents, sessions) with
 | Cursor hooks | `integrations/cursor-hooks` |
 | Docs | [`docs/`](docs/) |
 | Install scripts | [`scripts/`](scripts/) |
+| Windows MSI | [`docs/windows-msi.md`](docs/windows-msi.md) · `artifacts/installer/MCP-Track-Tokens-Setup.msi` |
 
 ---
 
@@ -26,21 +27,22 @@ MCP Track Tokens correlates **editor activity** (prompts, agents, sessions) with
 4. [Privacy model](#4-privacy-model)
 5. [Prerequisites](#5-prerequisites)
 6. [Building](#6-building)
-7. [Running the server](#7-running-the-server)
-8. [Installing the dashboard](#8-installing-the-dashboard)
-9. [Installing the VS Code extension](#9-installing-the-vs-code-extension)
-10. [Installing Cursor hooks](#10-installing-cursor-hooks)
-11. [Configuring Cursor MCP](#11-configuring-cursor-mcp)
-12. [Registering a project](#12-registering-a-project)
-13. [Importing Cursor usage](#13-importing-cursor-usage)
-14. [Cost attribution](#14-cost-attribution)
-15. [Subscription allocation](#15-subscription-allocation)
-16. [MCP tools](#16-mcp-tools)
-17. [Reports](#17-reports)
-18. [Backup and restore](#18-backup-and-restore)
-19. [Security](#19-security)
-20. [Troubleshooting](#20-troubleshooting)
-21. [Known limitations](#21-known-limitations)
+7. [Windows MSI (recommended)](#7-windows-msi-recommended)
+8. [Running the server](#8-running-the-server)
+9. [Installing the dashboard](#9-installing-the-dashboard)
+10. [Installing the VS Code extension](#10-installing-the-vs-code-extension)
+11. [Installing Cursor hooks](#11-installing-cursor-hooks)
+12. [Configuring Cursor MCP](#12-configuring-cursor-mcp)
+13. [Registering a project](#13-registering-a-project)
+14. [Importing Cursor usage](#14-importing-cursor-usage)
+15. [Cost attribution](#15-cost-attribution)
+16. [Subscription allocation](#16-subscription-allocation)
+17. [MCP tools](#17-mcp-tools)
+18. [Reports](#18-reports)
+19. [Backup and restore](#19-backup-and-restore)
+20. [Security](#20-security)
+21. [Troubleshooting](#21-troubleshooting)
+22. [Known limitations](#22-known-limitations)
 
 ---
 
@@ -88,7 +90,7 @@ Data stays on your machine by default (SQLite under `~/.mcp-track-tokens/`).
 | Prompt/response bodies by default | Content is **not** stored unless you explicitly enable and configure encryption |
 | Single unified “truth” dataset | Activity and usage are **separate datasets** correlated by attribution rules |
 
-See [§21 Known limitations](#21-known-limitations).
+See [§22 Known limitations](#22-known-limitations).
 
 ---
 
@@ -250,11 +252,40 @@ Publish the CLI:
 dotnet publish src/McpTrackTokens.Cli/McpTrackTokens.Cli.csproj -c Release -o .\artifacts\cli
 ```
 
+### Windows installer (MSI)
+
+```powershell
+pwsh ./scripts/build-tray-installer.ps1
+# → artifacts/installer/MCP-Track-Tokens-Setup.msi
+```
+
+Details: [`docs/windows-msi.md`](docs/windows-msi.md).
+
 ---
 
-## 7. Running the server
+## 7. Windows MSI (recommended)
 
-### Local (recommended)
+On Windows, deploy API + HTTP MCP + dashboard with the MSI. The tray host starts them in-process at `http://127.0.0.1:5187` — Docker is optional and not required.
+
+```powershell
+pwsh ./scripts/build-tray-installer.ps1
+msiexec /i "artifacts\installer\MCP-Track-Tokens-Setup.msi"
+```
+
+After install:
+
+- Tray icon runs the host (API `/api/v1`, MCP `/mcp`, dashboard `wwwroot`)
+- Desktop app / tray **Open dashboard** opens the UI
+- Merge Cursor MCP from the post-install HTTP sample (`http://127.0.0.1:5187/mcp`)
+- Default API key: `OverTheMoon` (change under Settings as needed)
+
+Full walkthrough: [`docs/windows-msi.md`](docs/windows-msi.md).
+
+---
+
+## 8. Running the server
+
+### Local (CLI / development)
 
 ```powershell
 # Apply migrations and create an API key (plaintext shown once)
@@ -277,7 +308,7 @@ Or run the published binary:
 mcp-track-tokens serve --stdio
 ```
 
-### Docker
+### Docker (optional alternate)
 
 ```powershell
 docker compose up --build -d
@@ -289,7 +320,7 @@ Data persists in the Docker volume `mcp-track-tokens-data` (`/data/mcp-track-tok
 2. Point Cursor MCP at `http://127.0.0.1:5187/mcp` ([`samples/cursor-config/mcp.http.json`](samples/cursor-config/mcp.http.json)) — not a separate stdio process with its own DB.
 3. Run CLI commands against the same DB with `.\scripts\mtt-docker.ps1 …`.
 
-Host stdio MCP (`~/.mcp-track-tokens/…`) is only for local-only setups where you are **not** using Docker.
+Host stdio MCP (`~/.mcp-track-tokens/…`) is only for local-only setups where you are **not** using Docker. Windows desktop users should prefer the [MSI](#7-windows-msi-recommended).
 
 ### Key environment variables
 
@@ -310,7 +341,7 @@ Ready: `GET http://127.0.0.1:5187/ready`.
 
 ---
 
-## 8. Installing the dashboard
+## 9. Installing the dashboard
 
 The dashboard is a Vite React app. Production assets are copied into `src/McpTrackTokens.Server/wwwroot` and served by the Server.
 
@@ -334,7 +365,7 @@ Install scripts perform the build + wwwroot copy automatically.
 
 ---
 
-## 9. Installing the VS Code extension
+## 10. Installing the VS Code extension
 
 ```powershell
 npm --prefix extensions/mcp-track-tokens-vscode ci
@@ -361,7 +392,7 @@ Details: [`docs/vscode-extension.md`](docs/vscode-extension.md).
 
 ---
 
-## 10. Installing Cursor hooks
+## 11. Installing Cursor hooks
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- install-cursor-hooks --yes
@@ -387,7 +418,7 @@ Details: [`docs/cursor-hooks.md`](docs/cursor-hooks.md).
 
 ---
 
-## 11. Configuring Cursor MCP
+## 12. Configuring Cursor MCP
 
 ### Recommended with Docker (one shared database)
 
@@ -460,7 +491,7 @@ Also see [`samples/cursor-config/mcp.dev.json`](samples/cursor-config/mcp.dev.js
 
 ---
 
-## 12. Registering a project
+## 13. Registering a project
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- register-project `
@@ -479,7 +510,7 @@ Extension: **MCP Track Tokens: Register Current Project**.
 
 ---
 
-## 13. Importing Cursor usage
+## 14. Importing Cursor usage
 
 Export usage from Cursor, then:
 
@@ -503,7 +534,7 @@ Details: [`docs/usage-imports.md`](docs/usage-imports.md).
 
 ---
 
-## 14. Cost attribution
+## 15. Cost attribution
 
 Imported usage rows are attributed to projects by an ordered engine (repository match → explicit project → session/request ids → active session → activity windows → proportional time → unallocated). Low-confidence matches are **not** silently promoted to Certain.
 
@@ -518,7 +549,7 @@ Details: [`docs/cost-allocation.md`](docs/cost-allocation.md).
 
 ---
 
-## 15. Subscription allocation
+## 16. Subscription allocation
 
 Usage-based Cursor cost and **subscription allocation** are separate totals. Configure:
 
@@ -532,7 +563,7 @@ Project cost reports show `UsageBasedCursorCost` + `SubscriptionAllocation` with
 
 ---
 
-## 16. MCP tools
+## 17. MCP tools
 
 All tools are registered in `src/McpTrackTokens.Server/Mcp/TrackingTools.cs` (server name `mcp-track-tokens`, version `1.0.0`).
 
@@ -544,6 +575,9 @@ All tools are registered in `src/McpTrackTokens.Server/Mcp/TrackingTools.cs` (se
 | `start_project_session` | Start an editor session |
 | `stop_project_session` | Stop a session |
 | `get_tracking_status` | Current tracking snapshot |
+| `check_cursor_hooks` | Verify Cursor hooks + ingest a Heartbeat probe with the detected Cursor version (also on Dashboard → MCP Help → Tools) |
+| `start_timesheet` | Start a timesheet entry for the current project |
+| `end_timesheet` | End the open timesheet entry for the current project |
 | `get_project_activity` | Activity for a date range |
 | `get_prompt_count` | Prompt counts |
 | `get_project_time` | Active project time |
@@ -562,9 +596,11 @@ All tools are registered in `src/McpTrackTokens.Server/Mcp/TrackingTools.cs` (se
 
 Date-range tools default to the last **30 days** when `from`/`to` are omitted.
 
+The same catalog appears in the dashboard under **MCP Help → Tools** (`src/McpTrackTokens.Dashboard/src/data/mcpCatalog.ts`).
+
 ---
 
-## 17. Reports
+## 18. Reports
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- export `
@@ -583,7 +619,7 @@ Dashboard: Summary and per-project cost/activity pages via `/api/v1/reports/summ
 
 ---
 
-## 18. Backup and restore
+## 19. Backup and restore
 
 Default data root: `~/.mcp-track-tokens/` (Docker: `/data`).
 
@@ -606,7 +642,7 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 
 ---
 
-## 19. Security
+## 20. Security
 
 - Bind defaults to **localhost** (`127.0.0.1:5187`). Do not expose without TLS and network controls.
 - API and HTTP MCP require `Authorization: Bearer <api-key>`.
@@ -618,7 +654,7 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 
 ---
 
-## 20. Troubleshooting
+## 21. Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
@@ -632,7 +668,7 @@ Full guide: [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ---
 
-## 21. Known limitations
+## 22. Known limitations
 
 1. **MCP cannot passively intercept all Cursor/VS Code prompts.** Tools report what was ingested; they do not wrap the editor’s model transport.
 2. **Cursor needs hooks (and/or the extension)** for ambient activity events.
@@ -646,11 +682,22 @@ Full guide: [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## Quick install (Windows)
 
+Preferred: build and install the MSI (API + HTTP MCP + dashboard):
+
+```powershell
+pwsh ./scripts/build-tray-installer.ps1
+msiexec /i "artifacts\installer\MCP-Track-Tokens-Setup.msi"
+```
+
+Dev alternate (CLI publish script):
+
 ```powershell
 .\scripts\install-windows.ps1
 # Optional:
 .\scripts\install-windows.ps1 -InstallHooks -InstallExtension
 ```
+
+See [`docs/windows-msi.md`](docs/windows-msi.md).
 
 ## Quick install (Linux)
 

@@ -383,3 +383,22 @@ public interface IDatabaseBackupService
         string sourceFilePath,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Checks whether Cursor hooks are installed and use event names compatible with
+/// the installed Cursor version.
+/// </summary>
+public interface ICursorHooksCompatibilityService
+{
+    /// <summary>
+    /// Inspects Cursor install metadata, <c>~/.cursor/hooks.json</c>, installed hook
+    /// scripts, and recent Cursor ingest activity.
+    /// </summary>
+    /// <param name="cursorUserDirectory">
+    /// Optional override for the Cursor user config directory (default <c>~/.cursor</c>).
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<CursorHooksCompatibilityReportDto> CheckAsync(
+        string? cursorUserDirectory = null,
+        CancellationToken cancellationToken = default);
+}

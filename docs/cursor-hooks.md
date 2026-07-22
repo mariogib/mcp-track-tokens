@@ -22,18 +22,32 @@ Install copies the hooks package (including `dist/`) into `~/.cursor/mcp-track-t
 
 ## Built scripts
 
-| File | Event |
+| File | Cursor hook event(s) |
 | --- | --- |
-| `dist/prompt-submitted.js` | Prompt submitted |
-| `dist/agent-started.js` | Agent started |
-| `dist/agent-completed.js` | Agent completed |
-| `dist/agent-failed.js` | Agent failed |
-| `dist/agent-cancelled.js` | Agent cancelled |
-| `dist/session-started.js` | Session started |
-| `dist/session-ended.js` | Session ended |
-| `dist/diagnostics.js` | Local diagnostics helper |
+| `dist/prompt-submitted.js` | `beforeSubmitPrompt` |
+| `dist/agent-started.js` | `subagentStart` |
+| `dist/agent-completed.js` | `stop`, `subagentStop` (optional: `afterAgentResponse`) |
+| `dist/agent-failed.js` | Optional (status-based completion often covers this) |
+| `dist/agent-cancelled.js` | Optional (status-based completion often covers this) |
+| `dist/session-started.js` | `sessionStart` |
+| `dist/session-ended.js` | `sessionEnd` |
+| `dist/diagnostics.js` | Local diagnostics helper (not a Cursor hook) |
 
-Example mapping: `integrations/cursor-hooks/example-hooks-config.json`.
+Example mapping for `~/.cursor/hooks.json`: `integrations/cursor-hooks/example-hooks-config.json`.
+
+## Compatibility check
+
+Call MCP tool **`check_cursor_hooks`** (also listed under Dashboard → MCP Help → Tools) to verify:
+
+- Installed Cursor version
+- Hook scripts under `~/.cursor/mcp-track-tokens-hooks`
+- `~/.cursor/hooks.json` schema (`"version": 1`) and current event names
+- Command paths on disk
+- Optional Node smoke test against a modern stdin payload
+- **Ingests a `Heartbeat` probe event** stamped with the detected Cursor version (completes the end-to-end ingest check)
+- Recent Cursor activity ingest (including the probe)
+
+Status is `compatible`, `degraded`, or `incompatible`, with per-check details and recommendations. The report includes `probeEventId` / `probeIngestedAtUtc` when the probe succeeds.
 
 ## Runtime flow
 
@@ -62,7 +76,21 @@ Example mapping: `integrations/cursor-hooks/example-hooks-config.json`.
 
 ## Version-dependent payloads
 
-Cursor hook schemas evolve. The adapter is intentionally tolerant:
+Cursor hook schemas evolve. The adapter is intentionally tolerant. Prefer the **Compatibility check** section (`check_cursor_hooks`) when validating a Cursor upgrade.
+
+### Current Cursor event names
+
+Wire scripts in `~/.cursor/hooks.json` using Cursor’s current names (not the older aliases):
+
+| Cursor event | Script |
+| --- | --- |
+| `beforeSubmitPrompt` | `prompt-submitted.js` |
+| `sessionStart` | `session-started.js` |
+| `sessionEnd` | `session-ended.js` |
+| `subagentStart` | `agent-started.js` |
+| `subagentStop` / `stop` | `agent-completed.js` |
+
+Require top-level `"version": 1`. Commands are objects: `{ "command": "...", "timeout": 5 }`.
 
 ### Assumptions
 

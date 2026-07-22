@@ -143,14 +143,25 @@ internal static class Program
         File.WriteAllText(exampleConfigPath, """
             {
               "version": 1,
-              "serverUrl": "http://127.0.0.1:5187",
-              "apiKeyEnv": "MCP_TRACK_TOKENS_API_KEY",
               "hooks": {
-                "promptSubmitted": "./mcp-track-tokens-hooks/dist/prompt-submitted.js",
-                "agentStarted": "./mcp-track-tokens-hooks/dist/agent-started.js",
-                "agentCompleted": "./mcp-track-tokens-hooks/dist/agent-completed.js",
-                "sessionStarted": "./mcp-track-tokens-hooks/dist/session-started.js",
-                "sessionEnded": "./mcp-track-tokens-hooks/dist/session-ended.js"
+                "beforeSubmitPrompt": [
+                  { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
+                ],
+                "sessionStart": [
+                  { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
+                ],
+                "sessionEnd": [
+                  { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
+                ],
+                "subagentStart": [
+                  { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
+                ],
+                "subagentStop": [
+                  { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+                ],
+                "stop": [
+                  { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+                ]
               }
             }
             """);

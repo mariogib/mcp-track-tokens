@@ -217,6 +217,19 @@ public static class TrackingTools
         => Serialize(await reports.GetTrackingStatusAsync(cancellationToken).ConfigureAwait(false));
 
     /// <summary>
+    /// Checks whether Cursor hooks still work with the installed Cursor version.
+    /// </summary>
+    [McpServerTool(Name = "check_cursor_hooks"), Description(
+        "Checks whether Cursor hooks are installed and use event names compatible with the installed Cursor version. " +
+        "Inspects ~/.cursor/hooks.json, installed mcp-track-tokens-hooks scripts, Cursor app version, and recent Cursor ingest activity. " +
+        "Completes the check by ingesting a Heartbeat probe event stamped with the detected Cursor version.")]
+    public static async Task<string> CheckCursorHooks(
+        ICursorHooksCompatibilityService compatibility,
+        [Description("Optional override for the Cursor user config directory (default ~/.cursor)")] string? cursorUserDirectory = null,
+        CancellationToken cancellationToken = default)
+        => Serialize(await compatibility.CheckAsync(cursorUserDirectory, cancellationToken).ConfigureAwait(false));
+
+    /// <summary>
     /// Returns project activity for a date range.
     /// </summary>
     [McpServerTool(Name = "get_project_activity"), Description("Returns project activity for a date range.")]

@@ -63,10 +63,12 @@ export function HelpPage() {
             </p>
             <ul>
               <li>
-                Installer: <code className="mono">MCP-Track-Tokens-Setup.msi</code>
+                Installer: <code className="mono">MCP-Track-Tokens-Setup.msi</code> (deploys API,
+                HTTP MCP, and dashboard)
               </li>
               <li>
-                Tray host keeps the API and dashboard available at{' '}
+                Tray host keeps API (<code className="mono">/api/v1</code>), MCP (
+                <code className="mono">/mcp</code>), and the dashboard available at{' '}
                 <code className="mono">http://127.0.0.1:5187</code>
               </li>
               <li>
@@ -136,19 +138,33 @@ export function HelpPage() {
               </p>
               <CodeBlock>{`{
   "version": 1,
-  "serverUrl": "http://127.0.0.1:5187",
-  "apiKeyEnv": "MCP_TRACK_TOKENS_API_KEY",
   "hooks": {
-    "promptSubmitted": "./mcp-track-tokens-hooks/dist/prompt-submitted.js",
-    "agentStarted": "./mcp-track-tokens-hooks/dist/agent-started.js",
-    "agentCompleted": "./mcp-track-tokens-hooks/dist/agent-completed.js",
-    "sessionStarted": "./mcp-track-tokens-hooks/dist/session-started.js",
-    "sessionEnded": "./mcp-track-tokens-hooks/dist/session-ended.js"
+    "beforeSubmitPrompt": [
+      { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
+    ],
+    "sessionStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
+    ],
+    "sessionEnd": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
+    ],
+    "subagentStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
+    ],
+    "subagentStop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ],
+    "stop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ]
   }
 }`}</CodeBlock>
               <p className="hint">
-                Adjust event names if your Cursor version uses different hook keys. Include
-                agentFailed / agentCancelled when available.
+                Use current Cursor event names (<code className="mono">beforeSubmitPrompt</code>,{' '}
+                <code className="mono">sessionStart</code>, <code className="mono">stop</code>, …).
+                After a Cursor upgrade, run MCP tool{' '}
+                <code className="mono">check_cursor_hooks</code> (see{' '}
+                <Link to="/help/mcp">MCP Help → Tools</Link>) to confirm the mapping still works.
               </p>
             </Step>
 

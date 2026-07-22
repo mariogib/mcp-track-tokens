@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IReconciliationService, ReconciliationService>();
         services.TryAddScoped<IExportService, ExportService>();
         services.TryAddScoped<IApiKeyService, ApiKeyService>();
+        services.TryAddScoped<ICursorHooksCompatibilityService, CursorHooksCompatibilityService>();
 
         services.AddValidatorsFromAssemblyContaining<Validators.IngestEventDtoValidator>();
 
