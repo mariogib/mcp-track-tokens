@@ -1,24 +1,112 @@
-import { type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Panel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { TextLink } from '../shared/adminUi';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
 
-function CodeBlock({ children }: { children: string }) {
+const HOOKS_JSON = `{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
+    ],
+    "sessionStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
+    ],
+    "sessionEnd": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
+    ],
+    "subagentStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
+    ],
+    "subagentStop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ],
+    "stop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ]
+  }
+}`;
+
+const MCP_SERVER_JSON = `{
+  "mcpServers": {
+    "mcp-track-tokens": {
+      "url": "http://127.0.0.1:5187/mcp",
+      "headers": {
+        "Authorization": "Bearer OverTheMoon"
+      }
+    }
+  }
+}`;
+
+const ENV_VARS = `MCP_TRACK_TOKENS_API_KEY=OverTheMoon
+MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`;
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const input = document.createElement('textarea');
+    input.value = value;
+    input.setAttribute('readonly', '');
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    input.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(input);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function CodeBlock({ children, label = 'Copy' }: { children: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
   return (
-    <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-      <code>{children}</code>
-    </pre>
+    <div className="copyable-code-block">
+      <div className="copyable-code-block-toolbar">
+        <button
+          type="button"
+          className="btn btn-secondary btn-copy-inline"
+          aria-label={copied ? 'Copied to clipboard' : label}
+          title={copied ? 'Copied' : label}
+          onClick={async () => {
+            const ok = await copyText(children);
+            if (ok) setCopied(true);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="mono copyable-code-block-pre">
+        <code>{children}</code>
+      </pre>
+    </div>
   );
 }
 
 function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="stack" style={{ gap: '0.5rem' }}>
+    <Panel className="stack help-step-card">
       <h3>{title}</h3>
       <div className="stack">{children}</div>
-    </div>
+    </Panel>
   );
 }
 
@@ -96,7 +184,7 @@ export function HelpPage() {
             </div>
           </div>
 
-          <Panel className="stack">
+          <div className="stack help-setup-steps">
             <Step title="1. Install and start the Windows host">
               <p>
                 Run <code className="mono">MCP-Track-Tokens-Setup.msi</code>. Leave these options
@@ -136,29 +224,7 @@ export function HelpPage() {
                 Open Cursor Settings → Hooks (or your Cursor hooks config file) and wire the paths.
                 Paths are relative to <code className="mono">%USERPROFILE%\.cursor</code>:
               </p>
-              <CodeBlock>{`{
-  "version": 1,
-  "hooks": {
-    "beforeSubmitPrompt": [
-      { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
-    ],
-    "sessionStart": [
-      { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
-    ],
-    "sessionEnd": [
-      { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
-    ],
-    "subagentStart": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
-    ],
-    "subagentStop": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
-    ],
-    "stop": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
-    ]
-  }
-}`}</CodeBlock>
+              <CodeBlock label="Copy hooks JSON">{HOOKS_JSON}</CodeBlock>
               <p className="hint">
                 Use current Cursor event names (<code className="mono">beforeSubmitPrompt</code>,{' '}
                 <code className="mono">sessionStart</code>, <code className="mono">stop</code>, …).
@@ -174,8 +240,7 @@ export function HelpPage() {
                 environment variables (Windows Settings → System → About → Advanced system settings
                 → Environment Variables), then restart Cursor:
               </p>
-              <CodeBlock>{`MCP_TRACK_TOKENS_API_KEY=OverTheMoon
-MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
+              <CodeBlock label="Copy environment variables">{ENV_VARS}</CodeBlock>
               <p>
                 Use the same key under <TextLink to="/settings">Settings → Connection</TextLink> in the
                 desktop dashboard.
@@ -187,16 +252,7 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 With the tray host running, add this MCP server entry in Cursor (HTTP MCP shares the
                 same local database as the dashboard):
               </p>
-              <CodeBlock>{`{
-  "mcpServers": {
-    "mcp-track-tokens": {
-      "url": "http://127.0.0.1:5187/mcp",
-      "headers": {
-        "Authorization": "Bearer OverTheMoon"
-      }
-    }
-  }
-}`}</CodeBlock>
+              <CodeBlock label="Copy MCP server JSON">{MCP_SERVER_JSON}</CodeBlock>
               <p className="hint">
                 Replace the Bearer value if you created a different API key. The tray host must be
                 running for MCP tools and hooks to reach the API.
@@ -252,7 +308,7 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 <TextLink to="/">Overview</TextLink>
               </p>
             </Step>
-          </Panel>
+          </div>
         </section>
       )}
     </>

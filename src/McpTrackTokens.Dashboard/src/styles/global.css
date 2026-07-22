@@ -643,6 +643,37 @@ table.data.token-rates td:last-child {
   white-space: nowrap;
 }
 
+.help-setup-steps {
+  gap: 1rem;
+}
+
+.help-step-card h3 {
+  margin: 0;
+}
+
+.copyable-code-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.copyable-code-block-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.4rem 0.55rem 0;
+}
+
+.copyable-code-block-pre {
+  margin: 0;
+  padding: 0.55rem 0.85rem 0.85rem;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 .mcp-prompt-example {
   display: flex;
   flex-direction: column;
