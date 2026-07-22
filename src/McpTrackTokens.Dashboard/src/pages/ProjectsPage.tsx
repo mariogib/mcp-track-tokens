@@ -8,6 +8,7 @@ import {
 } from '../api/hooks';
 import type { ProjectDto, UpdateProjectRequest } from '../api/types';
 import { ErrorState, LoadingState, EmptyState } from '../components/States';
+import { Panel, TablePanel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import {
   formatCurrency,
@@ -148,7 +149,7 @@ export function ProjectsPage() {
         {list.length === 0 ? (
           <EmptyState message="No projects yet. Register one from the CLI, MCP tool, or editor extension." />
         ) : (
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -225,7 +226,7 @@ export function ProjectsPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         )}
       </section>
 
@@ -247,7 +248,7 @@ export function ProjectsPage() {
             </button>
           </div>
 
-          <form className="panel stack" onSubmit={(e) => void onSaveEdit(e)}>
+          <Panel className="stack"><form className="stack" onSubmit={(e) => void onSaveEdit(e)}>
             <div className="field-row">
               <div className="field">
                 <label htmlFor="edit-name">Name</label>
@@ -338,7 +339,7 @@ export function ProjectsPage() {
                 Cancel
               </button>
             </div>
-          </form>
+          </form></Panel>
         </section>
       ) : null}
     </Page>

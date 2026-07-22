@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { Card } from '../shared/adminUi';
 
 const COLORS = [
   'var(--chart-1)',
@@ -45,8 +46,13 @@ export function ChartCard({
   to?: string;
   height?: number;
 }) {
-  const body = (
-    <>
+  const navigate = useNavigate();
+
+  return (
+    <Card
+      className={`chart-card${to ? ' chart-card--link' : ''}`}
+      onClick={to ? () => void navigate(to) : undefined}
+    >
       <div className="chart-card-header">
         <h3>{title}</h3>
         {to ? (
@@ -58,22 +64,13 @@ export function ChartCard({
           </span>
         ) : null}
       </div>
-      <div style={{ width: '100%', height }}>{children}</div>
-    </>
-  );
-
-  if (to) {
-    return (
-      <Link to={to} className="chart-card chart-card--link" aria-label={`${title} — open analysis`}>
-        {body}
-      </Link>
-    );
-  }
-
-  return (
-    <section className="chart-card" aria-label={title}>
-      {body}
-    </section>
+      <div
+        style={{ width: '100%', height }}
+        onClick={to ? (event) => event.stopPropagation() : undefined}
+      >
+        {children}
+      </div>
+    </Card>
   );
 }
 

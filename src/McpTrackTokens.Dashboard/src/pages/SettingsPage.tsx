@@ -29,6 +29,7 @@ import type {
   UpdateSettingsRequest,
 } from '../api/types';
 import { ErrorState, LoadingState } from '../components/States';
+import { Panel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
 import {
@@ -324,7 +325,7 @@ export function SettingsPage() {
         </div>
       </div>
 
-      <div className="panel stack">
+      <Panel className="stack">
         <div className="field-row">
           <div className="field">
             <SettingLabel
@@ -374,7 +375,7 @@ export function SettingsPage() {
             New key (copy now): <code className="mono">{createdPlaintext}</code>
           </div>
         ) : null}
-      </div>
+      </Panel>
     </section>
   );
 
@@ -449,8 +450,8 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <form
-            className="panel stack"
+          <Panel className="stack"><form
+            className="stack"
             onSubmit={(e) => {
               e.preventDefault();
               saveDraft();
@@ -669,7 +670,7 @@ export function SettingsPage() {
                 Save settings
               </button>
             </div>
-          </form>
+          </form></Panel>
         </section>
       )}
 
@@ -694,7 +695,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="panel stack">
+          <Panel className="stack">
             <SettingCheck
               help="When imported Cursor usage shows $0 (Included/Free), estimate spend from the rate card using token counts instead of treating cost as zero."
               checked={draft.estimateCostFromTokenRates}
@@ -976,7 +977,7 @@ export function SettingsPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </Panel>
         </section>
       )}
 
@@ -992,7 +993,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="panel stack">
+          <Panel className="stack">
             <div className="field-row">
               <div className="field">
                 <SettingLabel
@@ -1217,7 +1218,7 @@ export function SettingsPage() {
                 </table>
               </div>
             )}
-          </div>
+          </Panel>
         </section>
       )}
 
@@ -1232,7 +1233,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="panel stack">
+          <Panel className="stack">
             <div className="field-row">
               <div className="field">
                 <SettingLabel
@@ -1330,7 +1331,7 @@ export function SettingsPage() {
                 </table>
               </div>
             )}
-          </div>
+          </Panel>
         </section>
       )}
 
@@ -1361,7 +1362,7 @@ export function SettingsPage() {
           ) : null}
 
           {backupInfo.data ? (
-            <div className="panel stack">
+            <Panel className="stack">
               {!backupInfo.data.supportsBackup ? (
                 <div className="warning-banner" role="status">
                   Backup and restore are only available when the database provider is Sqlite (current:{' '}
@@ -1591,7 +1592,7 @@ export function SettingsPage() {
                   </table>
                 </div>
               ) : null}
-            </div>
+            </Panel>
           ) : null}
         </section>
       )}
@@ -1604,7 +1605,7 @@ export function SettingsPage() {
               <p>Local status for storage and editor integrations.</p>
             </div>
           </div>
-          <div className="panel stack">
+          <Panel className="stack">
             <div className="field-row">
               <div>
                 <div className="label setting-label" title="Filesystem path of the tracking database on the server.">
@@ -1687,7 +1688,7 @@ export function SettingsPage() {
                 ))}
               </ul>
             ) : null}
-          </div>
+          </Panel>
         </section>
       )}
     </Page>

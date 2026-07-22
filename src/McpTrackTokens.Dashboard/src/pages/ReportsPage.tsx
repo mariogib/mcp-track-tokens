@@ -18,7 +18,7 @@ import {
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
@@ -256,10 +256,9 @@ export function ReportsPage() {
           {reportCards.map((report) => {
             const selected = report.id === activeReportId;
             return (
-              <button
+              <Panel
                 key={report.id}
-                type="button"
-                className={`panel stack report-card${selected ? ' report-card--active' : ''}`}
+                className={`stack report-card${selected ? ' report-card--active' : ''}`}
                 onClick={() => {
                   if (section === 'Clients') {
                     setClientReport(report.id as ClientReportId);
@@ -267,22 +266,17 @@ export function ReportsPage() {
                     setProjectReport(report.id as ProjectReportId);
                   }
                 }}
-                style={{
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  borderColor: selected ? 'var(--accent)' : undefined,
-                }}
               >
                 <strong>{report.title}</strong>
                 <span className="muted">{report.description}</span>
-              </button>
+              </Panel>
             );
           })}
         </div>
       </section>
 
       <section className="page-section">
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="field-row">
             <div className="field">
               <label htmlFor="report-range">Date range</label>
@@ -351,7 +345,7 @@ export function ReportsPage() {
             Range: {range.label} ({new Date(range.fromUtc).toLocaleString()} –{' '}
             {new Date(range.toUtc).toLocaleString()})
           </p>
-        </div>
+        </Panel>
       </section>
 
       {section === 'Clients' && clientReport === 'client-billing' && (
@@ -490,7 +484,7 @@ function ClientBillingReport({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -519,7 +513,7 @@ function ClientBillingReport({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       )}
     </section>
@@ -608,7 +602,7 @@ function ClientTokenCostReportView({
               </ChartCard>
             ) : null}
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -631,9 +625,9 @@ function ClientTokenCostReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
           {data.byModel.length > 0 ? (
-            <div className="table-wrap" style={{ marginTop: '1rem' }}>
+            <TablePanel style={{ marginTop: '1rem' }}>
               <table className="data">
                 <thead>
                   <tr>
@@ -658,7 +652,7 @@ function ClientTokenCostReportView({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           ) : null}
         </>
       )}
@@ -710,7 +704,7 @@ function ClientsOverviewReport({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -731,7 +725,7 @@ function ClientsOverviewReport({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }
@@ -784,7 +778,7 @@ function ModelCostReportView({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -817,7 +811,7 @@ function ModelCostReportView({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }
@@ -1042,7 +1036,7 @@ function ProjectTokenCostReportView({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -1069,7 +1063,7 @@ function ProjectTokenCostReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       ) : (
         <EmptyState message="No attributed token usage for this project in the selected range." />
@@ -1153,7 +1147,7 @@ function ProjectsMonthlyReport({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -1182,7 +1176,7 @@ function ProjectsMonthlyReport({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       )}
     </section>
@@ -1234,7 +1228,7 @@ function EditorComparisonReportView({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -1257,7 +1251,7 @@ function EditorComparisonReportView({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }

@@ -12,9 +12,9 @@ import {
 } from '../api/hooks';
 import type { TimesheetEntryDto } from '../api/types';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
+import { Panel, TablePanel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
-import { Page } from '../layout/AppLayout';
 import { type RangePreset, resolveRange } from '../utils/dateRange';
 import { formatDateTime, formatDurationMs } from '../utils/format';
 
@@ -144,11 +144,11 @@ export function TimesheetPage() {
   };
 
   return (
-    <Page>
+    <>
       <section className="page-section">
         <div className="section-header">
           <div>
-            <h2>Timesheet</h2>
+            <h2>Entries</h2>
             <p className="muted">
               Start and end billable time, or add closed entries. MCP tools{' '}
               <code>start_timesheet</code> / <code>end_timesheet</code> write here too. Categories
@@ -165,7 +165,7 @@ export function TimesheetPage() {
           </div>
         </div>
 
-        <div className="panel field-row">
+        <Panel className="field-row">
           <div className="field">
             <label htmlFor="timesheet-range">Range</label>
             <select
@@ -194,11 +194,12 @@ export function TimesheetPage() {
               ))}
             </select>
           </div>
-        </div>
+        </Panel>
 
         {startOpen ? (
+          <Panel className="stack">
           <form
-            className="panel stack"
+            className="stack"
             noValidate
             onSubmit={async (event) => {
               event.preventDefault();
@@ -272,11 +273,13 @@ export function TimesheetPage() {
               {message ? <span className="form-message">{message}</span> : null}
             </div>
           </form>
+          </Panel>
         ) : null}
 
         {editorOpen ? (
+          <Panel className="stack">
           <form
-            className="panel stack"
+            className="stack"
             noValidate
             onSubmit={async (event) => {
               event.preventDefault();
@@ -439,6 +442,7 @@ export function TimesheetPage() {
               {message ? <span className="form-message">{message}</span> : null}
             </div>
           </form>
+          </Panel>
         ) : null}
 
         {!editorOpen && !startOpen && message ? (
@@ -454,7 +458,7 @@ export function TimesheetPage() {
         ) : !Array.isArray(entries.data) || entries.data.length === 0 ? (
           <EmptyState message={`No timesheet entries in ${range.label.toLowerCase()}.`} />
         ) : (
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -557,9 +561,9 @@ export function TimesheetPage() {
                 })}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         )}
       </section>
-    </Page>
+    </>
   );
 }

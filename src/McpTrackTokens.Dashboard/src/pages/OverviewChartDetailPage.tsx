@@ -8,7 +8,7 @@ import {
   NamedPieChart,
 } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import {
   isOverviewChartKey,
@@ -232,7 +232,7 @@ export function OverviewChartDetailPage() {
           </Link>
         </div>
 
-        <div className="panel stack">
+        <Panel className="stack">
           <DateRangeFilters
             idPrefix="overview-chart-detail"
             preset={range.preset}
@@ -314,7 +314,7 @@ export function OverviewChartDetailPage() {
               </div>
             </div>
           ) : null}
-        </div>
+        </Panel>
       </section>
 
       <section className="page-section">
@@ -376,7 +376,7 @@ export function OverviewChartDetailPage() {
 
       <section className="page-section">
         <h3>Detail data</h3>
-        <div className="table-wrap">
+        <TablePanel>
           {def.kind === 'line' ? (
             <DayTable rows={filteredDaySeries} chartKey={chartKey} currency={currency} />
           ) : null}
@@ -391,7 +391,7 @@ export function OverviewChartDetailPage() {
           {def.kind === 'bar' ? (
             <ProjectTable rows={filteredProjectSeries} />
           ) : null}
-        </div>
+        </TablePanel>
       </section>
     </Page>
   );

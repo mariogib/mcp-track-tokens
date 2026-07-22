@@ -6,6 +6,7 @@ import {
   useUnallocatedQuery,
 } from '../api/hooks';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
+import { Panel, TablePanel } from '../components/MetricCard';
 import { Page } from '../layout/AppLayout';
 import {
   formatDateTime,
@@ -90,7 +91,7 @@ export function UnallocatedActivityPage() {
           </Link>
         </div>
 
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="field-row">
             <div className="field">
               <label htmlFor="activity-project">Project</label>
@@ -122,12 +123,12 @@ export function UnallocatedActivityPage() {
             </div>
           </div>
           {message ? <p className="hint">{message}</p> : null}
-        </div>
+        </Panel>
 
         {items.length === 0 ? (
           <EmptyState message="No unallocated activity in the last 30 days." />
         ) : (
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -168,7 +169,7 @@ export function UnallocatedActivityPage() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         )}
       </section>
     </Page>

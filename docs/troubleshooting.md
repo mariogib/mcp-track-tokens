@@ -80,6 +80,7 @@ If `/health` works but `/ready` fails, check SQLite path permissions or Postgres
 - Confirm `~/.cursor/hooks.json` uses current Cursor event names (`beforeSubmitPrompt`, `sessionStart`, `sessionEnd`, `stop`, …), not legacy keys like `promptSubmitted`.
 - Require top-level `"version": 1` in `hooks.json` (Cursor 3.x rejects the file without it).
 - Scripts must exist under `~/.cursor/mcp-track-tokens-hooks/dist/` (or your `run.cmd` wrapper).
+- If `run.cmd` fails with `Cannot find module …\.cursor\dist\…`, the wrapper used `shift` before `%~dp0` (Windows then resolves the script home to `~/.cursor`). Use the fixed `integrations/cursor-hooks/run.cmd` (captures `HOOKS_HOME=%~dp0` before `shift`) and copy it into `~/.cursor/mcp-track-tokens-hooks/`.
 - Set `MCP_TRACK_TOKENS_API_KEY` for the Cursor process; tray/API must be healthy at `http://127.0.0.1:5187/health`.
 - See [cursor-hooks.md](cursor-hooks.md) for the full event mapping.
 

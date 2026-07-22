@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useImportUploadMutation } from '../api/hooks';
 import type { ImportPreviewDto, ImportResultDto } from '../api/types';
 import { EmptyState, ErrorState } from './States';
+import { MetricCard, Panel } from './MetricCard';
 import { StatusBadge } from './StatusBadge';
 import { formatNumber } from '../utils/format';
 
@@ -110,7 +111,7 @@ export function ImportUploadMapPanel() {
       {error ? <ErrorState message={error} /> : null}
 
       {step === 'upload' && (
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="field">
             <label htmlFor="import-file">Usage export file</label>
             <input
@@ -134,31 +135,19 @@ export function ImportUploadMapPanel() {
               Preview columns
             </button>
           </div>
-        </div>
+        </Panel>
       )}
 
       {step === 'map' && preview && (
         <div className="stack">
           <div className="metric-grid">
-            <article className="metric-card">
-              <div className="label">Received</div>
-              <div className="value">{formatNumber(preview.receivedCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Valid</div>
-              <div className="value">{formatNumber(preview.validCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Duplicates</div>
-              <div className="value">{formatNumber(preview.duplicateCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Invalid</div>
-              <div className="value">{formatNumber(preview.invalidCount)}</div>
-            </article>
+            <MetricCard label="Received" value={formatNumber(preview.receivedCount)} />
+            <MetricCard label="Valid" value={formatNumber(preview.validCount)} />
+            <MetricCard label="Duplicates" value={formatNumber(preview.duplicateCount)} />
+            <MetricCard label="Invalid" value={formatNumber(preview.invalidCount)} />
           </div>
 
-          <div className="panel stack">
+          <Panel className="stack">
             <h3 className="panel-title">
               {preview.fileName} · detected {preview.detectedFormat}
             </h3>
@@ -238,12 +227,12 @@ export function ImportUploadMapPanel() {
                 Complete import
               </button>
             </div>
-          </div>
+          </Panel>
         </div>
       )}
 
       {step === 'result' && result && (
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="row">
             <StatusBadge
               label={result.dryRun ? 'Dry run' : result.status}
@@ -252,22 +241,10 @@ export function ImportUploadMapPanel() {
             <span className="mono">{result.fileName}</span>
           </div>
           <div className="metric-grid">
-            <article className="metric-card">
-              <div className="label">Received</div>
-              <div className="value">{formatNumber(result.receivedCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Imported</div>
-              <div className="value">{formatNumber(result.importedCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Duplicates</div>
-              <div className="value">{formatNumber(result.duplicateCount)}</div>
-            </article>
-            <article className="metric-card">
-              <div className="label">Errors</div>
-              <div className="value">{formatNumber(result.failedCount)}</div>
-            </article>
+            <MetricCard label="Received" value={formatNumber(result.receivedCount)} />
+            <MetricCard label="Imported" value={formatNumber(result.importedCount)} />
+            <MetricCard label="Duplicates" value={formatNumber(result.duplicateCount)} />
+            <MetricCard label="Errors" value={formatNumber(result.failedCount)} />
           </div>
           {result.errorSummary ? <ErrorState message={result.errorSummary} /> : null}
           <div className="row">
@@ -284,7 +261,7 @@ export function ImportUploadMapPanel() {
               Import another file
             </button>
           </div>
-        </div>
+        </Panel>
       )}
     </section>
   );

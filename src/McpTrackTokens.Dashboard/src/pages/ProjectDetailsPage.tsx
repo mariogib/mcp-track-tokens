@@ -29,7 +29,7 @@ import {
 } from '../components/Charts';
 import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
@@ -422,7 +422,7 @@ export function ProjectDetailsPage() {
           ) : activity.error ? (
             <ErrorState message={activity.error instanceof Error ? activity.error.message : 'Failed'} />
           ) : (
-            <div className="table-wrap">
+            <TablePanel>
               <table className="data">
                 <thead>
                   <tr>
@@ -447,7 +447,7 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           )}
         </section>
       )}
@@ -461,7 +461,7 @@ export function ProjectDetailsPage() {
           ) : !Array.isArray(prompts.data) || prompts.data.length === 0 ? (
             <EmptyState message="No prompts in the selected range." />
           ) : (
-            <div className="table-wrap">
+            <TablePanel>
               <table className="data">
                 <thead>
                   <tr>
@@ -512,7 +512,7 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           )}
         </section>
       )}
@@ -539,8 +539,8 @@ export function ProjectDetailsPage() {
           </div>
 
           {sessionEditorOpen ? (
-            <form
-              className="panel stack"
+            <Panel className="stack"><form
+              className="stack"
               noValidate
               onSubmit={async (event) => {
                 event.preventDefault();
@@ -731,7 +731,7 @@ export function ProjectDetailsPage() {
                 </button>
                 {sessionMessage ? <span className="form-message">{sessionMessage}</span> : null}
               </div>
-            </form>
+            </form></Panel>
           ) : null}
 
           {!sessionEditorOpen && sessionMessage ? (
@@ -745,7 +745,7 @@ export function ProjectDetailsPage() {
           ) : !Array.isArray(sessions.data) || sessions.data.length === 0 ? (
             <EmptyState message="No sessions in the selected range." />
           ) : (
-            <div className="table-wrap">
+            <TablePanel>
               <table className="data">
                 <thead>
                   <tr>
@@ -821,7 +821,7 @@ export function ProjectDetailsPage() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           )}
         </section>
       )}
@@ -858,8 +858,8 @@ export function ProjectDetailsPage() {
           </div>
 
           {timesheetEditorOpen ? (
-            <form
-              className="panel stack"
+            <Panel className="stack"><form
+              className="stack"
               noValidate
               onSubmit={async (event) => {
                 event.preventDefault();
@@ -1007,7 +1007,7 @@ export function ProjectDetailsPage() {
                 </button>
                 {timesheetMessage ? <span className="form-message">{timesheetMessage}</span> : null}
               </div>
-            </form>
+            </form></Panel>
           ) : null}
 
           {!timesheetEditorOpen && timesheetMessage ? (
@@ -1023,7 +1023,7 @@ export function ProjectDetailsPage() {
           ) : !Array.isArray(timesheet.data) || timesheet.data.length === 0 ? (
             <EmptyState message="No timesheet entries in the selected range." />
           ) : (
-            <div className="table-wrap">
+            <TablePanel>
               <table className="data">
                 <thead>
                   <tr>
@@ -1090,7 +1090,7 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           )}
         </section>
       )}
@@ -1153,7 +1153,7 @@ export function ProjectDetailsPage() {
                   hint="Settings rate card × attributed tokens"
                 />
               </div>
-              <div className="table-wrap">
+              <TablePanel>
                 <table className="data">
                   <thead>
                     <tr>
@@ -1176,7 +1176,7 @@ export function ProjectDetailsPage() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </TablePanel>
             </>
           )}
         </section>
@@ -1244,7 +1244,7 @@ export function ProjectDetailsPage() {
               {!(tokenCost.data?.byModel?.length) ? (
                 <EmptyState message="No attributed usage in this range to price." />
               ) : (
-                <div className="table-wrap">
+                <TablePanel>
                   <table className="data">
                     <thead>
                       <tr>
@@ -1279,7 +1279,7 @@ export function ProjectDetailsPage() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TablePanel>
               )}
               <p className="muted" style={{ marginTop: '0.75rem' }}>
                 <Link to="/settings">Edit Cursor token rates in Settings</Link>
@@ -1294,7 +1294,7 @@ export function ProjectDetailsPage() {
           {!(detail.repositories?.length) ? (
             <EmptyState message="No repositories mapped to this project." />
           ) : (
-            <div className="table-wrap">
+            <TablePanel>
               <table className="data">
                 <thead>
                   <tr>
@@ -1320,14 +1320,14 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           )}
         </section>
       )}
 
       {tab === 'Exports' && (
         <section className="page-section">
-          <div className="panel stack">
+          <Panel className="stack">
             <p>Download a project report as JSON or CSV.</p>
             <div className="row">
               <button
@@ -1384,14 +1384,14 @@ export function ProjectDetailsPage() {
                 }
               />
             ) : null}
-          </div>
+          </Panel>
         </section>
       )}
 
       {tab === 'Settings' && (
         <section className="page-section">
-          <form
-            className="panel stack"
+          <Panel className="stack"><form
+            className="stack"
             onSubmit={async (event) => {
               event.preventDefault();
               setSettingsMessage(null);
@@ -1492,7 +1492,7 @@ export function ProjectDetailsPage() {
               </button>
               {settingsMessage ? <span>{settingsMessage}</span> : null}
             </div>
-          </form>
+          </form></Panel>
         </section>
       )}
     </Page>

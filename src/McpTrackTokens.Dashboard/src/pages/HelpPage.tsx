@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { Panel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
-import { Page } from '../layout/AppLayout';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
 
@@ -26,8 +26,8 @@ export function HelpPage() {
   const [tab, setTab] = useTabSearchParam(HELP_TABS, 'Cursor setup');
 
   return (
-    <Page>
-      <div className="tabs" role="tablist" aria-label="Help sections">
+    <>
+      <div className="tabs" role="tablist" aria-label="Windows setup sections">
         {HELP_TABS.map((name) => (
           <button
             key={name}
@@ -46,7 +46,7 @@ export function HelpPage() {
         <section className="page-section">
           <div className="section-header">
             <div>
-              <h2>Help</h2>
+              <h2>Windows setup</h2>
               <p>
                 This guide is for the Windows installer (tray host + desktop dashboard). MCP Track
                 Tokens correlates editor activity with imported Cursor usage so you can attribute
@@ -54,12 +54,12 @@ export function HelpPage() {
               </p>
             </div>
           </div>
-          <div className="panel stack">
+          <Panel className="stack">
             <p>
               Start with the <strong>Cursor setup</strong> tab to connect Cursor. Then open{' '}
               <Link to="/settings">Settings</Link> to confirm your API key, and use{' '}
-              <Link to="/imported-usage">Imported usage</Link> for Cursor usage exports. For the MCP tool,
-              resource, and prompt catalog, open <Link to="/help/mcp">MCP Help</Link>.
+              <Link to="/imported-usage">Imported usage</Link> for Cursor usage exports. For the MCP
+              tool, resource, and prompt catalog, open the <strong>MCP Help</strong> tab.
             </p>
             <ul>
               <li>
@@ -79,7 +79,7 @@ export function HelpPage() {
                 you create your own keys)
               </li>
             </ul>
-          </div>
+          </Panel>
         </section>
       )}
 
@@ -96,7 +96,7 @@ export function HelpPage() {
             </div>
           </div>
 
-          <div className="panel stack">
+          <Panel className="stack">
             <Step title="1. Install and start the Windows host">
               <p>
                 Run <code className="mono">MCP-Track-Tokens-Setup.msi</code>. Leave these options
@@ -164,7 +164,7 @@ export function HelpPage() {
                 <code className="mono">sessionStart</code>, <code className="mono">stop</code>, …).
                 After a Cursor upgrade, run MCP tool{' '}
                 <code className="mono">check_cursor_hooks</code> (see{' '}
-                <Link to="/help/mcp">MCP Help → Tools</Link>) to confirm the mapping still works.
+                <Link to="/help?view=mcp-help&tab=tools">MCP Help → Tools</Link>) to confirm the mapping still works.
               </p>
             </Step>
 
@@ -252,9 +252,9 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 <Link to="/">Overview</Link>
               </p>
             </Step>
-          </div>
+          </Panel>
         </section>
       )}
-    </Page>
+    </>
   );
 }

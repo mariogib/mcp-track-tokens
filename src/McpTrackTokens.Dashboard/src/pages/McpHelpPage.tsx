@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Panel } from '../components/MetricCard';
 import { MCP_PROMPTS, MCP_RESOURCES, MCP_TOOLS } from '../data/mcpCatalog';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
-import { Page } from '../layout/AppLayout';
 
 const TABS = ['Tools', 'Resources', 'Prompts'] as const;
 
@@ -77,7 +76,7 @@ export function McpHelpPage() {
   }, []);
 
   return (
-    <Page>
+    <>
       <div className="tabs" role="tablist" aria-label="MCP help sections">
         {TABS.map((name) => (
           <button
@@ -98,8 +97,8 @@ export function McpHelpPage() {
           <div>
             <h2>MCP reference</h2>
             <p>
-              Tools, resources, and prompts exposed by the local MCP Track Tokens server. See{' '}
-              <Link to="/help">Windows setup</Link> for connecting Cursor MCP to{' '}
+              Tools, resources, and prompts exposed by the local MCP Track Tokens server. Use the{' '}
+              <strong>Windows setup</strong> tab for connecting Cursor MCP to{' '}
               <code className="mono">http://127.0.0.1:5187</code>.
             </p>
           </div>
@@ -109,7 +108,7 @@ export function McpHelpPage() {
           <div className="stack">
             <p className="muted">Click Copy next to a tool name to put it on the clipboard.</p>
             {toolGroups.map(([group, tools]) => (
-              <div key={group} className="panel stack">
+              <Panel key={group} className="stack">
                 <h3>{group}</h3>
                 <div className="table-wrap">
                   <table className="data">
@@ -134,13 +133,13 @@ export function McpHelpPage() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </Panel>
             ))}
           </div>
         )}
 
         {tab === 'Resources' && (
-          <div className="panel stack">
+          <Panel className="stack">
             <p className="muted">
               JSON snapshots you can read from the MCP client. Most time-based resources cover the
               last 30 days. Click Copy next to a URI to put it on the clipboard.
@@ -170,11 +169,11 @@ export function McpHelpPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </Panel>
         )}
 
         {tab === 'Prompts' && (
-          <div className="panel stack">
+          <Panel className="stack">
             <p className="muted">
               Prompt templates that guide the agent to call the right tools for common analyses.
               Copy the prompt name or a filled-in example to paste into chat.
@@ -213,9 +212,9 @@ export function McpHelpPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </Panel>
         )}
       </section>
-    </Page>
+    </>
   );
 }

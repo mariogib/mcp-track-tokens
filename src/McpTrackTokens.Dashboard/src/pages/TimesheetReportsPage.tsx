@@ -19,9 +19,8 @@ import type {
   TimesheetReportTotals,
 } from '../api/types';
 import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
-import { Page } from '../layout/AppLayout';
 import { parseRangePreset, resolveRange } from '../utils/dateRange';
 import {
   formatDateTime,
@@ -76,7 +75,7 @@ function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
     return <EmptyState message="No category breakdown for this range." />;
   }
   return (
-    <div className="table-wrap">
+    <TablePanel>
       <table className="data">
         <thead>
           <tr>
@@ -95,7 +94,7 @@ function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TablePanel>
   );
 }
 
@@ -104,7 +103,7 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
     return <EmptyState message="No project breakdown for this range." />;
   }
   return (
-    <div className="table-wrap">
+    <TablePanel>
       <table className="data">
         <thead>
           <tr>
@@ -127,7 +126,7 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </TablePanel>
   );
 }
 
@@ -142,7 +141,7 @@ function ClientTable({
     return <EmptyState message="No client breakdown for this range." />;
   }
   return (
-    <div className="table-wrap">
+    <TablePanel>
       <table className="data">
         <thead>
           <tr>
@@ -175,7 +174,7 @@ function ClientTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </TablePanel>
   );
 }
 
@@ -190,7 +189,7 @@ function DailyTable({
     return <EmptyState message="No daily activity for this range." />;
   }
   return (
-    <div className="table-wrap">
+    <TablePanel>
       <table className="data">
         <thead>
           <tr>
@@ -221,7 +220,7 @@ function DailyTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </TablePanel>
   );
 }
 
@@ -486,7 +485,7 @@ function DialogFrame({
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <div
-        className="modal-panel"
+        className="card modal-panel"
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -549,7 +548,7 @@ function DaySessionsDialog({
       ) : visibleSessions.length === 0 ? (
         <EmptyState message="No sessions were active on this day for this report." />
       ) : (
-        <div className="table-wrap">
+        <TablePanel>
           <table className="data">
             <thead>
               <tr>
@@ -587,7 +586,7 @@ function DaySessionsDialog({
               })}
             </tbody>
           </table>
-        </div>
+        </TablePanel>
       )}
     </DialogFrame>
   );
@@ -619,7 +618,7 @@ function SessionPromptsDialog({
       ) : !prompts.data || prompts.data.length === 0 ? (
         <EmptyState message="No prompt submissions were recorded for this session." />
       ) : (
-        <div className="table-wrap">
+        <TablePanel>
           <table className="data">
             <thead>
               <tr>
@@ -648,7 +647,7 @@ function SessionPromptsDialog({
               ))}
             </tbody>
           </table>
-        </div>
+        </TablePanel>
       )}
     </DialogFrame>
   );
@@ -715,22 +714,19 @@ export function TimesheetReportsPage() {
   };
 
   return (
-    <Page>
+    <>
       <section className="page-section">
         <div className="section-header">
           <div>
-            <h2>Timesheet reports</h2>
+            <h2>Reports</h2>
             <p className="muted">
               Billable time by range, optionally filtered to one project or client. Open entries
               count through now within the selected range.
             </p>
           </div>
-          <Link to="/timesheet" className="btn btn-secondary">
-            Back to entries
-          </Link>
         </div>
 
-        <div className="panel field-row">
+        <Panel className="field-row">
           <div className="field">
             <label htmlFor="timesheet-report-scope">Scope</label>
             <select
@@ -794,7 +790,7 @@ export function TimesheetReportsPage() {
             <label className="label">Period</label>
             <p className="hint">{range.label}</p>
           </div>
-        </div>
+        </Panel>
 
         {scope === 'all' ? (
           <OverallReportView
@@ -840,6 +836,6 @@ export function TimesheetReportsPage() {
           onClose={() => setSelectedSession(null)}
         />
       ) : null}
-    </Page>
+    </>
   );
 }

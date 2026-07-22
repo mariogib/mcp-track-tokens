@@ -8,14 +8,9 @@ import {
   useUnallocatedQuery,
 } from '../api/hooks';
 import { useAggregatedOverviewCharts } from '../api/useAggregatedOverviewCharts';
-import {
-  ChartCard,
-  DailyLineChart,
-  NamedBarChart,
-  NamedPieChart,
-} from '../components/Charts';
+import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { overviewChartPath, type OverviewChartKey } from '../data/overviewCharts';
@@ -253,8 +248,8 @@ export function OverviewPage() {
           <div>
             <h2 id="overview-all-projects">Across all projects</h2>
             <p>
-              Same overview charts as project details, aggregated for the selected range
-              ({chartRange.label}).
+              Same overview charts as project details, aggregated for the selected range (
+              {chartRange.label}).
             </p>
           </div>
         </div>
@@ -395,7 +390,7 @@ export function OverviewPage() {
             <p>Database path, queue depth, and latest ingest.</p>
           </div>
         </div>
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="row">
             <StatusBadge
               label={status.data?.isHealthy ? 'Tracker OK' : 'Tracker issue'}
@@ -426,7 +421,7 @@ export function OverviewPage() {
               </strong>
             </div>
           </div>
-        </div>
+        </Panel>
       </section>
     </Page>
   );

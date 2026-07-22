@@ -12,7 +12,7 @@ import {
   NamedPieChart,
 } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import {
   isProjectChartKey,
@@ -233,7 +233,7 @@ export function ProjectChartDetailPage() {
           </Link>
         </div>
 
-        <div className="panel stack">
+        <Panel className="stack">
           <DateRangeFilters
             idPrefix="chart-detail"
             preset={range.preset}
@@ -307,7 +307,7 @@ export function ProjectChartDetailPage() {
               </div>
             </div>
           ) : null}
-        </div>
+        </Panel>
       </section>
 
       <section className="page-section">
@@ -369,7 +369,7 @@ export function ProjectChartDetailPage() {
 
       <section className="page-section">
         <h3>Detail data</h3>
-        <div className="table-wrap">
+        <TablePanel>
           {def.kind === 'line' ? (
             <DayTable rows={activeLineData} chartKey={chartKey} currency={currency} />
           ) : null}
@@ -390,7 +390,7 @@ export function ProjectChartDetailPage() {
               asNumber
             />
           ) : null}
-        </div>
+        </TablePanel>
       </section>
     </Page>
   );
