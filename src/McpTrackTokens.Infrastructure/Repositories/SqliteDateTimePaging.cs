@@ -12,8 +12,13 @@ internal static class SqliteDateTimePaging
     /// <summary>
     /// Second-precision unixepoch expression over an EF-stored DateTimeOffset TEXT column.
     /// </summary>
-    public static string UnixEpochExpr(string columnName)
-        => $"unixepoch(replace(substr(\"{columnName}\", 1, 19), ' ', 'T') || 'Z')";
+    public static string UnixEpochExpr(string columnName, string? tableAlias = null)
+    {
+        var column = tableAlias is null
+            ? $"\"{columnName}\""
+            : $"{tableAlias}.\"{columnName}\"";
+        return $"unixepoch(replace(substr({column}, 1, 19), ' ', 'T') || 'Z')";
+    }
 
     public static long ToUnixSeconds(DateTimeOffset value)
         => value.ToUniversalTime().ToUnixTimeSeconds();

@@ -584,16 +584,7 @@ export function ProjectDetailsPage() {
           />
         ))}
 
-      {tab === 'Prompts' &&
-        (promptFacets.isLoading ? (
-          <LoadingState />
-        ) : promptFacets.error ? (
-          <ErrorState
-            message={
-              promptFacets.error instanceof Error ? promptFacets.error.message : 'Failed'
-            }
-          />
-        ) : (
+      {tab === 'Prompts' && (
           <RemoteAnalysisDetailBrowse<PromptEventDto>
             heading="Prompts"
             searchPlaceholder="Search prompts..."
@@ -604,6 +595,9 @@ export function ProjectDetailsPage() {
               promptTypeFilter,
               promptModelFilter,
               promptBranchFilter,
+              promptDayFilter,
+              promptFromDate,
+              promptToDate,
             ].join('|')}
             fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
               api.getProjectPromptsPaged(
@@ -799,7 +793,7 @@ export function ProjectDetailsPage() {
               ))
             }
           />
-        ))}
+      )}
 
       {tab === 'Sessions' && (
         <section className="page-section">

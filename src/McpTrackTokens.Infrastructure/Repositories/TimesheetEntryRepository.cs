@@ -118,8 +118,8 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
         // Match ListAsync range semantics using unixepoch on TEXT DateTimeOffset columns.
         if (filter.FromUtc is DateTimeOffset from)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("e.StartedAtUtc");
-            var ended = SqliteDateTimePaging.UnixEpochExpr("e.EndedAtUtc");
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc", "e");
             where.Append(CultureInfo.InvariantCulture,
                 $" AND ({started} >= {{{args.Count}}} OR (e.EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
             args.Add(SqliteDateTimePaging.ToUnixSeconds(from));
@@ -127,7 +127,7 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
 
         if (filter.ToUtc is DateTimeOffset to)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("e.StartedAtUtc");
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
             where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
             args.Add(SqliteDateTimePaging.ToUnixSeconds(to));
         }

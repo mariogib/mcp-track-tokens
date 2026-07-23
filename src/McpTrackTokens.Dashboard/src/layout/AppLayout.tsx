@@ -1,9 +1,9 @@
 import { type ReactNode } from 'react';
-import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
-import { getStoredApiKey, setStoredApiKey } from '../api/client';
+import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
 import { AdminShell, TextLink, ThemeButton } from '../shared/adminUi';
 
@@ -58,7 +58,6 @@ function titleForPath(pathname: string, search: string): { title: string; subtit
 
 export function AppLayout() {
   const location = useLocation();
-  const navigate = useNavigate();
   useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();

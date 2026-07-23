@@ -7,15 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Database-backed lazy paging for project prompts and timesheet entry browse lists (`pageIndex` / `pageSize`, prompt facets).
+
 ### Fixed
 
 - **Agent (min)** now sums completed prompt durations (milliseconds) instead of empty agent-end rows, then converts to minutes for display.
 - **Get Rates** (Settings → Cursor token costs): more resilient Cursor docs download (URL / User-Agent fallbacks) and parsing of current docs where Auto is listed as **Auto Cost** in the model table (maps to Auto / `*`).
 - Closing timesheets uses the last ended editor session for that project on the timesheet start day when end time is omitted.
 
+## [1.0.11] — 2026-07-23
+
 ### Added
 
-- MCP tool `check_cursor_hooks` to verify hook install, `hooks.json` event names, Cursor version, and recent ingest (also listed on Dashboard → MCP Help → Tools). The check **ingests a `Heartbeat` probe event** stamped with the detected Cursor version so end-to-end ingest is verified.
+- Database-backed lazy paging for project prompts and timesheet entry browse lists.
 
 ## [1.0.0] — 2026-07-17
 

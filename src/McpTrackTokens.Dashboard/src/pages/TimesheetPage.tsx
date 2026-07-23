@@ -17,7 +17,7 @@ import {
 import { api } from '../api/client';
 import type { TimesheetEntryDto } from '../api/types';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
-import { Panel, TablePanel } from '../components/MetricCard';
+import { Panel } from '../components/MetricCard';
 import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
@@ -398,57 +398,6 @@ export function TimesheetPage() {
         ) : null}
         {renderEntryActions(entry)}
       </article>
-    );
-  }
-
-  function renderTable(rows: TimesheetEntryDto[]) {
-    return (
-      <TablePanel>
-        <table className="data">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Category</th>
-              <th>Started</th>
-              <th>Ended</th>
-              <th>Duration</th>
-              <th>Notes</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((entry) => {
-              const duration = entryDurationMs(entry);
-              return (
-                <tr key={entry.id}>
-                  <td>
-                    <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
-                      {projectLabelFor(entry)}
-                    </TextLink>
-                  </td>
-                  <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                  <td>{formatDateTime(entry.startedAtUtc)}</td>
-                  <td>{formatDateTime(entry.endedAtUtc)}</td>
-                  <td>
-                    {duration == null
-                      ? '—'
-                      : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
-                  </td>
-                  <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                  <td>
-                    <StatusBadge
-                      label={entry.isOpen ? 'Open' : 'Closed'}
-                      tone={entry.isOpen ? 'success' : 'neutral'}
-                    />
-                  </td>
-                  <td>{renderEntryActions(entry)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </TablePanel>
     );
   }
 
@@ -926,6 +875,7 @@ export function TimesheetPage() {
                   }
                   setEditorOpen(false);
                   setEditingId(null);
+                  setBrowseEpoch((value) => value + 1);
                   await entries.refetch();
                 } catch (err) {
                   setMessage(err instanceof Error ? err.message : 'Save failed');
@@ -1036,22 +986,173 @@ export function TimesheetPage() {
           <p className="form-message">{message}</p>
         ) : null}
 
-        {entries.isLoading || projects.isLoading ? (
-          <LoadingState label="Loading timesheet…" />
-        ) : entries.error ? (
-          <ErrorState
-            message={entries.error instanceof Error ? entries.error.message : 'Failed to load'}
-          />
-        ) : sourceEntries.length === 0 ? (
-          <EmptyState message={`No timesheet entries in ${range.label.toLowerCase()}.`} />
-        ) : filteredEntries.length === 0 ? (
-          <EmptyState message="No timesheet entries match the current search or filters." />
-        ) : viewMode === 'grid' ? (
-          <div className="timesheet-browse-grid">{filteredEntries.map(renderEntryCard)}</div>
-        ) : viewMode === 'calendar' ? (
-          renderCalendar()
+        {calendarMode ? (
+          entries.isLoading || projects.isLoading ? (
+            <LoadingState label="Loading timesheet…" />
+          ) : entries.error ? (
+            <ErrorState
+              message={entries.error instanceof Error ? entries.error.message : 'Failed to load'}
+            />
+          ) : sourceEntries.length === 0 ? (
+            <EmptyState message={`No timesheet entries in ${range.label.toLowerCase()}.`} />
+          ) : filteredEntries.length === 0 ? (
+            <EmptyState message="No timesheet entries match the current search or filters." />
+          ) : (
+            renderCalendar()
+          )
         ) : (
-          renderTable(filteredEntries)
+          <RemoteAnalysisDetailBrowse<TimesheetEntryDto>
+            embedded
+            heading="Entries"
+            searchPlaceholder="Search entries…"
+            filterKey={[
+              range.fromUtc,
+              range.toUtc,
+              projectFilter,
+              browseEpoch,
+            ].join('|')}
+            allowCalendarView
+            onRequestCalendarView={() => {
+              const todayKey = toDayKey(new Date().toISOString());
+              setCalendarCursor(new Date());
+              setCalendarScope('day');
+              setSelectedDayKey(todayKey);
+              setViewMode('calendar');
+            }}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getTimesheetEntriesPaged(
+                {
+                  projectId: projectFilter || undefined,
+                  fromUtc: range.fromUtc,
+                  toUtc: range.toUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  openClosed:
+                    status === 'Open'
+                      ? 'open'
+                      : status === 'Closed'
+                        ? 'closed'
+                        : status === 'open' || status === 'closed'
+                          ? status
+                          : undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(entry) => (entry.isOpen ? 'Open' : 'Closed')}
+            statusOptions={[
+              { value: 'Open', label: 'Open' },
+              { value: 'Closed', label: 'Closed' },
+            ]}
+            filters={[
+              {
+                id: 'timesheet-range',
+                label: 'Range',
+                value: rangePreset,
+                onChange: (value) => setRangePreset(value as RangePreset),
+                options: [
+                  { value: '7d', label: 'Last 7 days' },
+                  { value: '30d', label: 'Last 30 days' },
+                  { value: '90d', label: 'Last 90 days' },
+                  { value: 'month', label: 'This month' },
+                ],
+              },
+              {
+                id: 'timesheet-project-filter',
+                label: 'Project',
+                value: projectFilter,
+                onChange: setProjectFilter,
+                options: [
+                  { value: '', label: 'All projects' },
+                  ...(projects.data ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  })),
+                ],
+              },
+            ]}
+            customControls={[
+              <button
+                key="start-timer"
+                type="button"
+                className="btn btn-secondary"
+                onClick={openStart}
+              >
+                Start timer
+              </button>,
+              <button key="add-entry" type="button" className="btn" onClick={() => openEditor()}>
+                Add entry
+              </button>,
+            ]}
+            exportFilename="timesheet-entries.xlsx"
+            exportTitle="Timesheet entries"
+            exportColumns={[
+              { header: 'Project', key: 'projectName' },
+              { header: 'Category', key: 'categoryName' },
+              { header: 'Started', key: 'startedAtUtc' },
+              { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Notes', key: 'notes' },
+              { header: 'Status', key: 'status' },
+            ]}
+            toExportRow={(entry) => ({
+              projectName: projectLabelFor(entry),
+              categoryName: entry.categoryName ?? '',
+              startedAtUtc: formatDateTime(entry.startedAtUtc),
+              endedAtUtc: formatDateTime(entry.endedAtUtc),
+              notes: entry.notes ?? '',
+              status: entry.isOpen ? 'Open' : 'Closed',
+            })}
+            emptySourceMessage={`No timesheet entries in ${range.label.toLowerCase()}.`}
+            emptyMessage="No timesheet entries match the current search or filters."
+            renderTable={(rows) => (
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Project</th>
+                    <th>Category</th>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Duration</th>
+                    <th>Notes</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((entry) => {
+                    const duration = entryDurationMs(entry);
+                    return (
+                      <tr key={entry.id}>
+                        <td>
+                          <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
+                            {projectLabelFor(entry)}
+                          </TextLink>
+                        </td>
+                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                        <td>{formatDateTime(entry.startedAtUtc)}</td>
+                        <td>{formatDateTime(entry.endedAtUtc)}</td>
+                        <td>
+                          {duration == null
+                            ? '—'
+                            : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                        </td>
+                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                        <td>
+                          <StatusBadge
+                            label={entry.isOpen ? 'Open' : 'Closed'}
+                            tone={entry.isOpen ? 'success' : 'neutral'}
+                          />
+                        </td>
+                        <td>{renderEntryActions(entry)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            renderGrid={(rows) => rows.map(renderEntryCard)}
+          />
         )}
       </section>
     </>

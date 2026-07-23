@@ -19,6 +19,9 @@ import { BrowseListControls, BrowseScrollSentinel } from '../shared/adminUi';
 import { formatNumber } from '../utils/format';
 import { STATUS_FILTER_NONE } from './AnalysisDetailBrowse';
 
+/** Max rows fetched for Excel export of a remote filtered list. */
+export const REMOTE_BROWSE_EXPORT_CAP = 5_000;
+
 export type RemotePageFetchArgs = {
   pageIndex: number;
   pageSize: number;
@@ -36,7 +39,6 @@ type RemoteAnalysisDetailBrowseProps<T> = {
   /** Reset page cache when this key changes (range / remote filters). */
   filterKey: string;
   fetchPage: RemotePageFetcher<T>;
-  getSearchText: (row: T) => string;
   getStatusValue?: (row: T) => string;
   statusOptions?: BrowseFilterOption[];
   exportFilename: string;
@@ -56,6 +58,8 @@ type RemoteAnalysisDetailBrowseProps<T> = {
   pagingMode?: BrowsePagingMode;
   pageSize?: number;
   pageSizeOptions?: number[];
+  /** Cap for full-list Excel export. Defaults to {@link REMOTE_BROWSE_EXPORT_CAP}. */
+  exportRowCap?: number;
 };
 
 function statusLabel(value: string): string {
@@ -69,7 +73,7 @@ function normalizeStatusValue(value: string | null | undefined): string {
 
 /**
  * Browse list backed by server OFFSET/LIMIT pages with a load-once page cache (lazy default).
- * Export uses currently cached rows only.
+ * Excel export fetches the full filtered match set (capped).
  */
 export function RemoteAnalysisDetailBrowse<T>({
   heading = 'Detail data',
@@ -96,6 +100,7 @@ export function RemoteAnalysisDetailBrowse<T>({
   pagingMode = 'lazy',
   pageSize: initialPageSize = 25,
   pageSizeOptions = [10, 25, 50, 100],
+  exportRowCap = REMOTE_BROWSE_EXPORT_CAP,
 }: RemoteAnalysisDetailBrowseProps<T>) {
   const [viewMode, setViewMode] = useState<BrowseViewMode>('table');
   const [searchValue, setSearchValue] = useState('');
@@ -107,6 +112,7 @@ export function RemoteAnalysisDetailBrowse<T>({
   const [pageCache, setPageCache] = useState(() => new Map<number, T[]>());
   const [totalCount, setTotalCount] = useState(0);
   const [loadingPage, setLoadingPage] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -125,6 +131,8 @@ export function RemoteAnalysisDetailBrowse<T>({
   const resetPaging = useCallback(() => {
     requestIdRef.current += 1;
     inFlightRef.current = new Set();
+    // Clear the ref immediately so a same-tick load does not reuse stale pages.
+    pageCacheRef.current = new Map();
     setPageIndex(0);
     setLoadedPages(createBrowseLoadedPages(0));
     setPageCache(new Map());
@@ -133,44 +141,40 @@ export function RemoteAnalysisDetailBrowse<T>({
     setError(null);
   }, []);
 
-  useEffect(() => {
-    resetPaging();
-  }, [filterKey, debouncedSearch, statusFilter, pageSize, pagingMode, resetPaging]);
-
   const ensurePageLoaded = useCallback(
-    async (targetPage: number) => {
+    async (targetPage: number, requestId: number) => {
       if (targetPage < 0) {
+        return;
+      }
+      if (requestId !== requestIdRef.current) {
         return;
       }
       if (pageCacheRef.current.has(targetPage)) {
         setLoadedPages((previous) => loadBrowsePage(previous, targetPage));
+        setReady(true);
         return;
       }
       if (inFlightRef.current.has(targetPage)) {
         return;
       }
 
-      const requestId = requestIdRef.current;
       inFlightRef.current.add(targetPage);
       setLoadingPage(true);
-      const controller = new AbortController();
       try {
         const result = await fetchPageRef.current({
           pageIndex: targetPage,
           pageSize,
           search: debouncedSearch,
           status: statusFilter,
-          signal: controller.signal,
         });
         if (requestId !== requestIdRef.current) {
           return;
         }
         setTotalCount(result.totalCount);
-        setPageCache((previous) => {
-          const next = new Map(previous);
-          next.set(targetPage, result.items);
-          return next;
-        });
+        const next = new Map(pageCacheRef.current);
+        next.set(targetPage, result.items);
+        pageCacheRef.current = next;
+        setPageCache(next);
         setLoadedPages((previous) => loadBrowsePage(previous, targetPage));
         setReady(true);
         setError(null);
@@ -193,9 +197,23 @@ export function RemoteAnalysisDetailBrowse<T>({
     [debouncedSearch, pageSize, statusFilter],
   );
 
+  const filterToken = `${filterKey}|${debouncedSearch}|${statusFilter}|${pageSize}|${pagingMode}`;
+  // Empty initial value so the first mount counts as a filter change and loads page 0.
+  const filterTokenRef = useRef('');
+
+  // One effect: filter changes always reset + load page 0; pageIndex changes load that page.
   useEffect(() => {
-    void ensurePageLoaded(pageIndex);
-  }, [ensurePageLoaded, pageIndex, filterKey, debouncedSearch, statusFilter, pageSize]);
+    const filtersChanged = filterTokenRef.current !== filterToken;
+    filterTokenRef.current = filterToken;
+
+    if (filtersChanged) {
+      resetPaging();
+      void ensurePageLoaded(0, requestIdRef.current);
+      return;
+    }
+
+    void ensurePageLoaded(pageIndex, requestIdRef.current);
+  }, [ensurePageLoaded, filterToken, pageIndex, resetPaging]);
 
   useEffect(() => {
     if (pagingMode !== 'lazy' && pagingMode !== 'scroll') {
@@ -205,14 +223,15 @@ export function RemoteAnalysisDetailBrowse<T>({
   }, [pageIndex, pagingMode]);
 
   const visibleRows = useMemo(() => {
-    if (pagingMode === 'pages') {
-      return pageCache.get(pageIndex) ?? [];
+    if (pagingMode === 'scroll') {
+      const pages = [...loadedPages].sort((a, b) => a - b);
+      return pages.flatMap((page) => pageCache.get(page) ?? []);
     }
-    const pages = [...loadedPages].sort((a, b) => a - b);
-    return pages.flatMap((page) => pageCache.get(page) ?? []);
+    // `pages` and `lazy`: show only the current page (lazy still caches visited pages).
+    return pageCache.get(pageIndex) ?? [];
   }, [loadedPages, pageCache, pageIndex, pagingMode]);
 
-  const cachedExportRows = useMemo(() => {
+  const cachedRows = useMemo(() => {
     const pages = [...pageCache.keys()].sort((a, b) => a - b);
     return pages.flatMap((page) => pageCache.get(page) ?? []);
   }, [pageCache]);
@@ -225,13 +244,13 @@ export function RemoteAnalysisDetailBrowse<T>({
       return statusOptions;
     }
     const values = new Set<string>();
-    for (const row of cachedExportRows) {
+    for (const row of cachedRows) {
       values.add(normalizeStatusValue(getStatusValue(row)));
     }
     return [...values]
       .sort((a, b) => statusLabel(a).localeCompare(statusLabel(b)))
       .map((value) => ({ value, label: statusLabel(value) }));
-  }, [cachedExportRows, getStatusValue, statusOptions]);
+  }, [cachedRows, getStatusValue, statusOptions]);
 
   const browseFilters = useMemo(() => {
     const next: BrowseFilterConfig[] = [];
@@ -250,6 +269,70 @@ export function RemoteAnalysisDetailBrowse<T>({
     next.push(...filters);
     return next;
   }, [derivedStatusOptions, filters, getStatusValue, statusFilter]);
+
+  const fetchAllMatchingRows = useCallback(async (): Promise<{ rows: T[]; total: number }> => {
+    const exportPageSize = 100;
+    const rows: T[] = [];
+    let total = totalCount;
+    let index = 0;
+
+    while (rows.length < exportRowCap) {
+      const result = await fetchPageRef.current({
+        pageIndex: index,
+        pageSize: exportPageSize,
+        search: debouncedSearch,
+        status: statusFilter,
+      });
+      total = result.totalCount;
+      if (result.items.length === 0) {
+        break;
+      }
+      rows.push(...result.items);
+      if (rows.length >= total || result.items.length < exportPageSize) {
+        break;
+      }
+      index += 1;
+    }
+
+    return {
+      rows: rows.slice(0, exportRowCap),
+      total,
+    };
+  }, [debouncedSearch, exportRowCap, statusFilter, totalCount]);
+
+  const onExportToExcel = useCallback(async () => {
+    if (exporting || totalCount === 0) {
+      return;
+    }
+    setExporting(true);
+    try {
+      const { rows, total } = await fetchAllMatchingRows();
+      const capped = rows.length < total;
+      await exportToExcel({
+        filename: exportFilename.endsWith('.xlsx')
+          ? exportFilename
+          : `${exportFilename}.xlsx`,
+        title: capped
+          ? `${exportTitle} (first ${rows.length} of ${total})`
+          : exportTitle,
+        timestamp: new Date().toISOString(),
+        columns: exportColumns,
+        data: rows.map(toExportRow),
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }, [
+    exportColumns,
+    exportFilename,
+    exportTitle,
+    exporting,
+    fetchAllMatchingRows,
+    toExportRow,
+    totalCount,
+  ]);
 
   const pageCount = getBrowsePageCount(totalCount, pageSize);
   const nextScrollPage = getNextBrowsePageToLoad(loadedPages, pageCount);
@@ -273,19 +356,9 @@ export function RemoteAnalysisDetailBrowse<T>({
         searchPlaceholder={searchPlaceholder}
         onSearchChange={setSearchValue}
         filters={browseFilters}
-        onExportToExcel={() =>
-          void exportToExcel({
-            filename: exportFilename.endsWith('.xlsx')
-              ? exportFilename
-              : `${exportFilename}.xlsx`,
-            title: `${exportTitle} (loaded pages)`,
-            timestamp: new Date().toISOString(),
-            columns: exportColumns,
-            data: cachedExportRows.map(toExportRow),
-          })
-        }
-        exportLabel="Export loaded"
-        exportDisabled={cachedExportRows.length === 0}
+        onExportToExcel={() => void onExportToExcel()}
+        exportLabel={exporting ? 'Exporting…' : 'Export to Excel'}
+        exportDisabled={totalCount === 0 || exporting}
         customControls={customControls}
         paging={{
           mode: pagingMode,
@@ -307,17 +380,16 @@ export function RemoteAnalysisDetailBrowse<T>({
       {filtersExtra}
 
       <p className="section-meta">
-        {loadingPage
-          ? 'Loading page…'
-          : `Showing ${formatNumber(visibleRows.length)} on screen · ${formatNumber(totalCount)} match`}
+        {exporting
+          ? 'Exporting filtered rows…'
+          : loadingPage
+            ? 'Loading page…'
+            : `Showing ${formatNumber(visibleRows.length)} on screen · ${formatNumber(totalCount)} match`}
         {statusFilter ? ` · status=${statusLabel(statusFilter)}` : ''}
         {filters
           .filter((filter) => filter.value && filter.value !== '__custom__')
           .map((filter) => ` · ${filter.label.toLowerCase()}=${filter.value}`)
           .join('')}
-        {cachedExportRows.length > 0 && cachedExportRows.length < totalCount
-          ? ` · export covers ${formatNumber(cachedExportRows.length)} loaded rows`
-          : ''}
       </p>
 
       {error ? (

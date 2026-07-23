@@ -323,10 +323,12 @@ tr.is-selected {
   content: attr(data-tooltip);
   position: absolute;
   left: 50%;
-  bottom: calc(100% + 0.45rem);
+  /* Open below the icon so Panel / table-wrap overflow does not clip the tip. */
+  top: calc(100% + 0.45rem);
+  bottom: auto;
   transform: translateX(-50%);
   width: max-content;
-  max-width: min(22rem, 70vw);
+  max-width: min(28rem, 78vw);
   padding: 0.55rem 0.7rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -342,7 +344,20 @@ tr.is-selected {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.12s ease;
-  z-index: 40;
+  z-index: 50;
+}
+
+/* Inside scrollable tables, keep tips inside the wrap (centered tips clip at edges). */
+.setting-help--align-start::after {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+
+.setting-help--align-end::after {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .setting-help:hover::after,
@@ -777,6 +792,47 @@ table.data.token-rates td:last-child {
   max-height: calc(100vh - 5rem);
   overflow: auto;
   padding: 1rem;
+}
+
+.modal-panel--help {
+  width: min(40rem, 96vw);
+}
+
+.help-dialog-body section h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.help-dialog-body section p,
+.help-dialog-body section li {
+  margin: 0 0 0.55rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.help-dialog-body section ul {
+  margin: 0 0 0.55rem;
+  padding-left: 1.2rem;
+}
+
+.help-dialog-body section strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.help-formula {
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-x: auto;
 }
 
 .mono {

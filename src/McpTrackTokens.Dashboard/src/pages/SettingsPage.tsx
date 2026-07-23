@@ -46,15 +46,46 @@ import {
 } from '../utils/backupFolder';
 import { formatDateTime } from '../utils/format';
 
-function SettingHelp({ text }: { text: string }) {
+type HelpContent = string | { summary: string; detail: string };
+
+function resolveHelp(help: HelpContent): { summary: string; detail: string } {
+  if (typeof help === 'string') {
+    const trimmed = help.trim();
+    const sentenceEnd = trimmed.search(/[.!?]\s/);
+    const summary =
+      sentenceEnd > 0 && sentenceEnd < 120
+        ? trimmed.slice(0, sentenceEnd + 1)
+        : trimmed.length > 110
+          ? `${trimmed.slice(0, 107).trimEnd()}…`
+          : trimmed;
+    return { summary, detail: trimmed };
+  }
+  return help;
+}
+
+/** `?` control: short native hover (`title`) + richer CSS popup (`data-tooltip`). */
+function SettingHelp({
+  help,
+  align = 'center',
+}: {
+  help: HelpContent;
+  align?: 'center' | 'start' | 'end';
+}) {
+  const { summary, detail } = resolveHelp(help);
+  const alignClass =
+    align === 'start'
+      ? ' setting-help--align-start'
+      : align === 'end'
+        ? ' setting-help--align-end'
+        : '';
   return (
     <span
-      className="setting-help"
-      data-tooltip={text}
-      title={text}
+      className={`setting-help${alignClass}`}
+      data-tooltip={detail}
+      title={summary}
       tabIndex={0}
       role="img"
-      aria-label={text}
+      aria-label={detail}
     >
       ?
     </span>
@@ -67,13 +98,14 @@ function SettingLabel({
   children,
 }: {
   htmlFor?: string;
-  help: string;
+  help: HelpContent;
   children: ReactNode;
 }) {
+  const { summary } = resolveHelp(help);
   return (
-    <label htmlFor={htmlFor} className="setting-label" title={help}>
+    <label htmlFor={htmlFor} className="setting-label" title={summary}>
       <span>{children}</span>
-      <SettingHelp text={help} />
+      <SettingHelp help={help} />
     </label>
   );
 }
@@ -84,21 +116,161 @@ function SettingCheck({
   onChange,
   children,
 }: {
-  help: string;
+  help: HelpContent;
   checked: boolean;
   onChange: (checked: boolean) => void;
   children: ReactNode;
 }) {
+  const { summary } = resolveHelp(help);
   return (
-    <label className="row setting-label--row" title={help}>
+    <label className="row setting-label--row" title={summary}>
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span>{children}</span>
-      <SettingHelp text={help} />
+      <SettingHelp help={help} />
     </label>
+  );
+}
+
+function CursorCostHelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <div
+        className="card modal-panel modal-panel--help"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cursor-cost-help-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="section-header">
+          <div>
+            <h2 id="cursor-cost-help-title">How Cursor calculates cost</h2>
+            <p>Based on Cursor’s Models &amp; Pricing for individual and team plans.</p>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="stack help-dialog-body">
+          <section>
+            <h3>Per-token formula</h3>
+            <p>
+              Model prices are listed <strong>per 1,000,000 tokens</strong>. For a request, Cursor
+              multiplies each token type by its rate and sums them:
+            </p>
+            <pre className="help-formula mono">
+              {`cost ≈
+  (inputTokens        / 1M) × inputRate
++ (cacheWriteTokens   / 1M) × cacheWriteRate
++ (cacheReadTokens    / 1M) × cacheReadRate
++ (outputTokens       / 1M) × outputRate
+(+ reasoningTokens    / 1M) × reasoningRate   // when billed separately`}
+            </pre>
+            <ul>
+              <li>
+                <strong>Input</strong> — prompt and context sent to the model (message, files,
+                history).
+              </li>
+              <li>
+                <strong>Cache write</strong> — new context written into the provider prompt cache.
+              </li>
+              <li>
+                <strong>Cache read</strong> — reused cached context (usually cheaper than input).
+              </li>
+              <li>
+                <strong>Output</strong> — generated reply text streamed back to you.
+              </li>
+              <li>
+                <strong>Reasoning</strong> — internal “thinking” tokens some models bill separately
+                from the visible reply.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Usage pools (individual plans)</h3>
+            <p>Cursor tracks two monthly pools that reset with your billing cycle:</p>
+            <ul>
+              <li>
+                <strong>Cursor Models</strong> — included usage for first-party models such as
+                Composer and Cursor Grok.
+              </li>
+              <li>
+                <strong>Other Models</strong> — third-party models charged at that model’s API
+                price. Plans include a dollar allowance (for example $20 on Pro); beyond that you
+                can pay on-demand at the same rates or upgrade.
+              </li>
+            </ul>
+            <p>
+              Choosing a more expensive model consumes the Other Models pool faster. Tab
+              completions are unlimited on individual plans and are not billed from these pools.
+            </p>
+          </section>
+
+          <section>
+            <h3>Auto modes</h3>
+            <ul>
+              <li>
+                <strong>Auto Cost</strong> — billed at fixed Auto Cost rates per million tokens,
+                regardless of which underlying model runs the request.
+              </li>
+              <li>
+                <strong>Auto Balance / Auto Intelligence</strong> — billed at the API rates of the
+                model actually used (from the pricing table).
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Teams &amp; Enterprise extras</h3>
+            <ul>
+              <li>
+                Third-party model requests may add a <strong>Cursor Token Rate</strong> (currently
+                $0.25 per million tokens) on top of model API pricing for included, on-demand, and
+                BYOK usage. First-party Cursor models and Auto Cost are exempt.
+              </li>
+              <li>
+                Regional data residency can add a surcharge (for example 10%) on eligible model
+                pricing.
+              </li>
+              <li>
+                Legacy request-based plans may still use Max Mode (API rate + 20%) for extended
+                context.
+              </li>
+            </ul>
+          </section>
+
+          <section>
+            <h3>Included vs on-demand</h3>
+            <p>
+              Usage inside your monthly allowance is “included.” Cursor usage CSV/JSON exports often
+              show <strong>$0</strong> for Included / Free rows even when tokens were consumed. After
+              you exceed included usage, on-demand spend continues at the same API rates and appears
+              as non-zero cost in exports.
+            </p>
+          </section>
+
+          <section>
+            <h3>How this rate card relates</h3>
+            <p>
+              This table mirrors Cursor’s per-million rates so MCP Track Tokens can estimate spend
+              when imported cost is $0. Calculated cost uses the same style of formula (token counts
+              × rates). Enable{' '}
+              <em>Estimate usage cost from these rates when imported cost is zero</em> to apply it in
+              dashboards and reports. Use <strong>Get Rates</strong> to refresh from{' '}
+              <TextLink href="https://cursor.com/docs/models-and-pricing" external>
+                cursor.com/docs/models-and-pricing
+              </TextLink>
+              .
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -238,6 +410,7 @@ export function SettingsPage() {
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
   const [backupListReady, setBackupListReady] = useState(false);
+  const [showCursorCostHelp, setShowCursorCostHelp] = useState(false);
 
   const backupInfo = useDatabaseBackupInfoQuery(undefined, true);
 
@@ -353,7 +526,11 @@ export function SettingsPage() {
           <div className="field">
             <SettingLabel
               htmlFor="local-api-key"
-              help="API key stored in this browser’s localStorage and sent as the Bearer token for dashboard requests. It is not the same as creating a server key until you paste one."
+              help={{
+                summary: 'Bearer API key stored in this browser for dashboard requests.',
+                detail:
+                  'Saved in this browser’s localStorage and sent as Authorization: Bearer on API calls. Create a server key under API keys, then paste it here. Clearing the local key does not revoke the server key. Until a valid key is saved, most Settings tabs cannot load.',
+              }}
             >
               Bearer key for this browser
             </SettingLabel>
@@ -484,7 +661,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="inactivity"
-                  help="Gap used when calculating active project time windows. Prompts and agent events within this many minutes stay in the same window; a longer gap starts a new one. Does not close editor sessions."
+                  help={{
+                    summary: 'Idle gap (minutes) used to split active project time windows.',
+                    detail:
+                      'When calculating active project time, prompts and agent events that fall within this many minutes of each other stay in the same activity window. A longer quiet gap starts a new window. This does not end editor sessions—use Session close after idle for that.',
+                  }}
                 >
                   Inactivity threshold (minutes)
                 </SettingLabel>
@@ -503,7 +684,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="session-close"
-                  help="If an open editor session for a workspace has had no prompt for longer than this, the next prompt ends that session at the last prompt time and opens a new one."
+                  help={{
+                    summary: 'Close an open editor session after this many idle minutes.',
+                    detail:
+                      'If an open editor session for a workspace has had no prompt for longer than this, the next prompt ends that session at the last prompt timestamp and starts a new session. Prevents one long-lived session from spanning unrelated work days.',
+                  }}
                 >
                   Session close after idle (minutes)
                 </SettingLabel>
@@ -522,7 +707,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="currency"
-                  help="Default ISO currency used for projects and cost displays when a project does not override it."
+                  help={{
+                    summary: 'Default ISO currency for projects and cost displays.',
+                    detail:
+                      'Used for new projects and cost formatting when a project does not set its own currency. Prefer a three-letter ISO code such as USD or EUR that matches how you bill clients.',
+                  }}
                 >
                   Default currency
                 </SettingLabel>
@@ -537,7 +726,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="sub-amount"
-                  help="Fixed monthly Cursor subscription amount to allocate across projects. Separate from usage-based (on-demand) spend."
+                  help={{
+                    summary: 'Monthly Cursor subscription fee to allocate across projects.',
+                    detail:
+                      'Fixed subscription amount (not usage-based on-demand spend). Combined with the allocation method below to share that fee across projects in cost reports. Set to 0 if you only track usage-based cost.',
+                  }}
                 >
                   Subscription fee
                 </SettingLabel>
@@ -556,7 +749,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="sub-currency"
-                  help="Currency for the subscription fee amount (usually the same as your Cursor billing currency)."
+                  help={{
+                    summary: 'Currency for the subscription fee amount.',
+                    detail:
+                      'Usually the same currency Cursor bills you in. Displayed with the subscription fee in allocation and billing reports; independent of each project’s default currency when they differ.',
+                  }}
                 >
                   Subscription currency
                 </SettingLabel>
@@ -573,7 +770,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="alloc-method"
-                  help="How the subscription fee is split across projects (for example by active project time or prompt count). NotAllocated skips subscription sharing."
+                  help={{
+                    summary: 'How the subscription fee is split across projects.',
+                    detail:
+                      'Chooses the weight used when sharing the monthly subscription fee—for example by active project time or prompt count. NotAllocated skips subscription sharing so only usage-based costs appear in project totals.',
+                  }}
                 >
                   Allocation method
                 </SettingLabel>
@@ -596,7 +797,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="retention"
-                  help="Optional automatic purge horizon in days. Leave empty for unlimited retention (no scheduled deletion)."
+                  help={{
+                    summary: 'Optional automatic purge horizon in days.',
+                    detail:
+                      'When set, older tracking data past this many days can be purged on a schedule. Leave empty for unlimited retention—nothing is deleted automatically. Choose a value that matches your audit and storage needs.',
+                  }}
                 >
                   Data retention (days)
                 </SettingLabel>
@@ -624,7 +829,11 @@ export function SettingsPage() {
             <div className="field">
               <SettingLabel
                 htmlFor="export-path"
-                help="Directory where CSV/JSON export files are written on the server. Must be an approved export path."
+                help={{
+                  summary: 'Server directory for CSV/JSON export files.',
+                  detail:
+                    'Absolute path on the tracking host where export jobs write files. Must be an approved export path configured for the server; relative or disallowed paths are rejected for security.',
+                }}
               >
                 Export path
               </SettingLabel>
@@ -637,7 +846,11 @@ export function SettingsPage() {
             </div>
 
             <SettingCheck
-              help="When an event’s repository is unknown, automatically create a project instead of leaving the event unallocated."
+              help={{
+                summary: 'Auto-create a project when an event’s repository is unknown.',
+                detail:
+                  'If ingest cannot match a workspace to an existing project, a new project is created from the repository identity instead of leaving the event unallocated. Turn off if you prefer to review and assign unknown repos manually.',
+              }}
               checked={draft.autoCreateProjects}
               onChange={(checked) =>
                 setDraft((d) => (d ? { ...d, autoCreateProjects: checked } : d))
@@ -647,7 +860,11 @@ export function SettingsPage() {
             </SettingCheck>
 
             <SettingCheck
-              help="Store a salted hash of prompt text for duplicate detection without keeping the raw prompt. Recommended when content storage is off."
+              help={{
+                summary: 'Store a salted hash of prompt text for duplicate detection.',
+                detail:
+                  'Keeps a one-way hash of prompt text so duplicates can be detected without storing the raw prompt. Recommended when Store prompt content is off. Hashing alone cannot reconstruct the original text.',
+              }}
               checked={draft.enablePromptHashing}
               onChange={(checked) =>
                 setDraft((d) => (d ? { ...d, enablePromptHashing: checked } : d))
@@ -657,7 +874,11 @@ export function SettingsPage() {
             </SettingCheck>
 
             <SettingCheck
-              help="When enabled (and encryption is configured), persist full prompt text encrypted at rest. Off by default for privacy. Hooks must also send content."
+              help={{
+                summary: 'Persist full prompt text encrypted at rest (privacy-sensitive).',
+                detail:
+                  'When on and encryption is configured, full prompt bodies are stored encrypted. Off by default. Editor hooks must also send content for anything to be saved. Prefer hashing-only unless you need full text for audits.',
+              }}
               checked={draft.storePromptContent}
               onChange={(checked) =>
                 setDraft((d) => (d ? { ...d, storePromptContent: checked } : d))
@@ -667,7 +888,11 @@ export function SettingsPage() {
             </SettingCheck>
 
             <SettingCheck
-              help="When enabled (and encryption is configured), persist agent response text encrypted at rest. Off by default for privacy."
+              help={{
+                summary: 'Persist agent response text encrypted at rest (privacy-sensitive).',
+                detail:
+                  'When on and encryption is configured, agent response bodies are stored encrypted. Off by default for privacy. Use only when you need response text for review or compliance; otherwise leave off and rely on token/cost metadata.',
+              }}
               checked={draft.storeResponseContent}
               onChange={(checked) =>
                 setDraft((d) => (d ? { ...d, storeResponseContent: checked } : d))
@@ -716,7 +941,12 @@ export function SettingsPage() {
 
           <Panel className="stack">
             <SettingCheck
-              help="When imported Cursor usage shows $0 (Included/Free), estimate spend from the rate card using token counts instead of treating cost as zero."
+              help={{
+                summary:
+                  'When imported cost is $0 (Included/Free), estimate spend from this rate card.',
+                detail:
+                  'Cursor usage exports often report $0 for Included / Free usage even when tokens were consumed. When this option is on, the dashboard and reports estimate that spend by multiplying attributed token counts by the rates in this table (including Auto and * fallbacks). Turn it off to keep reported $0 as zero cost. Save rates after changing this flag.',
+              }}
               checked={draft.estimateCostFromTokenRates}
               onChange={(checked) =>
                 setDraft((d) => (d ? { ...d, estimateCostFromTokenRates: checked } : d))
@@ -810,7 +1040,19 @@ export function SettingsPage() {
               >
                 Save rates
               </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                title="How Cursor calculates token cost"
+                onClick={() => setShowCursorCostHelp(true)}
+              >
+                Help
+              </button>
             </div>
+
+            {showCursorCostHelp ? (
+              <CursorCostHelpDialog onClose={() => setShowCursorCostHelp(false)} />
+            ) : null}
 
             {fetchCursorRates.isError ? (
               <ErrorState
@@ -837,56 +1079,95 @@ export function SettingsPage() {
                   <tr>
                     <th
                       className="setting-label"
-                      title="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches."
+                      title="Model name from Cursor usage exports (* = fallback)."
                     >
                       <span className="setting-label-text">
                         Model{' '}
-                        <SettingHelp text="Model name as it appears in Cursor usage exports. Use * as the fallback when no model matches." />
+                        <SettingHelp
+                          align="start"
+                          help={{
+                            summary: 'Model name from Cursor usage exports (* = fallback).',
+                            detail:
+                              'Enter the model string exactly as it appears in Cursor usage CSV/JSON exports (for example Auto or a Claude/GPT SKU). Matching is case-insensitive after normalization. Use * as the catch-all rate when no other row matches. Get Rates pulls the published Cursor Models & Pricing table and maps Auto Cost to Auto/* when present.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1,000,000 input tokens in your currency units."
+                      title="Price per 1M input tokens."
                     >
                       <span className="setting-label-text">
                         Input / 1M{' '}
-                        <SettingHelp text="Price per 1,000,000 input tokens in your currency units." />
+                        <SettingHelp
+                          align="start"
+                          help={{
+                            summary: 'Price per 1M input tokens.',
+                            detail:
+                              'Input tokens are the prompt and context the model reads before generating a reply (your message, attached files, and conversation history sent with the request). This rate is currency units per 1,000,000 of those tokens—same idea as Cursor’s Input column on Models & Pricing. Used when estimating Included/Free spend from token counts.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1,000,000 cache-write tokens."
+                      title="Price per 1M cache-write tokens."
                     >
                       <span className="setting-label-text">
                         Cache write / 1M{' '}
-                        <SettingHelp text="Price per 1,000,000 cache-write tokens." />
+                        <SettingHelp
+                          help={{
+                            summary: 'Price per 1M cache-write tokens.',
+                            detail:
+                              'Cache write tokens are billed when new prompt/context is written into the provider’s prompt cache for later reuse (first-time cache fill). Currency units per 1,000,000 of those tokens. Leave blank or 0 if you do not track cache writes; Get Rates fills this from Cursor docs when available.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1,000,000 cache-read tokens."
+                      title="Price per 1M cache-read tokens."
                     >
                       <span className="setting-label-text">
                         Cache read / 1M{' '}
-                        <SettingHelp text="Price per 1,000,000 cache-read tokens." />
+                        <SettingHelp
+                          help={{
+                            summary: 'Price per 1M cache-read tokens.',
+                            detail:
+                              'Cache read tokens are previously cached prompt/context that the model reuses instead of re-processing as fresh input. Usually cheaper than Input. Currency units per 1,000,000 of those tokens; used in calculated cost when usage rows include cached input volume.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1,000,000 output tokens in your currency units."
+                      title="Price per 1M output tokens."
                     >
                       <span className="setting-label-text">
                         Output / 1M{' '}
-                        <SettingHelp text="Price per 1,000,000 output tokens in your currency units." />
+                        <SettingHelp
+                          help={{
+                            summary: 'Price per 1M output tokens.',
+                            detail:
+                              'Output tokens are the model’s generated reply text (completions streamed back to you). Currency units per 1,000,000 of those tokens—same idea as Cursor’s Output column. Combined with input and cache rates when estimating cost from token counts.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th
                       className="setting-label"
-                      title="Optional price per 1,000,000 reasoning tokens when the export includes them."
+                      title="Optional price per 1M reasoning tokens."
                     >
                       <span className="setting-label-text">
                         Reasoning / 1M{' '}
-                        <SettingHelp text="Optional price per 1,000,000 reasoning tokens when the export includes them." />
+                        <SettingHelp
+                          align="end"
+                          help={{
+                            summary: 'Optional price per 1M reasoning tokens.',
+                            detail:
+                              'Reasoning tokens are internal “thinking” tokens some models bill separately from the visible reply (chain-of-thought / extended thinking). They are not the text you see in the chat. Leave empty if Cursor does not report or bill reasoning for that model; calculated cost then ignores this column.',
+                          }}
+                        />
                       </span>
                     </th>
                     <th />
@@ -1017,7 +1298,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="new-category-name"
-                  help="Display name for a new timesheet category (for example Work or Meetings)."
+                  help={{
+                    summary: 'Display name for a new timesheet category.',
+                    detail:
+                      'Shown on timesheet entries and filters (for example Work or Meetings). Seeded defaults already include Work and Meetings; add custom names for how you classify time. Deleting a category in use deactivates it so history stays intact.',
+                  }}
                 >
                   New category
                 </SettingLabel>
@@ -1271,7 +1556,11 @@ export function SettingsPage() {
               <div className="field">
                 <SettingLabel
                   htmlFor="new-key-name"
-                  help="Friendly name for a new server API key. The plaintext key is shown once after creation; store it securely."
+                  help={{
+                    summary: 'Friendly name for a new server API key.',
+                    detail:
+                      'Label only—used to identify the key in the list. After creation the plaintext secret is shown once; copy it into Bearer key for this browser or your client. Revoking a key invalidates it immediately; clearing the local browser key does not revoke the server key.',
+                  }}
                 >
                   Create server API key
                 </SettingLabel>
@@ -1423,7 +1712,13 @@ export function SettingsPage() {
                   title="Live SQLite database file used by the tracking host."
                 >
                   Live database{' '}
-                  <SettingHelp text="Live SQLite database file used by the tracking host." />
+                  <SettingHelp
+                    help={{
+                      summary: 'Live SQLite database file used by the tracking host.',
+                      detail:
+                        'Absolute path of the active SQLite file the server is reading and writing. Backups copy from this file; restore replaces it after a confirmation. Not used when the provider is PostgreSQL.',
+                    }}
+                  />
                 </div>
                 <strong className="mono">{backupInfo.data.databasePath || '—'}</strong>
               </div>
@@ -1434,7 +1729,13 @@ export function SettingsPage() {
                   title="Last folder selected for backups. Backup now opens a folder picker defaulting here."
                 >
                   Backup folder{' '}
-                  <SettingHelp text="Last folder selected for backups. Backup now opens a folder picker defaulting to Documents\MCP Track Tokens, then remembers your choice for Restore." />
+                  <SettingHelp
+                    help={{
+                      summary: 'Last folder selected for backups (picker default).',
+                      detail:
+                        'Backup now opens a folder picker that defaults to Documents\\MCP Track Tokens (or your last choice). That folder is remembered for Restore so you can pick a .db backup from the same place. Only available when the database provider is Sqlite.',
+                    }}
+                  />
                 </div>
                 <strong className="mono">
                   {backupFolderLabel || backupInfo.data.defaultFolder || 'Documents\\MCP Track Tokens'}
@@ -1655,24 +1956,54 @@ export function SettingsPage() {
           <Panel className="stack">
             <div className="field-row">
               <div>
-                <div className="label setting-label" title="Filesystem path of the tracking database on the server.">
-                  Database <SettingHelp text="Filesystem path of the tracking database on the server." />
+                <div
+                  className="label setting-label"
+                  title="Filesystem path of the tracking database on the server."
+                >
+                  Database{' '}
+                  <SettingHelp
+                    help={{
+                      summary: 'Filesystem path of the tracking database on the server.',
+                      detail:
+                        'Where the tracking host stores data. For Sqlite this is a .db file path; for PostgreSQL it may reflect the configured connection target. Useful when diagnosing disk location or Docker volume mounts.',
+                    }}
+                  />
                 </div>
                 <strong className="mono">
                   {status.data?.databasePath ?? settings.data?.databasePath}
                 </strong>
               </div>
               <div>
-                <div className="label setting-label" title="Database engine in use (Sqlite or PostgreSQL).">
-                  Provider <SettingHelp text="Database engine in use (Sqlite or PostgreSQL)." />
+                <div
+                  className="label setting-label"
+                  title="Database engine in use (Sqlite or PostgreSQL)."
+                >
+                  Provider{' '}
+                  <SettingHelp
+                    help={{
+                      summary: 'Database engine in use (Sqlite or PostgreSQL).',
+                      detail:
+                        'Sqlite is typical for local/tray installs and enables file backup/restore. PostgreSQL is for shared or hosted deployments; backup/restore UI applies only to Sqlite.',
+                    }}
+                  />
                 </div>
                 <strong>
                   {status.data?.databaseProvider ?? settings.data?.databaseProvider}
                 </strong>
               </div>
               <div>
-                <div className="label setting-label" title="Whether the server can open and query the database successfully.">
-                  DB health <SettingHelp text="Whether the server can open and query the database successfully." />
+                <div
+                  className="label setting-label"
+                  title="Whether the server can open and query the database successfully."
+                >
+                  DB health{' '}
+                  <SettingHelp
+                    help={{
+                      summary: 'Whether the server can open and query the database.',
+                      detail:
+                        'OK means the API opened a connection and ran a simple health check. Check required usually means a path, permissions, or connection-string problem—inspect server logs before changing other settings.',
+                    }}
+                  />
                 </div>
                 <StatusBadge
                   label={status.data?.isHealthy ? 'OK' : 'Check required'}
@@ -1685,10 +2016,16 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Detected via the hooks directory on the server host, or inferred from recent Cursor ingest when the API runs in Docker and cannot see your user ~/.cursor folder."
+                  title="Detected via hooks on disk, or inferred from recent Cursor ingest."
                 >
                   Cursor hooks{' '}
-                  <SettingHelp text="Detected via the hooks directory on the server host, or inferred from recent Cursor ingest when the API runs in Docker and cannot see your user ~/.cursor folder." />
+                  <SettingHelp
+                    help={{
+                      summary: 'Detected via hooks on disk, or inferred from recent Cursor ingest.',
+                      detail:
+                        'Configured means the hooks directory was found on the server host. Active (inferred) means recent Cursor ingest arrived even though the API cannot see your user ~/.cursor folder (common in Docker). Unknown means neither disk config nor recent ingest was found.',
+                    }}
+                  />
                 </div>
                 <StatusBadge
                   label={
@@ -1704,8 +2041,18 @@ export function SettingsPage() {
                 />
               </div>
               <div>
-                <div className="label setting-label" title="Whether the VS Code extension for MCP Track Tokens was detected from the server’s perspective.">
-                  VS Code extension <SettingHelp text="Whether the VS Code extension for MCP Track Tokens was detected from the server’s perspective." />
+                <div
+                  className="label setting-label"
+                  title="Whether the VS Code extension was detected from the server."
+                >
+                  VS Code extension{' '}
+                  <SettingHelp
+                    help={{
+                      summary: 'Whether the VS Code extension was detected from the server.',
+                      detail:
+                        'Reflects detection from the tracking host’s viewpoint (extension install paths or related signals). Unknown does not always mean missing—remote APIs often cannot see your local editor extensions.',
+                    }}
+                  />
                 </div>
                 <StatusBadge
                   label={
@@ -1717,8 +2064,18 @@ export function SettingsPage() {
                 />
               </div>
               <div>
-                <div className="label setting-label" title="Whether MCP (Model Context Protocol) tooling for this server appears configured.">
-                  MCP <SettingHelp text="Whether MCP (Model Context Protocol) tooling for this server appears configured." />
+                <div
+                  className="label setting-label"
+                  title="Whether MCP tooling for this server appears configured."
+                >
+                  MCP{' '}
+                  <SettingHelp
+                    help={{
+                      summary: 'Whether MCP tooling for this server appears configured.',
+                      detail:
+                        'Checks whether Model Context Protocol client config for MCP Track Tokens looks present from the server. If you use MCP only on another machine, this status may stay Unknown even when tools work locally.',
+                    }}
+                  />
                 </div>
                 <StatusBadge
                   label={

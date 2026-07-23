@@ -198,10 +198,17 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
             args.Add(nameof(ActivityEventType.PromptSubmitted));
         }
-        else if (!string.IsNullOrWhiteSpace(filter.EventType))
+
+        if (!string.IsNullOrWhiteSpace(filter.EventType) && !filter.PromptSubmittedOnly)
         {
             where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
             args.Add(filter.EventType.Trim());
+        }
+        else if (!string.IsNullOrWhiteSpace(filter.EventType) && filter.PromptSubmittedOnly
+                 && !string.Equals(filter.EventType.Trim(), nameof(ActivityEventType.PromptSubmitted), StringComparison.Ordinal))
+        {
+            // Prompt list is PromptSubmitted-only; a different type filter matches nothing.
+            where.Append(" AND 1=0");
         }
 
         if (!string.IsNullOrWhiteSpace(filter.Status))
