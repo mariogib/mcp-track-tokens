@@ -4,52 +4,52 @@
   --font-sans: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 
-  /* Cool silver surfaces with midnight navy sidebar — matches LunarQ icon. */
-  --bg-base: #eef2f7;
-  --bg-elevated: #f7f9fc;
-  --bg-muted: #dde5f0;
+  /* Cool silver field + white cards — higher contrast for readability. */
+  --bg-base: #dfe7f1;
+  --bg-elevated: #ffffff;
+  --bg-muted: #c9d5e4;
   --bg-sidebar: #05070a;
   --bg-sidebar-hover: #121826;
-  --bg-overlay: rgba(5, 7, 10, 0.48);
+  --bg-overlay: rgba(5, 7, 10, 0.52);
 
-  --text-primary: #0c121c;
-  --text-secondary: #3d4a5c;
-  --text-inverse: #e8eef8;
-  --text-muted: #66768c;
+  --text-primary: #070b12;
+  --text-secondary: #1c2533;
+  --text-inverse: #f4f7fb;
+  --text-muted: #2a3444;
 
-  --border: #c8d2e0;
-  --border-strong: #9aabc0;
+  --border: #7f91a8;
+  --border-strong: #5a6d84;
 
-  --accent: #3d5f8a;
-  --accent-hover: #2f4c72;
-  --accent-soft: rgba(61, 95, 138, 0.14);
-  --accent-contrast: #f7f9fc;
+  --accent: #2f4f78;
+  --accent-hover: #243d5e;
+  --accent-soft: rgba(47, 79, 120, 0.16);
+  --accent-contrast: #ffffff;
 
-  --success: #2f7d5a;
-  --success-soft: rgba(47, 125, 90, 0.14);
-  --warning: #9a6b12;
-  --warning-soft: rgba(154, 107, 18, 0.16);
-  --danger: #a33b2d;
-  --danger-soft: rgba(163, 59, 45, 0.14);
-  --info: #4a6f98;
-  --info-soft: rgba(74, 111, 152, 0.14);
+  --success: #1f6b4a;
+  --success-soft: rgba(31, 107, 74, 0.16);
+  --warning: #8a5a0a;
+  --warning-soft: rgba(138, 90, 10, 0.18);
+  --danger: #8f2f24;
+  --danger-soft: rgba(143, 47, 36, 0.16);
+  --info: #2f4f78;
+  --info-soft: rgba(47, 79, 120, 0.16);
 
-  --shadow-sm: 0 1px 2px rgba(12, 18, 28, 0.06);
-  --shadow-md: 0 8px 24px rgba(12, 18, 28, 0.1);
+  --shadow-sm: 0 1px 2px rgba(7, 11, 18, 0.1);
+  --shadow-md: 0 10px 28px rgba(7, 11, 18, 0.14);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 16px;
 
-  --chart-1: #3d5f8a;
-  --chart-2: #6b849f;
-  --chart-3: #889bb3;
-  --chart-4: #a33b2d;
-  --chart-5: #4a7a68;
+  --chart-1: #2f4f78;
+  --chart-2: #4a6588;
+  --chart-3: #5f728a;
+  --chart-4: #8f2f24;
+  --chart-5: #1f6b4a;
 
   --atmosphere:
-    radial-gradient(1100px 560px at 8% -8%, rgba(136, 155, 179, 0.22), transparent 55%),
-    radial-gradient(900px 480px at 100% 0%, rgba(61, 95, 138, 0.14), transparent 52%),
-    linear-gradient(180deg, #f4f7fb 0%, #e8eef6 100%);
+    radial-gradient(1100px 560px at 8% -8%, rgba(95, 114, 138, 0.28), transparent 55%),
+    radial-gradient(900px 480px at 100% 0%, rgba(47, 79, 120, 0.16), transparent 52%),
+    linear-gradient(180deg, #e8eef6 0%, #d5deea 100%);
 
   /* Bridge app tokens → @lunarq/frontend-shared (ThemeButton may override). */
   --bg-color: var(--bg-base);

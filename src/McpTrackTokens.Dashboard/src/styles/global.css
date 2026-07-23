@@ -84,7 +84,7 @@ p {
 
 .dashboard-topbar-title p {
   margin: 0.15rem 0 0;
-  color: var(--text-muted, var(--text-secondary));
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -501,10 +501,11 @@ table.data td.cell-wrap {
 
 table.data th {
   font-size: 0.78rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--bg-muted) 70%, var(--bg-elevated));
+  color: var(--text-primary);
+  background: var(--bg-muted);
   position: sticky;
   top: 0;
 }
@@ -620,22 +621,25 @@ table.data.token-rates td:last-child {
 .tab {
   border: none;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   padding: 0.55rem 0.8rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 550;
+  opacity: 0.78;
 }
 
 .tab:hover {
   background: var(--bg-muted);
   color: var(--text-primary);
+  opacity: 1;
 }
 
 .tab.active {
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 650;
+  opacity: 1;
 }
 
 .mcp-copy-row {
@@ -698,105 +702,6 @@ table.data.token-rates td:last-child {
   line-height: 1.4;
   color: var(--text-secondary);
   white-space: normal;
-}
-
-.chart-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 0.9rem;
-}
-
-.chart-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem 0.5rem;
-  min-height: 280px;
-  color: inherit;
-}
-
-.chart-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.chart-card h3 {
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-.chart-card-open {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  color: var(--accent-contrast, #fff);
-  background: var(--primary-color, var(--accent));
-  border: 1px solid var(--primary-color, var(--accent));
-  border-radius: 999px;
-  padding: 0.28rem 0.7rem;
-  line-height: 1.2;
-}
-
-.chart-card-open-arrow {
-  font-size: 0.95em;
-  line-height: 1;
-}
-
-.chart-card--link {
-  cursor: pointer;
-  border-color: color-mix(
-    in srgb,
-    var(--primary-color, var(--accent)) 45%,
-    var(--border-color, var(--border))
-  );
-  background: color-mix(
-    in srgb,
-    var(--card-bg, var(--bg-elevated)) 94%,
-    var(--primary-color, var(--accent))
-  );
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.chart-card--link h3 {
-  color: var(--primary-color, var(--accent));
-  text-decoration: underline;
-  text-decoration-color: color-mix(
-    in srgb,
-    var(--primary-color, var(--accent)) 45%,
-    transparent
-  );
-  text-underline-offset: 0.18em;
-}
-
-.chart-card--link:hover,
-.chart-card--link:focus-visible {
-  border-color: var(--primary-color, var(--accent));
-  background: color-mix(
-    in srgb,
-    var(--card-bg, var(--bg-elevated)) 86%,
-    var(--primary-color, var(--accent))
-  );
-  outline: none;
-}
-
-.chart-card--link:hover h3,
-.chart-card--link:focus-visible h3 {
-  text-decoration-color: var(--primary-color, var(--accent));
-}
-
-.chart-card--link:hover .chart-card-open,
-.chart-card--link:focus-visible .chart-card-open {
-  background: var(--secondary-color, var(--accent-hover));
-  border-color: var(--secondary-color, var(--accent-hover));
 }
 
 .chart-detail-filters {
@@ -892,7 +797,7 @@ table.data.token-rates td:last-child {
 
 .section-meta {
   margin: 0.35rem 0 1rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
