@@ -84,10 +84,6 @@ export function AppLayout() {
       }
       userName="Local"
       userEmail={activeProject ? `Active: ${activeProject}` : 'No active project'}
-      onSignOut={() => {
-        setStoredApiKey(null);
-        void navigate('/settings');
-      }}
       topBarContent={
         <div className="dashboard-topbar">
           <div className="dashboard-topbar-title">

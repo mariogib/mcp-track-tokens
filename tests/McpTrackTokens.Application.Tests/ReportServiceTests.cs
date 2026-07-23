@@ -88,6 +88,42 @@ public sealed class ReportServiceTests
     }
 
     [Fact]
+    public async Task GetActivitySummaryAsync_uses_completed_prompt_duration_when_agent_row_has_none()
+    {
+        var projectId = Guid.NewGuid();
+        var from = DateTimeOffset.Parse("2026-07-17T08:00:00Z");
+        var to = DateTimeOffset.Parse("2026-07-17T12:00:00Z");
+        var started = from.AddMinutes(5);
+
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            started,
+            projectId);
+        prompt.ApplyCompletion(ActivityStatus.Completed, started.AddMinutes(3));
+
+        var events = new[]
+        {
+            prompt,
+            PromptActivityEvent.Create(
+                ActivityEventType.AgentCompleted,
+                EditorType.Cursor,
+                started.AddMinutes(3),
+                projectId),
+        };
+
+        _events.ListAsync(from, to, projectId, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
+            .Returns(events);
+        _sessions.ListAsync(projectId, from, to, Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var sut = CreateSut();
+        var summary = await sut.GetActivitySummaryAsync(projectId, from, to);
+
+        summary.AgentDurationMilliseconds.Should().Be(180_000);
+    }
+
+    [Fact]
     public async Task GetProjectActivityAsync_exposes_both_metrics_separately()
     {
         var project = Project.Create("Demo", "demo");

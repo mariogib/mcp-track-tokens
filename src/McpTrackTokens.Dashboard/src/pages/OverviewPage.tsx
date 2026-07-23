@@ -29,6 +29,7 @@ import {
   formatDurationSeconds,
   formatNumber,
   lastDaysRange,
+  millisecondsToMinutesExact,
 } from '../utils/format';
 
 export function OverviewPage() {
@@ -112,7 +113,8 @@ export function OverviewPage() {
     day: formatDay(row.day),
     prompts: row.promptCount,
     activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
+    agentDurationMilliseconds: row.agentDurationMilliseconds,
+    agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
     tokens: row.totalTokens ?? 0,
   }));
 

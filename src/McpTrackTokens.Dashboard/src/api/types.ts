@@ -627,6 +627,42 @@ export interface PromptEventDto {
   hasLinkedUsage?: boolean;
 }
 
+export interface PagedResult<T> {
+  items: T[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+}
+
+export interface PromptFacetsDto {
+  models: string[];
+  branches: string[];
+  eventTypes: string[];
+  days: string[];
+}
+
+export interface PromptBrowseQuery {
+  fromUtc: string;
+  toUtc: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+  eventType?: string;
+  model?: string;
+  branch?: string;
+}
+
+export interface TimesheetBrowseQuery {
+  projectId?: string;
+  fromUtc?: string;
+  toUtc?: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  openClosed?: string;
+}
+
 export interface SessionDto {
   id: string;
   projectId?: string | null;

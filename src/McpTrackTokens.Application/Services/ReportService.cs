@@ -5,6 +5,7 @@ using McpTrackTokens.Application.Options;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 using McpTrackTokens.Domain.Exceptions;
+using McpTrackTokens.Domain.Services;
 
 namespace McpTrackTokens.Application.Services;
 
@@ -1217,11 +1218,7 @@ public sealed class ReportService : IReportService
     }
 
     private static long SumAgentDuration(IEnumerable<PromptActivityEvent> events)
-        => events
-            .Where(e => e.EventType is ActivityEventType.AgentCompleted
-                or ActivityEventType.AgentFailed
-                or ActivityEventType.AgentCancelled)
-            .Sum(e => e.DurationMilliseconds ?? 0);
+        => AgentDurationCalculator.SumMilliseconds(events);
 
     private static ProjectDto MapProject(Project project) => new()
     {

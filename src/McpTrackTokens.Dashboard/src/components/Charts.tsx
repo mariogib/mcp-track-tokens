@@ -1,5 +1,3 @@
-import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Bar,
   BarChart,
@@ -15,7 +13,8 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Card } from '../shared/adminUi';
+
+export { ChartCard } from '../shared/adminUi';
 
 const COLORS = [
   'var(--chart-1)',
@@ -34,45 +33,6 @@ const tooltipContentStyle = {
 
 const tooltipLabelStyle = { color: 'var(--text-primary)' };
 const tooltipItemStyle = { color: 'var(--text-primary)' };
-
-export function ChartCard({
-  title,
-  children,
-  to,
-  height = 220,
-}: {
-  title: string;
-  children: ReactNode;
-  to?: string;
-  height?: number;
-}) {
-  const navigate = useNavigate();
-
-  return (
-    <Card
-      className={`chart-card${to ? ' chart-card--link' : ''}`}
-      onClick={to ? () => void navigate(to) : undefined}
-    >
-      <div className="chart-card-header">
-        <h3>{title}</h3>
-        {to ? (
-          <span className="chart-card-open">
-            Open analysis
-            <span className="chart-card-open-arrow" aria-hidden="true">
-              →
-            </span>
-          </span>
-        ) : null}
-      </div>
-      <div
-        style={{ width: '100%', height }}
-        onClick={to ? (event) => event.stopPropagation() : undefined}
-      >
-        {children}
-      </div>
-    </Card>
-  );
-}
 
 type SeriesPoint = Record<string, string | number>;
 

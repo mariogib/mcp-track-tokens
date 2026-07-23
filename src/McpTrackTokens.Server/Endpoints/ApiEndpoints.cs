@@ -46,6 +46,7 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/timesheet-entries", GetProjectTimesheetEntriesAsync);
         api.MapPost("/projects/{id:guid}/timesheet-entries", CreateProjectTimesheetEntryAsync);
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
+        api.MapGet("/projects/{id:guid}/prompts/facets", GetProjectPromptFacetsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
         api.MapGet("/sessions", GetSessionsAsync);
@@ -681,10 +682,34 @@ public static class ApiEndpoints
         ITimesheetManagementService timesheets,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? openClosed,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (pageIndex is not null || pageSize is not null)
+            {
+                var index = pageIndex ?? 0;
+                var size = Math.Clamp(pageSize ?? 25, 1, 100);
+                var paged = await timesheets.ListPagedAsync(
+                        new TimesheetEntryPageFilter
+                        {
+                            ProjectId = id,
+                            FromUtc = fromUtc,
+                            ToUtc = toUtc,
+                            Search = search,
+                            OpenClosed = openClosed
+                        },
+                        index,
+                        size,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Ok(paged);
+            }
+
             var list = await timesheets.ListForProjectAsync(id, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(list);
@@ -700,10 +725,34 @@ public static class ApiEndpoints
         Guid? projectId,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? openClosed,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (pageIndex is not null || pageSize is not null)
+            {
+                var index = pageIndex ?? 0;
+                var size = Math.Clamp(pageSize ?? 25, 1, 100);
+                var paged = await timesheets.ListPagedAsync(
+                        new TimesheetEntryPageFilter
+                        {
+                            ProjectId = projectId,
+                            FromUtc = fromUtc,
+                            ToUtc = toUtc,
+                            Search = search,
+                            OpenClosed = openClosed
+                        },
+                        index,
+                        size,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Ok(paged);
+            }
+
             var list = await timesheets.ListAsync(projectId, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(list);
@@ -865,6 +914,13 @@ public static class ApiEndpoints
         IOptions<TrackingOptions> trackingOptions,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
+        string? eventType,
+        string? model,
+        string? branch,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -874,12 +930,91 @@ public static class ApiEndpoints
         }
 
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new ActivityEventPageFilter
+            {
+                ProjectId = id,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status,
+                EventType = eventType,
+                Model = model,
+                Branch = branch,
+                PromptSubmittedOnly = true
+            };
+            var totalCount = await events.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var prompts = await events
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            var items = await MapPromptsWithUsageAsync(
+                    prompts,
+                    attributions,
+                    usage,
+                    trackingOptions,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = items,
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await events.ListAsync(from, to, id, unallocatedOnly: null, cancellationToken)
             .ConfigureAwait(false);
-        var prompts = list
+        var allPrompts = list
             .Where(e => e.EventType == ActivityEventType.PromptSubmitted)
             .OrderByDescending(e => e.TimestampUtc)
             .ToList();
+        var mapped = await MapPromptsWithUsageAsync(
+                allPrompts,
+                attributions,
+                usage,
+                trackingOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(mapped);
+    }
+
+    private static async Task<IResult> GetProjectPromptFacetsAsync(
+        Guid id,
+        IProjectRepository projects,
+        IActivityEventRepository events,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (project is null)
+        {
+            return Results.NotFound();
+        }
+
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var facets = await events
+            .GetPromptFacetsAsync(id, from, to, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(facets);
+    }
+
+    private static async Task<IReadOnlyList<object>> MapPromptsWithUsageAsync(
+        IReadOnlyList<PromptActivityEvent> prompts,
+        IUsageAttributionRepository attributions,
+        IExternalUsageRepository usage,
+        IOptions<TrackingOptions> trackingOptions,
+        CancellationToken cancellationToken)
+    {
+        if (prompts.Count == 0)
+        {
+            return [];
+        }
 
         var linked = await attributions
             .ListByActivityEventIdsAsync(prompts.Select(p => p.Id).ToList(), cancellationToken)
@@ -942,10 +1077,10 @@ public static class ApiEndpoints
                         Linked: true);
                 });
 
-        return Results.Ok(prompts.Select(e =>
+        return prompts.Select(e =>
         {
             usageByPrompt.TryGetValue(e.Id, out var linkedUsage);
-            return new
+            return (object)new
             {
                 e.Id,
                 e.TimestampUtc,
@@ -962,7 +1097,7 @@ public static class ApiEndpoints
                 linkedUsageCount = linkedUsage.Linked ? linkedUsage.Count : 0,
                 hasLinkedUsage = linkedUsage.Linked
             };
-        }).ToList());
+        }).ToList();
     }
 
     private static object ToPromptDto(PromptActivityEvent e) => new

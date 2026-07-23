@@ -175,10 +175,10 @@ public static class TrackingTools
     }
 
     /// <summary>
-    /// Ends the open timesheet entry for the current Cursor project. Defaults end time to now
-    /// and can append a note to the existing notes.
+    /// Ends the open timesheet entry for the current Cursor project. Defaults end time from the
+    /// last ended editor session on the timesheet start day (UTC), otherwise now, and can append a note.
     /// </summary>
-    [McpServerTool(Name = "end_timesheet"), Description("Ends the open timesheet entry for the current Cursor project. Defaults end time to now and can append a note.")]
+    [McpServerTool(Name = "end_timesheet"), Description("Ends the open timesheet entry for the current Cursor project. When end time is omitted, uses the last ended editor session for that project on the timesheet start day; otherwise defaults to now. Can append a note.")]
     public static async Task<string> EndTimesheet(
         ITimesheetManagementService timesheets,
         [Description("Optional note appended to the existing timesheet notes")] string? appendNotes = null,

@@ -10,17 +10,17 @@ import {
   useProjectActivityQuery,
   useProjectCostQuery,
   useProjectTokenCostQuery,
-  useProjectPromptsQuery,
+  useProjectPromptFacetsQuery,
   useProjectQuery,
   useProjectSessionsQuery,
-  useProjectTimesheetQuery,
   useProjectUsageQuery,
   useTimesheetCategoriesQuery,
   useUpdateProjectMutation,
   useUpdateSessionMutation,
   useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
-import type { SessionDto, TimesheetEntryDto } from '../api/types';
+import { api } from '../api/client';
+import type { PromptEventDto, SessionDto, TimesheetEntryDto } from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
@@ -30,6 +30,7 @@ import {
 import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
+import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
 import { MetricCard, Panel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
@@ -44,7 +45,36 @@ import {
   formatDurationSeconds,
   formatNumber,
   lastDaysRange,
+  millisecondsToMinutesExact,
 } from '../utils/format';
+
+const PROMPT_TIME_CUSTOM = '__custom__';
+
+function dayBoundsUtc(dayKey: string): { fromUtc: string; toUtc: string } {
+  return {
+    fromUtc: `${dayKey}T00:00:00.000Z`,
+    toUtc: `${dayKey}T23:59:59.999Z`,
+  };
+}
+
+function resolvePromptBrowseRange(
+  baseFromUtc: string,
+  baseToUtc: string,
+  dayFilter: string,
+  customFrom: string,
+  customTo: string,
+): { fromUtc: string; toUtc: string } {
+  if (dayFilter === PROMPT_TIME_CUSTOM) {
+    return {
+      fromUtc: customFrom ? `${customFrom}T00:00:00.000Z` : baseFromUtc,
+      toUtc: customTo ? `${customTo}T23:59:59.999Z` : baseToUtc,
+    };
+  }
+  if (dayFilter) {
+    return dayBoundsUtc(dayFilter);
+  }
+  return { fromUtc: baseFromUtc, toUtc: baseToUtc };
+}
 
 const TABS = [
   'Overview',
@@ -59,8 +89,6 @@ const TABS = [
   'Exports',
   'Settings',
 ] as const;
-
-const PROMPT_TIME_CUSTOM = '__custom__';
 
 const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
 const SESSION_EDITORS = ['Cursor', 'VisualStudioCode', 'Other'] as const;
@@ -175,12 +203,17 @@ export function ProjectDetailsPage() {
   const usage = useProjectUsageQuery(projectId, range.fromUtc, range.toUtc);
   const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
   const tokenCost = useProjectTokenCostQuery(projectId, range.fromUtc, range.toUtc);
-  const prompts = useProjectPromptsQuery(projectId, range.fromUtc, range.toUtc);
+  const promptFacets = useProjectPromptFacetsQuery(
+    projectId,
+    range.fromUtc,
+    range.toUtc,
+    tab === 'Prompts',
+  );
   // Omit toUtc so the server uses "now" on each fetch — a frozen page-load toUtc
   // was hiding newly created/edited sessions from the table.
   const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
-  const timesheet = useProjectTimesheetQuery(projectId, range.fromUtc);
   const timesheetCategories = useTimesheetCategoriesQuery(true);
+  const [timesheetBrowseEpoch, setTimesheetBrowseEpoch] = useState(0);
   const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
@@ -214,33 +247,30 @@ export function ProjectDetailsPage() {
   const [promptFromDate, setPromptFromDate] = useState('');
   const [promptToDate, setPromptToDate] = useState('');
 
-  const promptRows = useMemo(
-    () => (Array.isArray(prompts.data) ? prompts.data : []),
-    [prompts.data],
+  const promptBrowseRange = useMemo(
+    () =>
+      resolvePromptBrowseRange(
+        range.fromUtc,
+        range.toUtc,
+        promptDayFilter,
+        promptFromDate,
+        promptToDate,
+      ),
+    [promptDayFilter, promptFromDate, promptToDate, range.fromUtc, range.toUtc],
   );
 
   const promptFilterOptions = useMemo(() => {
-    const types = new Set<string>();
-    const models = new Set<string>();
-    const branches = new Set<string>();
-    const days = new Map<string, string>();
-    for (const prompt of promptRows) {
-      types.add(prompt.eventType?.trim() || '—');
-      models.add(prompt.model?.trim() || '—');
-      branches.add(prompt.branch?.trim() || '—');
-      const dayKey = prompt.timestampUtc?.slice(0, 10) ?? '';
-      if (dayKey) {
-        days.set(dayKey, formatDay(dayKey));
-      }
-    }
+    const facets = promptFacets.data;
     const sortLabels = (a: string, b: string) => a.localeCompare(b);
     return {
-      types: [...types].sort(sortLabels),
-      models: [...models].sort(sortLabels),
-      branches: [...branches].sort(sortLabels),
-      days: [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])),
+      types: [...(facets?.eventTypes ?? [])].sort(sortLabels),
+      models: [...(facets?.models ?? [])].sort(sortLabels),
+      branches: [...(facets?.branches ?? [])].sort(sortLabels),
+      days: [...(facets?.days ?? [])]
+        .map((dayKey) => [dayKey, formatDay(dayKey)] as const)
+        .sort((a, b) => b[0].localeCompare(a[0])),
     };
-  }, [promptRows]);
+  }, [promptFacets.data]);
 
   const onPromptTimeFilterChange = (value: string) => {
     setPromptDayFilter(value);
@@ -275,7 +305,8 @@ export function ProjectDetailsPage() {
     day: formatDay(row.day),
     prompts: row.promptCount,
     activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
+    agentDurationMilliseconds: row.agentDurationMilliseconds,
+    agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
     tokens: row.totalTokens ?? 0,
   }));
 
@@ -554,55 +585,44 @@ export function ProjectDetailsPage() {
         ))}
 
       {tab === 'Prompts' &&
-        (prompts.isLoading ? (
+        (promptFacets.isLoading ? (
           <LoadingState />
-        ) : prompts.error ? (
+        ) : promptFacets.error ? (
           <ErrorState
-            message={prompts.error instanceof Error ? prompts.error.message : 'Failed'}
+            message={
+              promptFacets.error instanceof Error ? promptFacets.error.message : 'Failed'
+            }
           />
         ) : (
-          <AnalysisDetailBrowse
+          <RemoteAnalysisDetailBrowse<PromptEventDto>
             heading="Prompts"
             searchPlaceholder="Search prompts..."
-            rows={promptRows}
-            getStatusValue={(p) => p.status?.trim() || 'None'}
-            getSearchText={(p) =>
-              [
-                formatDateTime(p.timestampUtc),
-                p.eventType,
-                p.editor,
-                p.model,
-                p.branch,
-                p.status,
-              ]
-                .filter(Boolean)
-                .join(' ')
+            filterKey={[
+              projectId,
+              promptBrowseRange.fromUtc,
+              promptBrowseRange.toUtc,
+              promptTypeFilter,
+              promptModelFilter,
+              promptBranchFilter,
+            ].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectPromptsPaged(
+                projectId!,
+                {
+                  fromUtc: promptBrowseRange.fromUtc,
+                  toUtc: promptBrowseRange.toUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  status: status || undefined,
+                  eventType: promptTypeFilter || undefined,
+                  model: promptModelFilter || undefined,
+                  branch: promptBranchFilter || undefined,
+                },
+                signal,
+              )
             }
-            filterRow={(p) => {
-              if (promptTypeFilter && (p.eventType?.trim() || '—') !== promptTypeFilter) {
-                return false;
-              }
-              if (promptModelFilter && (p.model?.trim() || '—') !== promptModelFilter) {
-                return false;
-              }
-              if (promptBranchFilter && (p.branch?.trim() || '—') !== promptBranchFilter) {
-                return false;
-              }
-              const dayKey = p.timestampUtc?.slice(0, 10) ?? '';
-              if (promptDayFilter === PROMPT_TIME_CUSTOM) {
-                if (promptFromDate && dayKey < promptFromDate) {
-                  return false;
-                }
-                if (promptToDate && dayKey > promptToDate) {
-                  return false;
-                }
-                return true;
-              }
-              if (promptDayFilter && dayKey !== promptDayFilter) {
-                return false;
-              }
-              return true;
-            }}
+            getStatusValue={(p) => p.status?.trim() || 'None'}
             filters={[
               {
                 id: 'prompt-type-filter',
@@ -1285,7 +1305,8 @@ export function ProjectDetailsPage() {
                   }
                   setTimesheetEditorOpen(false);
                   setEditingTimesheetId(null);
-                  await timesheet.refetch();
+                  await Promise.resolve();
+                  setTimesheetBrowseEpoch((value) => value + 1);
                 } catch (err) {
                   setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
                 }
@@ -1825,7 +1846,9 @@ export function ProjectDetailsPage() {
                 }
               />
               <p className="muted" style={{ marginTop: '0.75rem' }}>
-                <TextLink to="/settings">Edit Cursor token rates in Settings</TextLink>
+                <TextLink to="/settings?tab=cursor-token-costs">
+                  Edit Cursor token rates in Settings
+                </TextLink>
               </p>
             </>
           )}

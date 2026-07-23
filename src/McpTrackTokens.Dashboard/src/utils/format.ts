@@ -9,6 +9,19 @@ export function formatDurationMs(ms: number | null | undefined): string {
   return `${seconds}s`;
 }
 
+/** Exact minutes from accumulated milliseconds (no rounding — for charts / further math). */
+export function millisecondsToMinutesExact(ms: number | null | undefined): number {
+  return Math.max(0, ms ?? 0) / 60_000;
+}
+
+/**
+ * Whole minutes from accumulated milliseconds.
+ * Round only after the millisecond total is complete — do not round per-event or mid-sum.
+ */
+export function millisecondsToMinutes(ms: number | null | undefined): number {
+  return Math.round(millisecondsToMinutesExact(ms));
+}
+
 export function formatDurationSeconds(seconds: number | null | undefined): string {
   return formatDurationMs((seconds ?? 0) * 1000);
 }

@@ -1,3 +1,4 @@
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 
@@ -141,6 +142,22 @@ public interface ITimesheetEntryRepository
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Counts timesheet entries matching browse filters (SQL).
+    /// </summary>
+    Task<int> CountAsync(
+        TimesheetEntryPageFilter filter,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists a page of timesheet entries with SQL OFFSET/LIMIT.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetEntry>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<TimesheetEntry>> ListOpenByProjectAsync(
         Guid projectId,
         CancellationToken cancellationToken = default);
@@ -182,6 +199,31 @@ public interface IActivityEventRepository
         DateTimeOffset toUtc,
         Guid? projectId = null,
         bool? unallocatedOnly = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts activity events matching browse filters (SQL).
+    /// </summary>
+    Task<int> CountAsync(
+        ActivityEventPageFilter filter,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists a page of activity events with SQL OFFSET/LIMIT.
+    /// </summary>
+    Task<IReadOnlyList<PromptActivityEvent>> ListPagedAsync(
+        ActivityEventPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Distinct model / branch / event-type / day facets for a project range.
+    /// </summary>
+    Task<PromptFacetsDto> GetPromptFacetsAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PromptActivityEvent>> ListBySessionAsync(

@@ -62,11 +62,7 @@ public sealed class SubscriptionAllocationService : ISubscriptionAllocationServi
                 .ConfigureAwait(false);
 
             var promptCount = events.Count(e => e.EventType == Domain.Enums.ActivityEventType.PromptSubmitted);
-            var agentDuration = events
-                .Where(e => e.EventType is Domain.Enums.ActivityEventType.AgentCompleted
-                    or Domain.Enums.ActivityEventType.AgentFailed
-                    or Domain.Enums.ActivityEventType.AgentCancelled)
-                .Sum(e => e.DurationMilliseconds ?? 0);
+            var agentDuration = AgentDurationCalculator.SumMilliseconds(events);
 
             var sessions = await _sessions
                 .ListAsync(project.Id, fromUtc, toUtc, cancellationToken)

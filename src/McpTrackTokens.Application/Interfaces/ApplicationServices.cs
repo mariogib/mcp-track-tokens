@@ -175,6 +175,15 @@ public interface ITimesheetManagementService
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Paged timesheet list for dashboard browse (SQL OFFSET/LIMIT).
+    /// </summary>
+    Task<PagedResultDto<TimesheetEntryDto>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task<TimesheetEntryDto> CreateForProjectAsync(
         Guid projectId,
         CreateTimesheetEntryRequest request,

@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Infrastructure.Persistence;
@@ -50,6 +53,105 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
                  (to is null || e.StartedAtUtc <= to),
             items => items.OrderByDescending(e => e.StartedAtUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountAsync(
+        TimesheetEntryPageFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (fromSql, where, args) = BuildBrowseSql(filter, forCount: true);
+        var sql = "SELECT COUNT(*) AS \"Value\" " + fromSql + " " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetEntry>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
+        var (fromSql, where, args) = BuildBrowseSql(filter, forCount: false);
+        var sql = new StringBuilder()
+            .Append("SELECT e.* ")
+            .Append(fromSql)
+            .Append(' ')
+            .Append(where)
+            .Append(CultureInfo.InvariantCulture,
+                $" ORDER BY e.StartedAtUtc DESC, e.Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+        args.Add(take);
+        args.Add(skip);
+
+        return await _db.TimesheetEntries
+            .FromSqlRaw(sql.ToString(), args.ToArray())
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static (string FromSql, string WhereSql, List<object> Args) BuildBrowseSql(
+        TimesheetEntryPageFilter filter,
+        bool forCount)
+    {
+        var search = filter.Search?.Trim();
+        var needsJoin = !string.IsNullOrEmpty(search);
+        var fromSql = needsJoin
+            ? "FROM TimesheetEntries AS e LEFT JOIN Projects AS p ON p.Id = e.ProjectId LEFT JOIN TimesheetCategories AS c ON c.Id = e.CategoryId"
+            : "FROM TimesheetEntries AS e";
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (filter.ProjectId is Guid projectId)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND e.ProjectId = {{{args.Count}}}");
+            args.Add(projectId);
+        }
+
+        // Match ListAsync range semantics using unixepoch on TEXT DateTimeOffset columns.
+        if (filter.FromUtc is DateTimeOffset from)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("e.StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("e.EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (e.EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(from));
+        }
+
+        if (filter.ToUtc is DateTimeOffset to)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("e.StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(to));
+        }
+
+        var openClosed = filter.OpenClosed?.Trim().ToLowerInvariant();
+        if (openClosed == "open")
+        {
+            where.Append(" AND e.EndedAtUtc IS NULL");
+        }
+        else if (openClosed == "closed")
+        {
+            where.Append(" AND e.EndedAtUtc IS NOT NULL");
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = "%" + SqliteDateTimePaging.EscapeLike(search) + "%";
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (IFNULL(e.Notes,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(p.Name,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(c.Name,'') LIKE {{{args.Count}}} ESCAPE '\\')");
+            args.Add(pattern);
+        }
+
+        _ = forCount;
+        return (fromSql, where.ToString(), args);
     }
 
     /// <inheritdoc />

@@ -20,6 +20,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     private readonly IProjectDetectionService _projectDetection;
     private readonly ITimesheetEntryRepository _timesheets;
     private readonly ITimesheetCategoryRepository _categories;
+    private readonly ISessionRepository _sessions;
     private readonly IActivityEventRepository _events;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<CreateTimesheetEntryRequest> _createValidator;
@@ -32,6 +33,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         IProjectDetectionService projectDetection,
         ITimesheetEntryRepository timesheets,
         ITimesheetCategoryRepository categories,
+        ISessionRepository sessions,
         IActivityEventRepository events,
         IUnitOfWork unitOfWork,
         IValidator<CreateTimesheetEntryRequest> createValidator,
@@ -43,6 +45,7 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         _projectDetection = projectDetection;
         _timesheets = timesheets;
         _categories = categories;
+        _sessions = sessions;
         _events = events;
         _unitOfWork = unitOfWork;
         _createValidator = createValidator;
@@ -123,7 +126,11 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 "Timesheet entry is already ended.");
         }
 
-        entry.End(request.EndedAtUtc ?? DateTimeOffset.UtcNow, request.AppendNotes);
+        var fallback = (request.EndedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        var endedAt = request.EndedAtUtc is not null
+            ? fallback
+            : await ResolveCloseAtAsync(entry, fallback, cancellationToken).ConfigureAwait(false);
+        entry.End(endedAt, request.AppendNotes);
         await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return await ToDtoAsync(entry, cancellationToken).ConfigureAwait(false);
@@ -162,6 +169,52 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 categoryNames.GetValueOrDefault(e.CategoryId, string.Empty),
                 projectNames.GetValueOrDefault(e.ProjectId, string.Empty)))
             .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<PagedResultDto<TimesheetEntryDto>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (filter.ProjectId is Guid id)
+        {
+            _ = await _projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new EntityNotFoundException(nameof(Project), id);
+        }
+
+        var totalCount = await _timesheets.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+        var list = await _timesheets
+            .ListPagedAsync(filter, pageIndex, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+        var categoryNames = await LoadCategoryNamesAsync(list.Select(e => e.CategoryId), cancellationToken)
+            .ConfigureAwait(false);
+        var projectNames = await LoadProjectNamesAsync(list.Select(e => e.ProjectId), cancellationToken)
+            .ConfigureAwait(false);
+        var (skip, take) = NormalizePage(pageIndex, pageSize);
+        _ = skip;
+
+        return new PagedResultDto<TimesheetEntryDto>
+        {
+            Items = list
+                .Select(e => ToDto(
+                    e,
+                    categoryNames.GetValueOrDefault(e.CategoryId, string.Empty),
+                    projectNames.GetValueOrDefault(e.ProjectId, string.Empty)))
+                .ToList(),
+            PageIndex = Math.Max(0, pageIndex),
+            PageSize = take,
+            TotalCount = totalCount
+        };
+    }
+
+    private static (int Skip, int Take) NormalizePage(int pageIndex, int pageSize)
+    {
+        var size = Math.Clamp(pageSize <= 0 ? 25 : pageSize, 1, 100);
+        var index = Math.Max(0, pageIndex);
+        return (index * size, size);
     }
 
     /// <inheritdoc />
@@ -258,23 +311,88 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     {
         var dayStart = new DateTimeOffset(startDay.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var dayEnd = dayStart.AddDays(1);
+
+        var sessionEnd = await TryGetLastSessionEndedAtOnDayAsync(projectId, startDay, cancellationToken)
+            .ConfigureAwait(false);
+        if (sessionEnd is DateTimeOffset fromSession)
+        {
+            return ClampCloseAt(open.StartedAtUtc, fromSession, dayEnd);
+        }
+
         var from = open.StartedAtUtc > dayStart ? open.StartedAtUtc : dayStart;
         var lastPrompt = await _events
             .GetLatestPromptTimestampForProjectAsync(projectId, from, dayEnd, cancellationToken)
             .ConfigureAwait(false);
 
         var closeAt = lastPrompt?.ToUniversalTime() ?? open.StartedAtUtc;
-        if (closeAt < open.StartedAtUtc)
+        return ClampCloseAt(open.StartedAtUtc, closeAt, dayEnd);
+    }
+
+    /// <summary>
+    /// When ending a timesheet without an explicit end time, use the last ended editor session
+    /// for the project on the timesheet's start calendar day (UTC); otherwise <paramref name="fallbackUtc"/>.
+    /// </summary>
+    private async Task<DateTimeOffset> ResolveCloseAtAsync(
+        TimesheetEntry entry,
+        DateTimeOffset fallbackUtc,
+        CancellationToken cancellationToken)
+    {
+        var startDay = DateOnly.FromDateTime(entry.StartedAtUtc.UtcDateTime);
+        var sessionEnd = await TryGetLastSessionEndedAtOnDayAsync(entry.ProjectId, startDay, cancellationToken)
+            .ConfigureAwait(false);
+        var closeAt = sessionEnd ?? fallbackUtc.ToUniversalTime();
+        if (closeAt < entry.StartedAtUtc)
         {
-            closeAt = open.StartedAtUtc;
+            closeAt = entry.StartedAtUtc;
         }
 
-        if (closeAt >= dayEnd)
-        {
-            closeAt = dayEnd.AddTicks(-1);
-            if (closeAt < open.StartedAtUtc)
+        return closeAt;
+    }
+
+    private async Task<DateTimeOffset?> TryGetLastSessionEndedAtOnDayAsync(
+        Guid projectId,
+        DateOnly day,
+        CancellationToken cancellationToken)
+    {
+        var dayStart = new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var dayEnd = dayStart.AddDays(1);
+        var sessions = await _sessions
+            .ListByProjectAsync(projectId, dayStart, dayEnd, cancellationToken)
+            .ConfigureAwait(false);
+
+        var lastEnded = sessions
+            .Where(s => s.EndedAtUtc is not null)
+            .Where(s =>
             {
-                closeAt = open.StartedAtUtc;
+                var startedOnDay = s.StartedAtUtc >= dayStart && s.StartedAtUtc < dayEnd;
+                var ended = s.EndedAtUtc!.Value.ToUniversalTime();
+                var endedOnDay = ended >= dayStart && ended < dayEnd;
+                return startedOnDay || endedOnDay;
+            })
+            .OrderByDescending(s => s.StartedAtUtc)
+            .ThenByDescending(s => s.EndedAtUtc)
+            .FirstOrDefault();
+
+        return lastEnded?.EndedAtUtc?.ToUniversalTime();
+    }
+
+    private static DateTimeOffset ClampCloseAt(
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset closeAtUtc,
+        DateTimeOffset dayEndExclusive)
+    {
+        var closeAt = closeAtUtc.ToUniversalTime();
+        if (closeAt < startedAtUtc)
+        {
+            closeAt = startedAtUtc;
+        }
+
+        if (closeAt >= dayEndExclusive)
+        {
+            closeAt = dayEndExclusive.AddTicks(-1);
+            if (closeAt < startedAtUtc)
+            {
+                closeAt = startedAtUtc;
             }
         }
 
@@ -329,7 +447,8 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 continue;
             }
 
-            var endAt = endedAtUtc < entry.StartedAtUtc ? entry.StartedAtUtc : endedAtUtc;
+            var endAt = await ResolveCloseAtAsync(entry, endedAtUtc, cancellationToken)
+                .ConfigureAwait(false);
             entry.End(endAt, appendNotes);
             await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         }

@@ -25,6 +25,9 @@ import type {
   ProjectDetailDto,
   ProjectDto,
   PromptEventDto,
+  PromptBrowseQuery,
+  PromptFacetsDto,
+  PagedResult,
   ReconciliationRequestDto,
   ReconciliationResultDto,
   CreateProjectSessionRequest,
@@ -37,6 +40,7 @@ import type {
   TimesheetCategoryDto,
   TimesheetClientReport,
   TimesheetEntryDto,
+  TimesheetBrowseQuery,
   TimesheetOverallReport,
   TimesheetProjectReport,
   TrackingStatusDto,
@@ -299,6 +303,37 @@ export const api = {
       signal,
     }),
 
+  getProjectPromptsPaged: (
+    id: string,
+    query: PromptBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<PromptEventDto>>(`/api/v1/projects/${id}/prompts`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        status: query.status,
+        eventType: query.eventType,
+        model: query.model,
+        branch: query.branch,
+      },
+      signal,
+    }),
+
+  getProjectPromptFacets: (
+    id: string,
+    fromUtc: string,
+    toUtc: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PromptFacetsDto>(`/api/v1/projects/${id}/prompts/facets`, {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
   getProjectSessions: (id: string, fromUtc?: string, toUtc?: string, signal?: AbortSignal) =>
     apiRequest<SessionDto[]>(`/api/v1/projects/${id}/sessions`, {
       query: { fromUtc, toUtc },
@@ -356,6 +391,23 @@ export const api = {
       signal,
     }),
 
+  getProjectTimesheetEntriesPaged: (
+    id: string,
+    query: TimesheetBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<TimesheetEntryDto>>(`/api/v1/projects/${id}/timesheet-entries`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        openClosed: query.openClosed,
+      },
+      signal,
+    }),
+
   getTimesheetEntries: (
     params?: {
       projectId?: string;
@@ -369,6 +421,20 @@ export const api = {
         projectId: params?.projectId,
         fromUtc: params?.fromUtc,
         toUtc: params?.toUtc,
+      },
+      signal,
+    }),
+
+  getTimesheetEntriesPaged: (query: TimesheetBrowseQuery, signal?: AbortSignal) =>
+    apiRequest<PagedResult<TimesheetEntryDto>>('/api/v1/timesheet-entries', {
+      query: {
+        projectId: query.projectId,
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        openClosed: query.openClosed,
       },
       signal,
     }),

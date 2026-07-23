@@ -9,8 +9,10 @@ import type {
   CreateTimesheetEntryRequest,
   EndTimesheetRequest,
   ExportRequestDto,
+  PromptBrowseQuery,
   ReconciliationRequestDto,
   StartTimesheetRequest,
+  TimesheetBrowseQuery,
   UpdateSettingsRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
@@ -42,6 +44,35 @@ export const queryKeys = {
     ['projects', id, 'token-cost', from, to] as const,
   projectPrompts: (id: string, from: string, to: string) =>
     ['projects', id, 'prompts', from, to] as const,
+  projectPromptsPaged: (
+    id: string,
+    from: string,
+    to: string,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    status: string,
+    eventType: string,
+    model: string,
+    branch: string,
+  ) =>
+    [
+      'projects',
+      id,
+      'prompts',
+      'paged',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      status,
+      eventType,
+      model,
+      branch,
+    ] as const,
+  projectPromptFacets: (id: string, from: string, to: string) =>
+    ['projects', id, 'prompts', 'facets', from, to] as const,
   projectSessions: (id: string, from?: string, to?: string) =>
     ['projects', id, 'sessions', from, to] as const,
   sessions: (projectId?: string, from?: string, to?: string) =>
@@ -49,8 +80,49 @@ export const queryKeys = {
   sessionPrompts: (id: string) => ['sessions', id, 'prompts'] as const,
   projectTimesheet: (id: string, from?: string, to?: string) =>
     ['projects', id, 'timesheet', from, to] as const,
+  projectTimesheetPaged: (
+    id: string,
+    from: string | undefined,
+    to: string | undefined,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    openClosed: string,
+  ) =>
+    [
+      'projects',
+      id,
+      'timesheet',
+      'paged',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      openClosed,
+    ] as const,
   timesheetEntries: (projectId?: string, from?: string, to?: string) =>
     ['timesheet-entries', projectId ?? 'all', from, to] as const,
+  timesheetEntriesPaged: (
+    projectId: string | undefined,
+    from: string | undefined,
+    to: string | undefined,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    openClosed: string,
+  ) =>
+    [
+      'timesheet-entries',
+      'paged',
+      projectId ?? 'all',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      openClosed,
+    ] as const,
   timesheetOverallReport: (from: string, to: string) =>
     ['timesheet-reports', 'overall', from, to] as const,
   timesheetProjectReport: (projectId: string, from: string, to: string) =>
@@ -222,6 +294,42 @@ export function useProjectPromptsQuery(id: string | undefined, fromUtc: string, 
   });
 }
 
+export function useProjectPromptFacetsQuery(
+  id: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectPromptFacets(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectPromptFacets(id!, fromUtc, toUtc, signal),
+    enabled: enabled && Boolean(id),
+  });
+}
+
+export function useProjectPromptsPagedQuery(
+  id: string | undefined,
+  query: PromptBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectPromptsPaged(
+      id ?? '',
+      query?.fromUtc ?? '',
+      query?.toUtc ?? '',
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.status ?? '',
+      query?.eventType ?? '',
+      query?.model ?? '',
+      query?.branch ?? '',
+    ),
+    queryFn: ({ signal }) => api.getProjectPromptsPaged(id!, query!, signal),
+    enabled: enabled && Boolean(id) && Boolean(query),
+  });
+}
+
 export function useProjectSessionsQuery(id: string | undefined, fromUtc?: string, toUtc?: string) {
   return useQuery({
     queryKey: queryKeys.projectSessions(id ?? '', fromUtc, toUtc),
@@ -308,6 +416,26 @@ export function useProjectTimesheetQuery(id: string | undefined, fromUtc?: strin
   });
 }
 
+export function useProjectTimesheetPagedQuery(
+  id: string | undefined,
+  query: TimesheetBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectTimesheetPaged(
+      id ?? '',
+      query?.fromUtc,
+      query?.toUtc,
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.openClosed ?? '',
+    ),
+    queryFn: ({ signal }) => api.getProjectTimesheetEntriesPaged(id!, query!, signal),
+    enabled: enabled && Boolean(id) && Boolean(query),
+  });
+}
+
 export function useTimesheetEntriesQuery(
   params?: { projectId?: string; fromUtc?: string; toUtc?: string },
   enabled = true,
@@ -316,6 +444,25 @@ export function useTimesheetEntriesQuery(
     queryKey: queryKeys.timesheetEntries(params?.projectId, params?.fromUtc, params?.toUtc),
     queryFn: ({ signal }) => api.getTimesheetEntries(params, signal),
     enabled,
+  });
+}
+
+export function useTimesheetEntriesPagedQuery(
+  query: TimesheetBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.timesheetEntriesPaged(
+      query?.projectId,
+      query?.fromUtc,
+      query?.toUtc,
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.openClosed ?? '',
+    ),
+    queryFn: ({ signal }) => api.getTimesheetEntriesPaged(query!, signal),
+    enabled: enabled && Boolean(query),
   });
 }
 

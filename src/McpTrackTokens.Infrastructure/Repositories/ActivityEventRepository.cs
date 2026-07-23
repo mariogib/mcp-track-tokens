@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
@@ -79,6 +82,156 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             e => e.TimestampUtc >= from && e.TimestampUtc <= to,
             items => items.OrderByDescending(e => e.TimestampUtc),
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountAsync(
+        ActivityEventPageFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = "SELECT COUNT(*) AS \"Value\" FROM PromptActivityEvents " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PromptActivityEvent>> ListPagedAsync(
+        ActivityEventPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = new StringBuilder()
+            .Append("SELECT * FROM PromptActivityEvents ")
+            .Append(where)
+            .Append(CultureInfo.InvariantCulture, $" ORDER BY TimestampUtc DESC, Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+        args.Add(take);
+        args.Add(skip);
+
+        return await _db.PromptActivityEvents
+            .FromSqlRaw(sql.ToString(), args.ToArray())
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<PromptFacetsDto> GetPromptFacetsAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = new ActivityEventPageFilter
+        {
+            ProjectId = projectId,
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            PromptSubmittedOnly = true
+        };
+        var (where, args) = BuildBrowseWhere(filter);
+        var argsArray = args.ToArray();
+
+        var models = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT Model AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND Model IS NOT NULL AND TRIM(Model) <> '' ORDER BY Model",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var branches = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT Branch AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND Branch IS NOT NULL AND TRIM(Branch) <> '' ORDER BY Branch",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var eventTypes = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT EventType AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND EventType IS NOT NULL AND TRIM(EventType) <> '' ORDER BY EventType",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var days = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT substr(TimestampUtc, 1, 10) AS \"Value\" FROM PromptActivityEvents "
+                + where + " ORDER BY 1 DESC",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PromptFacetsDto
+        {
+            Models = models,
+            Branches = branches,
+            EventTypes = eventTypes,
+            Days = days
+        };
+    }
+
+    private static (string WhereSql, List<object> Args) BuildBrowseWhere(ActivityEventPageFilter filter)
+    {
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (filter.ProjectId is Guid projectId)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(projectId);
+        }
+
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", filter.FromUtc, filter.ToUtc);
+
+        if (filter.PromptSubmittedOnly)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+            args.Add(nameof(ActivityEventType.PromptSubmitted));
+        }
+        else if (!string.IsNullOrWhiteSpace(filter.EventType))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+            args.Add(filter.EventType.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Status = {{{args.Count}}}");
+            args.Add(filter.Status.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Model))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Model = {{{args.Count}}}");
+            args.Add(filter.Model.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Branch))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Branch = {{{args.Count}}}");
+            args.Add(filter.Branch.Trim());
+        }
+
+        var search = filter.Search?.Trim();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = "%" + SqliteDateTimePaging.EscapeLike(search) + "%";
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (IFNULL(Model,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Branch,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(RepositoryPath,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(EventType,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Editor,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Status,'') LIKE {{{args.Count}}} ESCAPE '\\')");
+            args.Add(pattern);
+        }
+
+        return (where.ToString(), args);
     }
 
     /// <inheritdoc />

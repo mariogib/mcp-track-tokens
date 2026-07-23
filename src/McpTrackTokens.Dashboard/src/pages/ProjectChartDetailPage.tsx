@@ -32,6 +32,8 @@ import {
   formatCurrency,
   formatDay,
   formatNumber,
+  millisecondsToMinutes,
+  millisecondsToMinutesExact,
 } from '../utils/format';
 
 type SeriesPoint = Record<string, string | number>;
@@ -108,7 +110,8 @@ export function ProjectChartDetailPage() {
         day: formatDay(row.day),
         prompts: row.promptCount,
         activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-        agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
+        agentDurationMilliseconds: row.agentDurationMilliseconds,
+        agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
         tokens: row.totalTokens ?? 0,
         cost: Number(costShare.toFixed(4)),
       };
@@ -393,7 +396,7 @@ export function ProjectChartDetailPage() {
             day: String(row.day),
             prompts: Number(row.prompts),
             activeMinutes: Number(row.activeMinutes),
-            agentMinutes: Number(row.agentMinutes),
+            agentMinutes: millisecondsToMinutes(Number(row.agentDurationMilliseconds ?? 0)),
             tokens: Number(row.tokens),
             cost: Number(row.cost),
           })}
@@ -404,6 +407,13 @@ export function ProjectChartDetailPage() {
                 <strong>{String(row.day)}</strong>
                 <span>Prompts {formatNumber(Number(row.prompts))}</span>
                 <span>Active {formatNumber(Number(row.activeMinutes))} min</span>
+                <span>
+                  Agent{' '}
+                  {formatNumber(
+                    millisecondsToMinutes(Number(row.agentDurationMilliseconds ?? 0)),
+                  )}{' '}
+                  min
+                </span>
                 <span>Tokens {formatNumber(Number(row.tokens))}</span>
                 <span>
                   {chartKey === 'cost-day' || Number(row.cost) > 0
@@ -519,6 +529,19 @@ function computeStats(
     const values = data.branchSeries.map((r) => r.prompts);
     return summarize(values);
   }
+  if (chartKey === 'agent-duration-day') {
+    const msValues = data.daySeries.map((r) => Number(r.agentDurationMilliseconds ?? 0));
+    if (!msValues.length) {
+      return { total: 0, avg: 0, max: 0, count: 0 };
+    }
+    const totalMs = msValues.reduce((s, v) => s + v, 0);
+    return {
+      total: millisecondsToMinutesExact(totalMs),
+      avg: millisecondsToMinutesExact(totalMs / msValues.length),
+      max: millisecondsToMinutesExact(Math.max(...msValues)),
+      count: msValues.length,
+    };
+  }
   const key = lineValueKey(chartKey);
   const values = data.daySeries.map((r) => Number(r[key] ?? 0));
   return summarize(values);
@@ -582,7 +605,11 @@ function DayTable({
               <td>{String(row.day)}</td>
               <td>{formatNumber(Number(row.prompts))}</td>
               <td>{formatNumber(Number(row.activeMinutes))}</td>
-              <td>{formatNumber(Number(row.agentMinutes))}</td>
+              <td>
+                {formatNumber(
+                  millisecondsToMinutes(Number(row.agentDurationMilliseconds ?? 0)),
+                )}
+              </td>
               <td>{formatNumber(Number(row.tokens))}</td>
               <td>
                 {chartKey === 'cost-day' || Number(row.cost) > 0
