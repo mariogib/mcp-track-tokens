@@ -14,9 +14,11 @@ import {
   useTimesheetEntriesQuery,
   useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
+import { api } from '../api/client';
 import type { TimesheetEntryDto } from '../api/types';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { Panel, TablePanel } from '../components/MetricCard';
+import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { BrowseListControls, TextLink } from '../shared/adminUi';
@@ -123,14 +125,19 @@ export function TimesheetPage() {
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(() =>
     toDayKey(new Date().toISOString()),
   );
+  const [browseEpoch, setBrowseEpoch] = useState(0);
 
   const projects = useProjectsQuery();
   const timesheetCategories = useTimesheetCategoriesQuery(true);
-  const entries = useTimesheetEntriesQuery({
-    projectId: projectFilter || undefined,
-    fromUtc: range.fromUtc,
-    toUtc: range.toUtc,
-  });
+  const calendarMode = viewMode === 'calendar';
+  const entries = useTimesheetEntriesQuery(
+    {
+      projectId: projectFilter || undefined,
+      fromUtc: range.fromUtc,
+      toUtc: range.toUtc,
+    },
+    calendarMode,
+  );
 
   const createMutation = useCreateTimesheetEntryMutation();
   const updateMutation = useUpdateTimesheetEntryMutation();
@@ -278,6 +285,7 @@ export function TimesheetPage() {
                 .mutateAsync({ timesheetEntryId: entry.id })
                 .then(() => {
                   setMessage('Timesheet ended.');
+                  setBrowseEpoch((value) => value + 1);
                   return entries.refetch();
                 })
                 .catch((err: unknown) => {
@@ -306,6 +314,7 @@ export function TimesheetPage() {
               .mutateAsync({ id: entry.id, projectId: entry.projectId })
               .then(() => {
                 setMessage(null);
+                setBrowseEpoch((value) => value + 1);
                 return entries.refetch();
               })
               .catch((err: unknown) => {
@@ -681,93 +690,97 @@ export function TimesheetPage() {
           under Settings → Data.
         </p>
 
-        <BrowseListControls
-          heading="Entries"
-          viewMode={viewMode}
-          onViewModeChange={(next) => {
-            setViewMode(next);
-            if (next === 'calendar') {
-              const todayKey = toDayKey(new Date().toISOString());
-              setCalendarCursor(new Date());
-              setCalendarScope('day');
-              setSelectedDayKey(todayKey);
-            }
-          }}
-          allowCalendarView
-          calendarScope={calendarScope}
-          onCalendarScopeChange={(next) => {
-            setCalendarScope(next);
-            if (next === 'day') {
-              setSelectedDayKey((current) => current ?? toDayKey(new Date().toISOString()));
-            } else {
-              setSelectedDayKey(null);
-            }
-          }}
-          searchValue={searchValue}
-          searchPlaceholder="Search entries…"
-          onSearchChange={setSearchValue}
-          onExportToExcel={() => void onExportToExcel()}
-          exportLabel="Export to Excel"
-          exportDisabled={filteredEntries.length === 0}
-          filters={[
-            {
-              id: 'timesheet-range',
-              label: 'Range',
-              value: rangePreset,
-              onChange: (value) => setRangePreset(value as RangePreset),
-              options: [
-                { value: '7d', label: 'Last 7 days' },
-                { value: '30d', label: 'Last 30 days' },
-                { value: '90d', label: 'Last 90 days' },
-                { value: 'month', label: 'This month' },
-              ],
-            },
-            {
-              id: 'timesheet-project-filter',
-              label: 'Project',
-              value: projectFilter,
-              onChange: setProjectFilter,
-              options: [
-                { value: '', label: 'All projects' },
-                ...(projects.data ?? []).map((p) => ({
-                  value: p.id,
-                  label: p.name,
-                })),
-              ],
-            },
-            {
-              id: 'timesheet-status-filter',
-              label: 'Status',
-              value: statusFilter,
-              onChange: setStatusFilter,
-              options: [
-                { value: '', label: 'All statuses' },
-                { value: 'open', label: 'Open' },
-                { value: 'closed', label: 'Closed' },
-              ],
-            },
-          ]}
-          customControls={[
-            <button
-              key="start-timer"
-              type="button"
-              className="btn btn-secondary"
-              onClick={openStart}
-            >
-              Start timer
-            </button>,
-            <button key="add-entry" type="button" className="btn" onClick={() => openEditor()}>
-              Add entry
-            </button>,
-          ]}
-        />
+        {calendarMode ? (
+          <BrowseListControls
+            heading="Entries"
+            viewMode={viewMode}
+            onViewModeChange={(next) => {
+              setViewMode(next);
+              if (next === 'calendar') {
+                const todayKey = toDayKey(new Date().toISOString());
+                setCalendarCursor(new Date());
+                setCalendarScope('day');
+                setSelectedDayKey(todayKey);
+              }
+            }}
+            allowCalendarView
+            calendarScope={calendarScope}
+            onCalendarScopeChange={(next) => {
+              setCalendarScope(next);
+              if (next === 'day') {
+                setSelectedDayKey((current) => current ?? toDayKey(new Date().toISOString()));
+              } else {
+                setSelectedDayKey(null);
+              }
+            }}
+            searchValue={searchValue}
+            searchPlaceholder="Search entries…"
+            onSearchChange={setSearchValue}
+            onExportToExcel={() => void onExportToExcel()}
+            exportLabel="Export to Excel"
+            exportDisabled={filteredEntries.length === 0}
+            filters={[
+              {
+                id: 'timesheet-range',
+                label: 'Range',
+                value: rangePreset,
+                onChange: (value) => setRangePreset(value as RangePreset),
+                options: [
+                  { value: '7d', label: 'Last 7 days' },
+                  { value: '30d', label: 'Last 30 days' },
+                  { value: '90d', label: 'Last 90 days' },
+                  { value: 'month', label: 'This month' },
+                ],
+              },
+              {
+                id: 'timesheet-project-filter',
+                label: 'Project',
+                value: projectFilter,
+                onChange: setProjectFilter,
+                options: [
+                  { value: '', label: 'All projects' },
+                  ...(projects.data ?? []).map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  })),
+                ],
+              },
+              {
+                id: 'timesheet-status-filter',
+                label: 'Status',
+                value: statusFilter,
+                onChange: setStatusFilter,
+                options: [
+                  { value: '', label: 'All statuses' },
+                  { value: 'open', label: 'Open' },
+                  { value: 'closed', label: 'Closed' },
+                ],
+              },
+            ]}
+            customControls={[
+              <button
+                key="start-timer"
+                type="button"
+                className="btn btn-secondary"
+                onClick={openStart}
+              >
+                Start timer
+              </button>,
+              <button key="add-entry" type="button" className="btn" onClick={() => openEditor()}>
+                Add entry
+              </button>,
+            ]}
+          />
+        ) : null}
 
-        <p className="section-meta">
-          Showing {formatNumber(filteredEntries.length)} of {formatNumber(sourceEntries.length)}{' '}
-          entries · {range.label}
-          {projectFilter ? ` · project filter` : ''}
-          {statusFilter ? ` · status=${statusFilter}` : ''}
-        </p>
+        {calendarMode ? (
+          <p className="section-meta">
+            Showing {formatNumber(filteredEntries.length)} of {formatNumber(sourceEntries.length)}{' '}
+            entries · {range.label}
+            {projectFilter ? ` · project filter` : ''}
+            {statusFilter ? ` · status=${statusFilter}` : ''}
+          </p>
+        ) : null}
 
         {startOpen ? (
           <Panel className="stack">
@@ -788,6 +801,7 @@ export function TimesheetPage() {
                   });
                   setMessage('Timesheet started. Any other open timer was closed.');
                   setStartOpen(false);
+                  setBrowseEpoch((value) => value + 1);
                   await entries.refetch();
                 } catch (err) {
                   setMessage(err instanceof Error ? err.message : 'Start failed');

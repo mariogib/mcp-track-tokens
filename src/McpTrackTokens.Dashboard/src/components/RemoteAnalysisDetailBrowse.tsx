@@ -50,6 +50,9 @@ type RemoteAnalysisDetailBrowseProps<T> = {
   embedded?: boolean;
   filters?: BrowseFilterConfig[];
   filtersExtra?: ReactNode;
+  customControls?: ReactNode[];
+  allowCalendarView?: boolean;
+  onRequestCalendarView?: () => void;
   pagingMode?: BrowsePagingMode;
   pageSize?: number;
   pageSizeOptions?: number[];
@@ -87,6 +90,9 @@ export function RemoteAnalysisDetailBrowse<T>({
   embedded = false,
   filters = [],
   filtersExtra,
+  customControls,
+  allowCalendarView = false,
+  onRequestCalendarView,
   pagingMode = 'lazy',
   pageSize: initialPageSize = 25,
   pageSizeOptions = [10, 25, 50, 100],
@@ -257,12 +263,12 @@ export function RemoteAnalysisDetailBrowse<T>({
         viewMode={activeViewMode}
         onViewModeChange={(next) => {
           if (next === 'calendar') {
-            setViewMode('table');
+            onRequestCalendarView?.();
             return;
           }
           setViewMode(next);
         }}
-        allowCalendarView={false}
+        allowCalendarView={allowCalendarView}
         searchValue={searchValue}
         searchPlaceholder={searchPlaceholder}
         onSearchChange={setSearchValue}
@@ -280,6 +286,7 @@ export function RemoteAnalysisDetailBrowse<T>({
         }
         exportLabel="Export loaded"
         exportDisabled={cachedExportRows.length === 0}
+        customControls={customControls}
         paging={{
           mode: pagingMode,
           pageSize,
