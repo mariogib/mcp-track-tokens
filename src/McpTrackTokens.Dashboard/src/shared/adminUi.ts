@@ -1,11 +1,14 @@
 import React from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { createAdminShell } from '@lunarq/frontend-shared/admin';
 import {
   createBreadcrumb,
   createBrowseListControls,
+  createBrowseScrollSentinel,
   createCard,
+  createChartCard,
   createTextLink,
+  type ChartCardProps,
 } from '@lunarq/frontend-shared/components';
 import {
   applyThemeVariables,
@@ -25,6 +28,9 @@ export const TextLink = createTextLink(React, Link);
 
 /** Shared browse toolbar (table/grid; calendar optional per page). */
 export const BrowseListControls = createBrowseListControls(React);
+
+/** Sentinel for BrowseListControls `paging.mode === "scroll"`. */
+export const BrowseScrollSentinel = createBrowseScrollSentinel(React);
 
 /** Keep app-local tokens in sync when ThemeButton applies a preset. */
 function applyDashboardTheme(theme: ThemeResponseBase): void {
@@ -54,3 +60,14 @@ export const ThemeButton = createThemeButton(React, {
 
 /** Shared card surface. */
 export const Card = createCard(React);
+
+const SharedChartCard = createChartCard(React, Card);
+
+/** Shared chart card with React Router navigation for analysis links. */
+export function ChartCard(props: Omit<ChartCardProps, 'onNavigate'>) {
+  const navigate = useNavigate();
+  return React.createElement(SharedChartCard, {
+    ...props,
+    onNavigate: props.to ? (to: string) => void navigate(to) : undefined,
+  });
+}

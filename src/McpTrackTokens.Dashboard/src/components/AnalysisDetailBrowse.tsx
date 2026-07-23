@@ -1,13 +1,21 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   BrowseFilterConfig,
   BrowseFilterOption,
+  BrowsePagingMode,
   BrowseViewMode,
+} from '@lunarq/frontend-shared/components';
+import {
+  createBrowseLoadedPages,
+  getBrowsePageCount,
+  getNextBrowsePageToLoad,
+  loadBrowsePage,
+  sliceBrowsePage,
 } from '@lunarq/frontend-shared/components';
 import { exportToExcel, type ExcelColumn } from '@lunarq/frontend-shared/utils';
 import { TablePanel } from './MetricCard';
 import { EmptyState } from './States';
-import { BrowseListControls } from '../shared/adminUi';
+import { BrowseListControls, BrowseScrollSentinel } from '../shared/adminUi';
 import { formatNumber } from '../utils/format';
 
 export const STATUS_FILTER_NONE = '__none__';
@@ -38,6 +46,18 @@ type AnalysisDetailBrowseProps<T> = {
   filterRow?: (row: T) => boolean;
   /** Optional controls rendered under the browse toolbar (e.g. custom date range). */
   filtersExtra?: ReactNode;
+  /** Enable paging / lazy / scroll controls. Defaults to `true`. */
+  enablePaging?: boolean;
+  /**
+   * `pages` = classic paging,
+   * `lazy` = load each displayed page once,
+   * `scroll` = infinite scroll loading each page once.
+   * Defaults to `pages`.
+   */
+  pagingMode?: BrowsePagingMode;
+  /** Max rows per page (or per lazy/scroll load). Defaults to `25`. */
+  pageSize?: number;
+  pageSizeOptions?: number[];
 };
 
 function normalizeStatusValue(value: string | null | undefined): string {
@@ -69,10 +89,17 @@ export function AnalysisDetailBrowse<T>({
   filters = [],
   filterRow,
   filtersExtra,
+  enablePaging = true,
+  pagingMode = 'pages',
+  pageSize: initialPageSize = 25,
+  pageSizeOptions = [10, 25, 50, 100],
 }: AnalysisDetailBrowseProps<T>) {
   const [viewMode, setViewMode] = useState<BrowseViewMode>('table');
   const [searchValue, setSearchValue] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [loadedPages, setLoadedPages] = useState(() => createBrowseLoadedPages(0));
 
   const derivedStatusOptions = useMemo(() => {
     if (!getStatusValue) {
@@ -108,6 +135,30 @@ export function AnalysisDetailBrowse<T>({
     });
   }, [filterRow, getSearchText, getStatusValue, rows, searchValue, statusFilter]);
 
+  useEffect(() => {
+    setPageIndex(0);
+    setLoadedPages(createBrowseLoadedPages(0));
+  }, [searchValue, statusFilter, pagingMode, pageSize]);
+
+  useEffect(() => {
+    if (!enablePaging || pagingMode === 'pages') {
+      return;
+    }
+    setLoadedPages((previous) => loadBrowsePage(previous, pageIndex));
+  }, [enablePaging, pageIndex, pagingMode]);
+
+  const pagedRows = useMemo(() => {
+    if (!enablePaging) {
+      return filteredRows;
+    }
+    return sliceBrowsePage(filteredRows, {
+      mode: pagingMode,
+      pageIndex,
+      pageSize,
+      loadedPages: pagingMode === 'pages' ? undefined : loadedPages,
+    });
+  }, [enablePaging, filteredRows, loadedPages, pageIndex, pageSize, pagingMode]);
+
   const activeViewMode = viewMode === 'calendar' ? 'table' : viewMode;
 
   const browseFilters = useMemo(() => {
@@ -127,6 +178,9 @@ export function AnalysisDetailBrowse<T>({
     next.push(...filters);
     return next;
   }, [derivedStatusOptions, filters, getStatusValue, statusFilter]);
+
+  const pageCount = getBrowsePageCount(filteredRows.length, pageSize);
+  const nextScrollPage = getNextBrowsePageToLoad(loadedPages, pageCount);
 
   const content = (
     <>
@@ -159,12 +213,32 @@ export function AnalysisDetailBrowse<T>({
         }
         exportLabel="Export to Excel"
         exportDisabled={filteredRows.length === 0}
+        paging={
+          enablePaging
+            ? {
+                mode: pagingMode,
+                pageSize,
+                pageSizeOptions,
+                pageIndex,
+                totalCount: filteredRows.length,
+                loadedPages: pagingMode === 'pages' ? undefined : loadedPages,
+                onPageIndexChange: setPageIndex,
+                onPageSizeChange: (next) => {
+                  setPageSize(next);
+                  setPageIndex(0);
+                  setLoadedPages(createBrowseLoadedPages(0));
+                },
+              }
+            : null
+        }
       />
 
       {filtersExtra}
 
       <p className="section-meta">
-        Showing {formatNumber(filteredRows.length)} of {formatNumber(rows.length)} rows
+        {enablePaging
+          ? `Showing ${formatNumber(pagedRows.length)} on screen · ${formatNumber(filteredRows.length)} match of ${formatNumber(rows.length)} rows`
+          : `Showing ${formatNumber(filteredRows.length)} of ${formatNumber(rows.length)} rows`}
         {statusFilter ? ` · status=${statusLabel(statusFilter)}` : ''}
         {filters
           .filter((filter) => filter.value && filter.value !== '__custom__')
@@ -177,10 +251,24 @@ export function AnalysisDetailBrowse<T>({
       ) : filteredRows.length === 0 ? (
         <EmptyState message={emptyMessage} />
       ) : activeViewMode === 'grid' ? (
-        <div className="analysis-browse-grid">{renderGrid(filteredRows)}</div>
+        <div className="analysis-browse-grid">{renderGrid(pagedRows)}</div>
       ) : (
-        <TablePanel>{renderTable(filteredRows)}</TablePanel>
+        <TablePanel>{renderTable(pagedRows)}</TablePanel>
       )}
+
+      {enablePaging && pagingMode === 'scroll' && filteredRows.length > 0 ? (
+        <BrowseScrollSentinel
+          enabled={nextScrollPage !== null}
+          loadKey={`${[...loadedPages].sort((a, b) => a - b).join(',')}:${nextScrollPage ?? 'done'}`}
+          onLoadMore={() => {
+            if (nextScrollPage === null) {
+              return;
+            }
+            setLoadedPages((previous) => loadBrowsePage(previous, nextScrollPage));
+            setPageIndex(nextScrollPage);
+          }}
+        />
+      ) : null}
     </>
   );
 
