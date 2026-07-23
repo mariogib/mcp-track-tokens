@@ -1337,8 +1337,7 @@ export function ProjectDetailsPage() {
                     (c) => c.id === timesheetDraft.categoryId,
                   ) ? (
                     <option value={timesheetDraft.categoryId}>
-                      {timesheet.data?.find((e) => e.id === editingTimesheetId)?.categoryName ??
-                        'Inactive category'}
+                      Inactive category
                     </option>
                   ) : null}
                 </select>
@@ -1401,170 +1400,165 @@ export function ProjectDetailsPage() {
             <p className="form-message">{timesheetMessage}</p>
           ) : null}
 
-          {timesheet.isLoading ? (
-            <LoadingState />
-          ) : timesheet.error ? (
-            <ErrorState
-              message={timesheet.error instanceof Error ? timesheet.error.message : 'Failed'}
-            />
-          ) : (
-            <AnalysisDetailBrowse
-              embedded
-              heading="Timesheet entries"
-              showHeading={false}
-              searchPlaceholder="Search timesheet entries..."
-              rows={Array.isArray(timesheet.data) ? timesheet.data : []}
-              getStatusValue={(entry) => (entry.isOpen ? 'Open' : 'Closed')}
-              statusOptions={[
-                { value: 'Open', label: 'Open' },
-                { value: 'Closed', label: 'Closed' },
-              ]}
-              getSearchText={(entry) =>
-                [
-                  entry.categoryName,
-                  formatDateTime(entry.startedAtUtc),
-                  formatDateTime(entry.endedAtUtc),
-                  entry.notes,
-                  entry.isOpen ? 'Open' : 'Closed',
-                ]
-                  .filter(Boolean)
-                  .join(' ')
-              }
-              exportFilename={`project-${detail.id}-timesheet.xlsx`}
-              exportTitle={`${detail.name} · Timesheet`}
-              exportColumns={[
-                { header: 'Category', key: 'categoryName' },
-                { header: 'Started', key: 'startedAtUtc' },
-                { header: 'Ended', key: 'endedAtUtc' },
-                { header: 'Notes', key: 'notes' },
-                { header: 'Status', key: 'status' },
-              ]}
-              toExportRow={(entry) => ({
-                categoryName: entry.categoryName ?? '',
-                startedAtUtc: formatDateTime(entry.startedAtUtc),
-                endedAtUtc: formatDateTime(entry.endedAtUtc),
-                notes: entry.notes ?? '',
-                status: entry.isOpen ? 'Open' : 'Closed',
-              })}
-              emptySourceMessage="No timesheet entries in the selected range."
-              renderTable={(rows) => (
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Started</th>
-                      <th>Ended</th>
-                      <th>Notes</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((entry) => (
-                      <tr key={entry.id}>
-                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                        <td>{formatDateTime(entry.startedAtUtc)}</td>
-                        <td>{formatDateTime(entry.endedAtUtc)}</td>
-                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                        <td>
-                          <StatusBadge
-                            label={entry.isOpen ? 'Open' : 'Closed'}
-                            tone={entry.isOpen ? 'success' : 'neutral'}
-                          />
-                        </td>
-                        <td>
-                          <div className="row-actions">
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-secondary"
-                              onClick={() => {
-                                setEditingTimesheetId(entry.id);
-                                setTimesheetDraft(draftFromTimesheet(entry));
-                                setTimesheetMessage(null);
-                                setTimesheetEditorOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-danger"
-                              disabled={deleteTimesheetMutation.isPending}
-                              onClick={() => {
-                                const ok = window.confirm('Delete this timesheet entry?');
-                                if (!ok) return;
-                                void deleteTimesheetMutation
-                                  .mutateAsync({ id: entry.id, projectId: detail.id })
-                                  .then(() => {
-                                    setTimesheetMessage(null);
-                                    return timesheet.refetch();
-                                  })
-                                  .catch((err: unknown) => {
-                                    setTimesheetMessage(
-                                      err instanceof Error ? err.message : 'Delete failed',
-                                    );
-                                  });
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              renderGrid={(rows) =>
-                rows.map((entry) => (
-                  <article key={entry.id} className="analysis-browse-tile">
-                    <strong>
-                      {entry.categoryName?.trim() ? entry.categoryName : 'Uncategorized'}
-                    </strong>
-                    <span>{formatDateTime(entry.startedAtUtc)}</span>
-                    <span>{entry.isOpen ? 'Open' : formatDateTime(entry.endedAtUtc)}</span>
-                    <span>{entry.notes?.trim() ? entry.notes : 'No notes'}</span>
-                    <div className="row-actions">
-                      <button
-                        type="button"
-                        className="btn btn-compact btn-secondary"
-                        onClick={() => {
-                          setEditingTimesheetId(entry.id);
-                          setTimesheetDraft(draftFromTimesheet(entry));
-                          setTimesheetMessage(null);
-                          setTimesheetEditorOpen(true);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-compact btn-danger"
-                        disabled={deleteTimesheetMutation.isPending}
-                        onClick={() => {
-                          const ok = window.confirm('Delete this timesheet entry?');
-                          if (!ok) return;
-                          void deleteTimesheetMutation
-                            .mutateAsync({ id: entry.id, projectId: detail.id })
-                            .then(() => {
+          <RemoteAnalysisDetailBrowse<TimesheetEntryDto>
+            embedded
+            heading="Timesheet entries"
+            showHeading={false}
+            searchPlaceholder="Search timesheet entries..."
+            filterKey={[projectId, range.fromUtc, timesheetBrowseEpoch].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectTimesheetEntriesPaged(
+                projectId!,
+                {
+                  fromUtc: range.fromUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  openClosed:
+                    status === 'Open' ? 'open' : status === 'Closed' ? 'closed' : undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(entry) => (entry.isOpen ? 'Open' : 'Closed')}
+            statusOptions={[
+              { value: 'Open', label: 'Open' },
+              { value: 'Closed', label: 'Closed' },
+            ]}
+            exportFilename={`project-${detail.id}-timesheet.xlsx`}
+            exportTitle={`${detail.name} · Timesheet`}
+            exportColumns={[
+              { header: 'Category', key: 'categoryName' },
+              { header: 'Started', key: 'startedAtUtc' },
+              { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Notes', key: 'notes' },
+              { header: 'Status', key: 'status' },
+            ]}
+            toExportRow={(entry) => ({
+              categoryName: entry.categoryName ?? '',
+              startedAtUtc: formatDateTime(entry.startedAtUtc),
+              endedAtUtc: formatDateTime(entry.endedAtUtc),
+              notes: entry.notes ?? '',
+              status: entry.isOpen ? 'Open' : 'Closed',
+            })}
+            emptySourceMessage="No timesheet entries in the selected range."
+            renderTable={(rows) => (
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Notes</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                      <td>{formatDateTime(entry.startedAtUtc)}</td>
+                      <td>{formatDateTime(entry.endedAtUtc)}</td>
+                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={entry.isOpen ? 'Open' : 'Closed'}
+                          tone={entry.isOpen ? 'success' : 'neutral'}
+                        />
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-secondary"
+                            onClick={() => {
+                              setEditingTimesheetId(entry.id);
+                              setTimesheetDraft(draftFromTimesheet(entry));
                               setTimesheetMessage(null);
-                              return timesheet.refetch();
-                            })
-                            .catch((err: unknown) => {
-                              setTimesheetMessage(
-                                err instanceof Error ? err.message : 'Delete failed',
-                              );
-                            });
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </article>
-                ))
-              }
-            />
-          )}
+                              setTimesheetEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-danger"
+                            disabled={deleteTimesheetMutation.isPending}
+                            onClick={() => {
+                              const ok = window.confirm('Delete this timesheet entry?');
+                              if (!ok) return;
+                              void deleteTimesheetMutation
+                                .mutateAsync({ id: entry.id, projectId: detail.id })
+                                .then(() => {
+                                  setTimesheetMessage(null);
+                                  setTimesheetBrowseEpoch((value) => value + 1);
+                                })
+                                .catch((err: unknown) => {
+                                  setTimesheetMessage(
+                                    err instanceof Error ? err.message : 'Delete failed',
+                                  );
+                                });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            renderGrid={(rows) =>
+              rows.map((entry) => (
+                <article key={entry.id} className="analysis-browse-tile">
+                  <strong>
+                    {entry.categoryName?.trim() ? entry.categoryName : 'Uncategorized'}
+                  </strong>
+                  <span>{formatDateTime(entry.startedAtUtc)}</span>
+                  <span>{entry.isOpen ? 'Open' : formatDateTime(entry.endedAtUtc)}</span>
+                  <span>{entry.notes?.trim() ? entry.notes : 'No notes'}</span>
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-compact btn-secondary"
+                      onClick={() => {
+                        setEditingTimesheetId(entry.id);
+                        setTimesheetDraft(draftFromTimesheet(entry));
+                        setTimesheetMessage(null);
+                        setTimesheetEditorOpen(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-compact btn-danger"
+                      disabled={deleteTimesheetMutation.isPending}
+                      onClick={() => {
+                        const ok = window.confirm('Delete this timesheet entry?');
+                        if (!ok) return;
+                        void deleteTimesheetMutation
+                          .mutateAsync({ id: entry.id, projectId: detail.id })
+                          .then(() => {
+                            setTimesheetMessage(null);
+                            setTimesheetBrowseEpoch((value) => value + 1);
+                          })
+                          .catch((err: unknown) => {
+                            setTimesheetMessage(
+                              err instanceof Error ? err.message : 'Delete failed',
+                            );
+                          });
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+              ))
+            }
+          />
         </section>
       )}
 
