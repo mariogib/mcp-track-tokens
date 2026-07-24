@@ -12,9 +12,8 @@ MCP Track Tokens is a local-first stack that records **editor activity**, import
 | Server | `src/McpTrackTokens.Server` | HTTP host, `/api/v1`, MCP tools, wwwroot dashboard |
 | CLI | `src/McpTrackTokens.Cli` | `mcp-track-tokens` commands; hosts Server via `TrackingHost` |
 | Dashboard | `src/McpTrackTokens.Dashboard` | React + Vite UI → copied to Server `wwwroot` |
-| Extension | `extensions/mcp-track-tokens-vscode` | Sessions, `@track`, commands |
 | Hooks | `integrations/cursor-hooks` | Cursor stdin hooks → `POST /api/v1/events` |
-| Windows MSI | `setup/McpTrackTokens.Tray.Setup` | Deploys tray host (API + HTTP MCP + dashboard), desktop shell, optional hooks/VSIX |
+| Windows MSI | `setup/McpTrackTokens.Tray.Setup` | Deploys tray host (API + HTTP MCP + dashboard), desktop shell, optional Cursor hooks |
 
 ## Runtime defaults
 
@@ -34,7 +33,7 @@ Environment overrides: `MCP_TRACK_TOKENS_*` via `TrackingEnvironmentVariables`.
 
 ```mermaid
 flowchart LR
-  H[Hooks / Extension] -->|Bearer| E["/api/v1/events* /sessions*"]
+  H[Cursor hooks] -->|Bearer| E["/api/v1/events* /sessions*"]
   I[CLI import] --> Imp[CursorUsageImporter]
   M[MCP client] -->|stdio or /mcp| T[TrackingTools]
   UI[Dashboard] -->|Bearer| R["/api/v1/projects* /reports*"]
@@ -60,7 +59,7 @@ flowchart LR
 
 | Dataset | Produced by | Answers |
 | --- | --- | --- |
-| Activity | Hooks, extension, MCP session tools | What happened in the editor? |
+| Activity | Hooks, MCP session tools | What happened in the editor? |
 | Usage | CSV/JSON import | What tokens/cost did Cursor report? |
 
 Attribution **correlates** them; it does not prove a 1:1 mapping to internal Cursor meters.

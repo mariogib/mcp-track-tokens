@@ -860,7 +860,6 @@ export interface IntegrationStatusDto {
   cursorHooksConfigured: boolean;
   cursorHooksOnDisk?: boolean;
   cursorHooksInferredFromActivity?: boolean;
-  vscodeExtensionDetected: boolean;
   mcpConfigured: boolean;
   lastIngestAtUtc?: string | null;
   notes?: string[];

@@ -193,7 +193,6 @@ export function HelpPage() {
               <ul>
                 <li>Start MCP Track Tokens when Windows starts</li>
                 <li>Install Cursor hooks</li>
-                <li>Install VS Code / Cursor extension</li>
                 <li>Start MCP Track Tokens now</li>
               </ul>
               <p>

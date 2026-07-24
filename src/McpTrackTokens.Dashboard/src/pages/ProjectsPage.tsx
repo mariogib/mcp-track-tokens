@@ -334,7 +334,7 @@ export function ProjectsPage() {
         {actionMessage ? <p className="form-message">{actionMessage}</p> : null}
 
         {list.length === 0 ? (
-          <EmptyState message="No projects yet. Register one from the CLI, MCP tool, or editor extension." />
+          <EmptyState message="No projects yet. Register one from the CLI or MCP tool." />
         ) : filteredList.length === 0 ? (
           <EmptyState message="No projects match the current search or filters." />
         ) : viewMode === 'grid' ? (

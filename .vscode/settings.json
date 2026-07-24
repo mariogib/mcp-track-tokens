@@ -1,7 +1,4 @@
 {
-  "files.exclude": {
-    "**/*.vsix": true
-  },
   "files.watcherExclude": {
     "**/node_modules/**": true,
     "**/bin/**": true,
@@ -12,8 +9,7 @@
     "**/node_modules": true,
     "**/bin": true,
     "**/obj": true,
-    "**/dist": true,
-    "**/*.vsix": true
+    "**/dist": true
   },
   "dotnet.defaultSolution": "McpTrackTokens.sln",
   "typescript.tsserver.experimental.enableProjectDiagnostics": true,
@@ -21,10 +17,6 @@
   "eslint.workingDirectories": [
     {
       "directory": "src/McpTrackTokens.Dashboard",
-      "changeProcessCWD": true
-    },
-    {
-      "directory": "extensions/mcp-track-tokens-vscode",
       "changeProcessCWD": true
     },
     {

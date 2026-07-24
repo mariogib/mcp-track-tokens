@@ -4,16 +4,14 @@
 set -euo pipefail
 
 INSTALL_HOOKS=0
-INSTALL_EXTENSION=0
 SKIP_TESTS=0
 
 for arg in "$@"; do
   case "$arg" in
     --install-hooks) INSTALL_HOOKS=1 ;;
-    --install-extension) INSTALL_EXTENSION=1 ;;
     --skip-tests) SKIP_TESTS=1 ;;
     -h|--help)
-      echo "Usage: $0 [--install-hooks] [--install-extension] [--skip-tests]"
+      echo "Usage: $0 [--install-hooks] [--skip-tests]"
       exit 0
       ;;
     *)
@@ -79,10 +77,6 @@ step "Building Cursor hooks"
 npm --prefix integrations/cursor-hooks ci
 npm --prefix integrations/cursor-hooks run build
 
-step "Building VS Code extension"
-npm --prefix extensions/mcp-track-tokens-vscode ci
-npm --prefix extensions/mcp-track-tokens-vscode run build
-
 CLI="${BIN_DIR}/mcp-track-tokens"
 if [[ ! -x "${CLI}" && -f "${BIN_DIR}/mcp-track-tokens.dll" ]]; then
   CLI="dotnet ${BIN_DIR}/mcp-track-tokens.dll"
@@ -127,20 +121,6 @@ if [[ "${INSTALL_HOOKS}" -eq 1 ]]; then
   # shellcheck disable=SC2086
   ${CLI} install-cursor-hooks --yes
   echo "Merge ~/.cursor/mcp-track-tokens-hooks.example.json into your Cursor hooks config manually."
-fi
-
-if [[ "${INSTALL_EXTENSION}" -eq 1 ]]; then
-  step "Packaging VS Code extension"
-  npm --prefix extensions/mcp-track-tokens-vscode run package
-  VSIX="$(ls extensions/mcp-track-tokens-vscode/*.vsix | head -n1)"
-  if command -v cursor >/dev/null 2>&1; then
-    cursor --install-extension "${VSIX}"
-  elif command -v code >/dev/null 2>&1; then
-    code --install-extension "${VSIX}"
-  else
-    echo "VSIX at ${VSIX} — install manually with code --install-extension"
-  fi
-  echo "Extension settings were NOT modified."
 fi
 
 step "MCP configuration (copy into Cursor MCP settings — not auto-applied)"

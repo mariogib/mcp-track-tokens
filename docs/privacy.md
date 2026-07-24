@@ -11,7 +11,6 @@ Defined in domain (`PromptPrivacy`) and `Tracking` options:
 | `StorePromptContent` | `false` | Do not persist raw prompts |
 | `StoreResponseContent` | `false` | Do not persist model responses |
 | `EnablePromptHashing` | `true` (server) | Allow SHA-256 hashes for correlation |
-| Extension `enablePromptHashing` | `false` | Extension does not hash unless enabled |
 | Hooks store/hash env | `false` | Hooks send length; hash only if opted in |
 
 ## What is stored by default
@@ -21,7 +20,7 @@ For prompt-related activity events:
 - Event type, timestamps, session/project linkage when known
 - Repository path / remote URL when resolved
 - **Prompt length**
-- Optional **prompt hash** (server/hooks/extension policy)
+- Optional **prompt hash** (server/hooks policy)
 - Bounded **metadata** (no raw prompt field)
 
 Not stored by default:
@@ -46,7 +45,6 @@ Server-side hash format uses a stable composition including session context (see
 
 - Hooks: `privacySanitize` + diagnostics redaction of `prompt` / `text` / `content` / `messages` / etc.
 - Hooks never put raw prompt strings into event `metadata`.
-- Extension defaults match “length only” for `@track`.
 
 ## Network and auth
 

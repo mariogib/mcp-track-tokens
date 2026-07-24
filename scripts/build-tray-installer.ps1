@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-  Publishes tray + desktop, stages Cursor hooks / VSIX, and builds the WiX MSI.
+  Publishes tray + desktop, stages Cursor hooks, and builds the WiX MSI.
 
 .EXAMPLE
   pwsh ./scripts/build-tray-installer.ps1
@@ -27,7 +27,6 @@ $setupProject = Join-Path $root 'setup\McpTrackTokens.Tray.Setup\McpTrackTokens.
 $helperProject = Join-Path $root 'setup\McpTrackTokens.Setup.Integrations\McpTrackTokens.Setup.Integrations.csproj'
 $dashboardDir = Join-Path $root 'src\McpTrackTokens.Dashboard'
 $hooksDir = Join-Path $root 'integrations\cursor-hooks'
-$extensionDir = Join-Path $root 'extensions\mcp-track-tokens-vscode'
 $trayProject = Join-Path $root 'src\McpTrackTokens.Tray\McpTrackTokens.Tray.csproj'
 $desktopProject = Join-Path $root 'src\McpTrackTokens.Desktop\McpTrackTokens.Desktop.csproj'
 $msiOut = Join-Path $root 'artifacts\installer'
@@ -103,26 +102,6 @@ finally {
     Pop-Location
 }
 
-Write-Host "==> Packaging VS Code / Cursor extension (VSIX)"
-Push-Location $extensionDir
-try {
-    if (-not (Test-Path 'node_modules')) {
-        npm ci
-    }
-    npm run build
-    npm run package
-}
-finally {
-    Pop-Location
-}
-
-$vsix = Get-ChildItem $extensionDir -Filter '*.vsix' |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-if (-not $vsix) {
-    throw "VSIX was not produced in $extensionDir"
-}
-
 Write-Host "==> Staging integrations content"
 if (Test-Path $integrationsContentDir) {
     Remove-Item -Recurse -Force $integrationsContentDir
@@ -136,7 +115,6 @@ foreach ($name in @('package.json', 'README.md', 'example-hooks-config.json')) {
         Copy-Item -Force $src (Join-Path $hooksOut $name)
     }
 }
-Copy-Item -Force $vsix.FullName (Join-Path $integrationsContentDir $vsix.Name)
 
 $mcpHttpSample = Join-Path $root 'samples\cursor-config\mcp.http.json'
 if (Test-Path $mcpHttpSample) {

@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace McpTrackTokens.Application.DTOs;
 
 /// <summary>
-/// Inbound activity event from an editor hook or extension.
+/// Inbound activity event from an editor hook.
 /// </summary>
 public sealed record IngestEventDto
 {

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 
 namespace McpTrackTokens.Setup.Integrations;
@@ -6,8 +5,8 @@ namespace McpTrackTokens.Setup.Integrations;
 /// <summary>
 /// Per-user post-install helper invoked by the MSI (impersonated).
 /// Always writes local-host / HTTP MCP example config for the tray-deployed
-/// API + MCP + dashboard stack. Optionally installs Cursor hooks scaffold
-/// and/or the VS Code/Cursor VSIX. Does not silently rewrite editor settings.
+/// API + MCP + dashboard stack. Optionally installs Cursor hooks scaffold.
+/// Does not silently rewrite editor settings.
 /// </summary>
 internal static class Program
 {
@@ -33,11 +32,6 @@ internal static class Program
             if (options.InstallHooks)
             {
                 InstallHooks(options.InstallDir);
-            }
-
-            if (options.InstallExtension)
-            {
-                InstallExtension(options.InstallDir);
             }
 
             return 0;
@@ -183,65 +177,6 @@ internal static class Program
             $"Merge {exampleConfigPath} into your Cursor hooks configuration manually.");
     }
 
-    private static void InstallExtension(string installDir)
-    {
-        var integrationsDir = Path.Combine(installDir, "integrations");
-        var vsix = Directory.Exists(integrationsDir)
-            ? Directory.GetFiles(integrationsDir, "*.vsix").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
-            : null;
-
-        if (vsix is null)
-        {
-            Console.Error.WriteLine("VSIX payload missing under integrations\\.");
-            return;
-        }
-
-        var editor = FindEditorCli();
-        if (editor is null)
-        {
-            var message =
-                $"VSIX is available at:{Environment.NewLine}{vsix}{Environment.NewLine}{Environment.NewLine}" +
-                "Install manually (Cursor or VS Code):{Environment.NewLine}" +
-                $"  cursor --install-extension \"{vsix}\"{Environment.NewLine}" +
-                $"  code --install-extension \"{vsix}\"";
-            Console.WriteLine(message);
-            TryWriteNote("extension-manual-install.txt", message);
-            return;
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = editor,
-            Arguments = $"--install-extension \"{vsix}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process is null)
-        {
-            Console.Error.WriteLine($"Failed to start {editor}");
-            return;
-        }
-
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit(120_000);
-        Console.WriteLine(stdout);
-        if (!string.IsNullOrWhiteSpace(stderr))
-        {
-            Console.Error.WriteLine(stderr);
-        }
-
-        Console.WriteLine($"Installed VSIX via {Path.GetFileName(editor)}");
-        TryWriteNote(
-            "extension-installed.txt",
-            $"Installed {vsix}{Environment.NewLine}via {editor}{Environment.NewLine}" +
-            "Extension settings were not modified.");
-    }
-
     private static void PurgeUserData()
     {
         var dataDir = Path.Combine(
@@ -267,51 +202,6 @@ internal static class Program
             Console.Error.WriteLine($"Failed to purge {dataDir}: {ex.Message}");
             TryWriteNote("database-purge-error.txt", ex.ToString());
         }
-    }
-
-    private static string? FindEditorCli()
-    {
-        foreach (var name in new[] { "cursor.cmd", "cursor.exe", "cursor", "code.cmd", "code.exe", "code" })
-        {
-            var onPath = FindOnPath(name);
-            if (onPath is not null)
-            {
-                return onPath;
-            }
-        }
-
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var candidates = new[]
-        {
-            Path.Combine(localAppData, "Programs", "cursor", "resources", "app", "bin", "cursor.cmd"),
-            Path.Combine(localAppData, "Programs", "cursor", "resources", "app", "bin", "cursor"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "bin", "code.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "bin", "code.cmd"),
-        };
-
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
-    private static string? FindOnPath(string fileName)
-    {
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
-            {
-                var candidate = Path.Combine(dir.Trim('"'), fileName);
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
-            catch
-            {
-                // ignore malformed PATH segments
-            }
-        }
-
-        return null;
     }
 
     private static void CopyDirectory(string sourceDir, string destinationDir)
@@ -346,14 +236,12 @@ internal static class Program
     {
         public string InstallDir { get; init; } = "";
         public bool InstallHooks { get; init; }
-        public bool InstallExtension { get; init; }
         public bool KeepDatabase { get; init; } = true;
 
         public static Options Parse(string[] args)
         {
             var installDir = "";
             var hooks = false;
-            var extension = false;
             var keepDatabase = true;
 
             for (var i = 0; i < args.Length; i++)
@@ -369,7 +257,8 @@ internal static class Program
                         hooks = ReadFlag(args, ref i, defaultValue: false);
                         break;
                     case "--extension":
-                        extension = ReadFlag(args, ref i, defaultValue: false);
+                        // Legacy MSI argument; ignored (extension packaging removed).
+                        _ = ReadFlag(args, ref i, defaultValue: false);
                         break;
                     case "--keep-database":
                         // Present without "1" (unchecked MSI checkbox) means purge.
@@ -382,7 +271,6 @@ internal static class Program
             {
                 InstallDir = installDir,
                 InstallHooks = hooks,
-                InstallExtension = extension,
                 KeepDatabase = keepDatabase
             };
         }

@@ -61,5 +61,4 @@ else
   echo "Data kept at ${APP_DIR} (use --remove-data to delete)."
 fi
 
-echo "To remove the extension: code --uninstall-extension mabatar.mcp-track-tokens"
 echo "Uninstall finished."

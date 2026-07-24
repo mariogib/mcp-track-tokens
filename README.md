@@ -11,7 +11,6 @@ MCP Track Tokens correlates **editor activity** (prompts, agents, sessions) with
 | CLI / Server host | `src/McpTrackTokens.Cli` (assembly `mcp-track-tokens`) |
 | HTTP + MCP server | `src/McpTrackTokens.Server` |
 | Dashboard | `src/McpTrackTokens.Dashboard` |
-| VS Code extension | `extensions/mcp-track-tokens-vscode` |
 | Cursor hooks | `integrations/cursor-hooks` |
 | Docs | [`docs/`](docs/) |
 | Install scripts | [`scripts/`](scripts/) |
@@ -30,19 +29,18 @@ MCP Track Tokens correlates **editor activity** (prompts, agents, sessions) with
 7. [Windows MSI (recommended)](#7-windows-msi-recommended)
 8. [Running the server](#8-running-the-server)
 9. [Installing the dashboard](#9-installing-the-dashboard)
-10. [Installing the VS Code extension](#10-installing-the-vs-code-extension)
-11. [Installing Cursor hooks](#11-installing-cursor-hooks)
-12. [Configuring Cursor MCP](#12-configuring-cursor-mcp)
-13. [Registering a project](#13-registering-a-project)
-14. [Importing Cursor usage](#14-importing-cursor-usage)
-15. [Cost attribution](#15-cost-attribution)
-16. [Subscription allocation](#16-subscription-allocation)
-17. [MCP tools](#17-mcp-tools)
-18. [Reports](#18-reports)
-19. [Backup and restore](#19-backup-and-restore)
-20. [Security](#20-security)
-21. [Troubleshooting](#21-troubleshooting)
-22. [Known limitations](#22-known-limitations)
+10. [Installing Cursor hooks](#10-installing-cursor-hooks)
+11. [Configuring Cursor MCP](#11-configuring-cursor-mcp)
+12. [Registering a project](#12-registering-a-project)
+13. [Importing Cursor usage](#13-importing-cursor-usage)
+14. [Cost attribution](#14-cost-attribution)
+15. [Subscription allocation](#15-subscription-allocation)
+16. [MCP tools](#16-mcp-tools)
+17. [Reports](#17-reports)
+18. [Backup and restore](#18-backup-and-restore)
+19. [Security](#19-security)
+20. [Troubleshooting](#20-troubleshooting)
+21. [Known limitations](#21-known-limitations)
 
 ---
 
@@ -60,8 +58,7 @@ It provides:
 1. A **.NET 8 server** exposing REST (`/api/v1/*`), health checks, static dashboard files, and MCP tools (stdio or optional HTTP `/mcp`).
 2. A **CLI** for serve/migrate/import/export/reconcile/API keys/hooks install.
 3. **Cursor hooks** that POST privacy-sanitized activity events.
-4. A **VS Code / Cursor extension** with session commands and `@track` for guaranteed prompt observability in chat.
-5. A **React dashboard** for browsing projects, unallocated items, imports, and costs.
+4. A **React dashboard** for browsing projects, unallocated items, imports, and costs.
 
 Data stays on your machine by default (SQLite under `~/.mcp-track-tokens/`).
 
@@ -74,9 +71,8 @@ Data stays on your machine by default (SQLite under `~/.mcp-track-tokens/`).
 | Signal | Source |
 | --- | --- |
 | Prompt submitted / agent lifecycle / session start & end | Cursor hooks → `POST /api/v1/events` |
-| Prompt activity via `@track` | VS Code extension chat participant |
-| Sessions, heartbeats, inactivity windows | Extension + API `/api/v1/sessions/*` |
-| Repository path / remote URL context | Hooks git resolve + extension |
+| Sessions, heartbeats, inactivity windows | Hooks + API `/api/v1/sessions/*` |
+| Repository path / remote URL context | Hooks git resolve |
 | Imported token counts and usage cost | Cursor CSV/JSON exports |
 | Manual allocation of activity or usage | MCP tools / dashboard / CLI reconcile |
 
@@ -86,11 +82,11 @@ Data stays on your machine by default (SQLite under `~/.mcp-track-tokens/`).
 | --- | --- |
 | Passive interception of all Cursor/VS Code prompts | MCP servers do **not** see every chat turn automatically |
 | Automatic internal Cursor token meters | Token/cost numbers come from **exports you import**, not live meter scraping |
-| Guaranteed coverage without hooks or `@track` | Install hooks (Cursor) and/or use `@track` (VS Code) |
+| Guaranteed coverage without hooks | Install Cursor hooks for ambient activity |
 | Prompt/response bodies by default | Content is **not** stored unless you explicitly enable and configure encryption |
 | Single unified “truth” dataset | Activity and usage are **separate datasets** correlated by attribution rules |
 
-See [§22 Known limitations](#22-known-limitations).
+See [§21 Known limitations](#21-known-limitations).
 
 ---
 
@@ -100,12 +96,10 @@ See [§22 Known limitations](#22-known-limitations).
 flowchart TB
   subgraph Editors
     Cursor[Cursor IDE]
-    VSCode[VS Code / Cursor Extension]
   end
 
   subgraph Integrations
     Hooks[cursor-hooks dist/*.js]
-    Ext[mcp-track-tokens extension]
   end
 
   subgraph LocalStack["Local stack :5187"]
@@ -120,8 +114,6 @@ flowchart TB
 
   Cursor -->|stdin JSON| Hooks
   Hooks -->|Bearer POST /events| API
-  VSCode --> Ext
-  Ext -->|sessions + events| API
   CSV -->|CLI / API import| App
   API --> App
   MCP --> App
@@ -204,8 +196,8 @@ Details: [`docs/privacy.md`](docs/privacy.md).
 | Requirement | Notes |
 | --- | --- |
 | [.NET SDK 8](https://dotnet.microsoft.com/download/dotnet/8.0) | `global.json` pins `8.0.100` with `rollForward: latestMajor` |
-| [Node.js 20+](https://nodejs.org/) | Dashboard, extension, and hooks builds |
-| Cursor and/or VS Code 1.85+ | For hooks / extension |
+| [Node.js 20+](https://nodejs.org/) | Dashboard and hooks builds |
+| Cursor | For hooks and MCP integration |
 | Optional: Docker | `Dockerfile` + `docker-compose.yml` |
 
 ---
@@ -217,9 +209,6 @@ Details: [`docs/privacy.md`](docs/privacy.md).
 ```powershell
 # Windows
 .\scripts\build-all.ps1
-
-# Optional: also pack the VSIX
-.\scripts\build-all.ps1 -PackExtension
 ```
 
 ```bash
@@ -241,9 +230,6 @@ Copy-Item -Recurse src/McpTrackTokens.Dashboard/dist src/McpTrackTokens.Server/w
 
 npm --prefix integrations/cursor-hooks ci
 npm --prefix integrations/cursor-hooks run build
-
-npm --prefix extensions/mcp-track-tokens-vscode ci
-npm --prefix extensions/mcp-track-tokens-vscode run build
 ```
 
 Publish the CLI:
@@ -365,34 +351,7 @@ Install scripts perform the build + wwwroot copy automatically.
 
 ---
 
-## 10. Installing the VS Code extension
-
-```powershell
-npm --prefix extensions/mcp-track-tokens-vscode ci
-npm --prefix extensions/mcp-track-tokens-vscode run build
-npm --prefix extensions/mcp-track-tokens-vscode run package
-# → extensions/mcp-track-tokens-vscode/mcp-track-tokens-0.1.0.vsix
-```
-
-Install the VSIX:
-
-```powershell
-code --install-extension extensions/mcp-track-tokens-vscode/mcp-track-tokens-0.1.0.vsix
-# or Cursor:
-cursor --install-extension extensions/mcp-track-tokens-vscode/mcp-track-tokens-0.1.0.vsix
-```
-
-Windows installer switch: `.\scripts\install-windows.ps1 -InstallExtension` (prompts / prints the command; does **not** silently rewrite editor settings).
-
-Configure `mcpTrackTokens.serverUrl` (default `http://127.0.0.1:5187`) and store the API key via the extension’s connection flow.
-
-For **guaranteed** prompt observability in VS Code chat, use the `@track` participant.
-
-Details: [`docs/vscode-extension.md`](docs/vscode-extension.md).
-
----
-
-## 11. Installing Cursor hooks
+## 10. Installing Cursor hooks
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- install-cursor-hooks --yes
@@ -418,7 +377,7 @@ Details: [`docs/cursor-hooks.md`](docs/cursor-hooks.md).
 
 ---
 
-## 12. Configuring Cursor MCP
+## 11. Configuring Cursor MCP
 
 ### Recommended with Docker (one shared database)
 
@@ -485,13 +444,13 @@ Example file: [`samples/cursor-config/mcp.json`](samples/cursor-config/mcp.json)
 }
 ```
 
-Keep a separate long-running HTTP server (`serve --http`) for hooks, extension, and dashboard. Stdio MCP is for tool calls inside the agent.
+Keep a separate long-running HTTP server (`serve --http`) for hooks and dashboard. Stdio MCP is for tool calls inside the agent.
 
 Also see [`samples/cursor-config/mcp.dev.json`](samples/cursor-config/mcp.dev.json).
 
 ---
 
-## 13. Registering a project
+## 12. Registering a project
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- register-project `
@@ -505,12 +464,11 @@ dotnet run --project src/McpTrackTokens.Cli -- register-project `
 dotnet run --project src/McpTrackTokens.Cli -- list-projects
 ```
 
-MCP equivalents: `register_project`, `detect_current_project`.  
-Extension: **MCP Track Tokens: Register Current Project**.
+MCP equivalents: `register_project`, `detect_current_project`.
 
 ---
 
-## 14. Importing Cursor usage
+## 13. Importing Cursor usage
 
 Export usage from Cursor, then:
 
@@ -534,7 +492,7 @@ Details: [`docs/usage-imports.md`](docs/usage-imports.md).
 
 ---
 
-## 15. Cost attribution
+## 14. Cost attribution
 
 Imported usage rows are attributed to projects by an ordered engine (repository match → explicit project → session/request ids → active session → activity windows → proportional time → unallocated). Low-confidence matches are **not** silently promoted to Certain.
 
@@ -549,7 +507,7 @@ Details: [`docs/cost-allocation.md`](docs/cost-allocation.md).
 
 ---
 
-## 16. Subscription allocation
+## 15. Subscription allocation
 
 Usage-based Cursor cost and **subscription allocation** are separate totals. Configure:
 
@@ -563,7 +521,7 @@ Project cost reports show `UsageBasedCursorCost` + `SubscriptionAllocation` with
 
 ---
 
-## 17. MCP tools
+## 16. MCP tools
 
 All tools are registered in `src/McpTrackTokens.Server/Mcp/TrackingTools.cs` (server name `mcp-track-tokens`, version `1.0.0`).
 
@@ -600,7 +558,7 @@ The same catalog appears in the dashboard under **MCP Help → Tools** (`src/Mcp
 
 ---
 
-## 18. Reports
+## 17. Reports
 
 ```powershell
 dotnet run --project src/McpTrackTokens.Cli -- export `
@@ -619,7 +577,7 @@ Dashboard: Summary and per-project cost/activity pages via `/api/v1/reports/summ
 
 ---
 
-## 19. Backup and restore
+## 18. Backup and restore
 
 Default data root: `~/.mcp-track-tokens/` (Docker: `/data`).
 
@@ -642,7 +600,7 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 
 ---
 
-## 20. Security
+## 19. Security
 
 - Bind defaults to **localhost** (`127.0.0.1:5187`). Do not expose without TLS and network controls.
 - API and HTTP MCP require `Authorization: Bearer <api-key>`.
@@ -654,7 +612,7 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 
 ---
 
-## 21. Troubleshooting
+## 20. Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
@@ -662,21 +620,19 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 | 401 on API | Bearer key matches `create-api-key` / env |
 | Empty costs | Import CSV; attribution may leave rows unallocated |
 | Dashboard blank API | Set API key in Settings; CORS is localhost-only |
-| Extension not tracking prompts | Use `@track`; enable auto-session settings |
 
 Full guide: [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ---
 
-## 22. Known limitations
+## 21. Known limitations
 
 1. **MCP cannot passively intercept all Cursor/VS Code prompts.** Tools report what was ingested; they do not wrap the editor’s model transport.
-2. **Cursor needs hooks (and/or the extension)** for ambient activity events.
-3. **VS Code `@track` is the reliable path** for guaranteed chat prompt observability in the extension model.
-4. **Costs come from Cursor exports** you import — not from live internal token capture.
-5. **Activity and usage are separate datasets** correlated by attribution rules; expect unallocated rows.
-6. **No claim of automatic internal token capture** from Cursor/VS Code runtimes.
-7. **No prompt content by default** — length/hash only unless you explicitly opt in.
+2. **Cursor needs hooks** for ambient activity events.
+3. **Costs come from Cursor exports** you import — not from live internal token capture.
+4. **Activity and usage are separate datasets** correlated by attribution rules; expect unallocated rows.
+5. **No claim of automatic internal token capture** from Cursor/VS Code runtimes.
+6. **No prompt content by default** — length/hash only unless you explicitly opt in.
 
 ---
 
@@ -694,7 +650,7 @@ Dev alternate (CLI publish script):
 ```powershell
 .\scripts\install-windows.ps1
 # Optional:
-.\scripts\install-windows.ps1 -InstallHooks -InstallExtension
+.\scripts\install-windows.ps1 -InstallHooks
 ```
 
 See [`docs/windows-msi.md`](docs/windows-msi.md).
@@ -704,7 +660,7 @@ See [`docs/windows-msi.md`](docs/windows-msi.md).
 ```bash
 chmod +x scripts/*.sh
 ./scripts/install-linux.sh
-./scripts/install-linux.sh --install-hooks --install-extension
+./scripts/install-linux.sh --install-hooks
 ```
 
 ## Uninstall

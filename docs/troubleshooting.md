@@ -36,14 +36,6 @@ If `/health` works but `/ready` fails, check SQLite path permissions or Postgres
 6. Enable `MCP_TRACK_TOKENS_DEBUG=1` for stderr diagnostics.
 7. Remember: hooks are version-dependent; not every UI action fires every event.
 
-## Extension not tracking prompts
-
-- Install and enable the VSIX; reload the window.
-- `mcpTrackTokens.serverUrl` matches the running server.
-- Use **`@track`** for guaranteed chat observability.
-- `Test Server Connection` command.
-- Auto-session settings only cover supported prompt paths — not all editor AI surfaces.
-
 ## Imports produce zero / unallocated rows
 
 - Validate CSV headers against [usage-imports.md](usage-imports.md).

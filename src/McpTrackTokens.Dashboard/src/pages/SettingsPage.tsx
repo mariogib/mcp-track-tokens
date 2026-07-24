@@ -2043,29 +2043,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Whether the VS Code extension was detected from the server."
-                >
-                  VS Code extension{' '}
-                  <SettingHelp
-                    help={{
-                      summary: 'Whether the VS Code extension was detected from the server.',
-                      detail:
-                        'Reflects detection from the tracking host’s viewpoint (extension install paths or related signals). Unknown does not always mean missing—remote APIs often cannot see your local editor extensions.',
-                    }}
-                  />
-                </div>
-                <StatusBadge
-                  label={
-                    integrations.data?.vscodeExtensionDetected
-                      ? 'Detected'
-                      : 'Unknown / not detected'
-                  }
-                  tone={integrations.data?.vscodeExtensionDetected ? 'success' : 'warning'}
-                />
-              </div>
-              <div>
-                <div
-                  className="label setting-label"
                   title="Whether MCP tooling for this server appears configured."
                 >
                   MCP{' '}

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Database-backed lazy paging for project prompts and timesheet entry browse lists (`pageIndex` / `pageSize`, prompt facets).
 
+### Removed
+
+- VS Code / Cursor editor extension package (`extensions/mcp-track-tokens-vscode`) and MSI/setup options to install it. Use Cursor hooks for prompt ingest.
+
 ### Fixed
 
 - **Agent (min)** now sums completed prompt durations (milliseconds) instead of empty agent-end rows, then converts to minutes for display.

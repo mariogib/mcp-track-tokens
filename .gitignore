@@ -45,11 +45,10 @@ pnpm-debug.log*
 .yarn/
 *.tsbuildinfo
 
-# Frontend / extension / hooks build output
+# Frontend / hooks build output
 dist/
 **/wwwroot/
 !src/McpTrackTokens.Server/wwwroot/.gitkeep
-*.vsix
 .vite/
 coverage/
 .nyc_output/

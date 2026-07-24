@@ -362,8 +362,7 @@ public static class DashboardAdminEndpoints
         {
             status.QueuedEventCount > 0
                 ? $"{status.QueuedEventCount} queued offline event(s) under {queuePath}."
-                : "No queued offline events detected.",
-            "VS Code extension presence is not auto-detected from the server process."
+                : "No queued offline events detected."
         };
 
         if (hooksOnDisk)
@@ -388,7 +387,6 @@ public static class DashboardAdminEndpoints
             cursorHooksConfigured,
             cursorHooksOnDisk = hooksOnDisk,
             cursorHooksInferredFromActivity = !hooksOnDisk && recentCursorIngest,
-            vscodeExtensionDetected = false,
             mcpConfigured = true,
             lastIngestAtUtc = status.LastEventAtUtc,
             notes

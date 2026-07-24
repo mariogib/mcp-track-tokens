@@ -8,7 +8,7 @@ On Windows, the **primary** way to deploy MCP Track Tokens is the MSI installer.
 | HTTP MCP | `http://127.0.0.1:5187/mcp` |
 | Dashboard | Static `wwwroot` served by the same host |
 | Desktop shell | WebView2 app that opens the dashboard URL |
-| Optional integrations | Cursor hooks + VS Code/Cursor VSIX (setup options) |
+| Optional integrations | Cursor hooks (setup option) |
 
 You do **not** need Docker for normal Windows desktop use.
 
@@ -22,7 +22,7 @@ Output:
 
 `artifacts/installer/MCP-Track-Tokens-Setup.msi`
 
-The script publishes the tray host (embeds `McpTrackTokens.Server` + dashboard `wwwroot`), the desktop shell, Cursor hooks, the extension VSIX, and the post-install helper, then builds the WiX MSI. It fails the build if `McpTrackTokens.Server.dll`, `wwwroot/index.html`, or the `5187` bind/server URL is missing from the tray publish output.
+The script publishes the tray host (embeds `McpTrackTokens.Server` + dashboard `wwwroot`), the desktop shell, Cursor hooks, and the post-install helper, then builds the WiX MSI. It fails the build if `McpTrackTokens.Server.dll`, `wwwroot/index.html`, or the `5187` bind/server URL is missing from the tray publish output.
 
 ## Install
 
@@ -34,7 +34,6 @@ Typical options (defaults are ON):
 
 - Start MCP Track Tokens when Windows starts
 - Install Cursor hooks
-- Install VS Code / Cursor extension
 - **Upgrade / keep existing SQLite database** (recommended) — leaves `%USERPROFILE%\.mcp-track-tokens\` intact when upgrading or reinstalling. Uncheck only for a clean database reset.
 - Start MCP Track Tokens now (exit dialog)
 
@@ -42,7 +41,7 @@ Install layout (under `Program Files\MCP Track Tokens\`):
 
 - Tray host: `mcp-track-tokens-tray.exe` (API + MCP + dashboard)
 - Desktop: `Desktop\mcp-track-tokens-desktop.exe`
-- Integrations: `integrations\` (hooks, VSIX, HTTP MCP sample)
+- Integrations: `integrations\` (hooks, HTTP MCP sample)
 
 ## Upgrades
 

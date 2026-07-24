@@ -11,7 +11,7 @@
       Compressed="yes">
 
     <SummaryInformation
-        Description="Deploys the MCP Track Tokens local stack on Windows: HTTP API, HTTP MCP server (/mcp), SQLite database, web dashboard (wwwroot), desktop shell, plus optional Cursor hooks and VS Code/Cursor extension."
+        Description="Deploys the MCP Track Tokens local stack on Windows: HTTP API, HTTP MCP server (/mcp), SQLite database, web dashboard (wwwroot), desktop shell, plus optional Cursor hooks."
         Manufacturer="MCP Track Tokens" />
 
     <!-- Early remove of the previous MSI; user data lives under %USERPROFILE%\.mcp-track-tokens and is never part of the product payload. -->
@@ -29,7 +29,6 @@
     <!-- Defaults: all options ON (keep database on upgrade/install). -->
     <Property Id="STARTWITHWINDOWS" Value="1" Secure="yes" />
     <Property Id="INSTALLHOOKS" Value="1" Secure="yes" />
-    <Property Id="INSTALLEXTENSION" Value="1" Secure="yes" />
     <Property Id="KEEPDATABASE" Value="1" Secure="yes" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start MCP Track Tokens now" />
@@ -42,7 +41,7 @@
 
     <!-- Deferred quiet-exec payload: property Id must match the CustomAction Id. -->
     <SetProperty Id="InstallIntegrations"
-                 Value="&quot;[ToolsFolder]mcp-track-tokens-setup-integrations.exe&quot; --install-dir &quot;[INSTALLFOLDER]&quot; --hooks [INSTALLHOOKS] --extension [INSTALLEXTENSION] --keep-database [KEEPDATABASE]"
+                 Value="&quot;[ToolsFolder]mcp-track-tokens-setup-integrations.exe&quot; --install-dir &quot;[INSTALLFOLDER]&quot; --hooks [INSTALLHOOKS] --keep-database [KEEPDATABASE]"
                  Before="InstallIntegrations"
                  Sequence="execute" />
 
@@ -59,7 +58,7 @@
                   Return="ignore" />
 
     <InstallExecuteSequence>
-      <!-- Always run: writes HTTP MCP example config; optionally installs hooks/extension. -->
+      <!-- Always run: writes HTTP MCP example config; optionally installs Cursor hooks. -->
       <Custom Action="InstallIntegrations" After="InstallFiles"
               Condition="NOT REMOVE" />
     </InstallExecuteSequence>
@@ -122,7 +121,7 @@
       </Files>
     </ComponentGroup>
 
-    <!-- Cursor hooks package + VSIX -->
+    <!-- Cursor hooks package -->
     <ComponentGroup Id="IntegrationsFiles" Directory="IntegrationsFolder">
       <Files Include="!(bindpath.IntegrationsContentDir)**">
         <Exclude Files="**\*.pdb" />

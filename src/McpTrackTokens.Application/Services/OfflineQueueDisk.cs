@@ -2,7 +2,7 @@ namespace McpTrackTokens.Application.Services;
 
 /// <summary>
 /// Counts and trims offline event files under the configured queue directory
-/// (Cursor hooks / VS Code JSONL plus optional single-event <c>*.json</c> stubs).
+/// (Cursor hooks JSONL plus optional single-event <c>*.json</c> stubs).
 /// </summary>
 public static class OfflineQueueDisk
 {
