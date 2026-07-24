@@ -202,6 +202,11 @@ public interface IActivityEventRepository
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Latest activity event by timestamp, if any.
+    /// </summary>
+    Task<PromptActivityEvent?> GetLatestAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Counts activity events matching browse filters (SQL).
     /// </summary>
     Task<int> CountAsync(
@@ -277,6 +282,14 @@ public interface IActivityEventRepository
         AttributionMethod method,
         AttributionConfidence confidence,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes unallocated activity events by id (ignores allocated rows).
+    /// Returns the number of events removed.
+    /// </summary>
+    Task<int> DeleteUnallocatedByIdsAsync(
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -332,6 +345,14 @@ public interface IExternalUsageRepository
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         int? limit = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts usage rows in range that have no project attribution.
+    /// </summary>
+    Task<int> CountUnallocatedAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
         CancellationToken cancellationToken = default);
 
     /// <summary>

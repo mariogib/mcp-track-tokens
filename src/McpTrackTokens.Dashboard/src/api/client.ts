@@ -47,6 +47,8 @@ import type {
   UpdateTimesheetCategoryRequest,
   AssignActivityRequestDto,
   AssignActivityResultDto,
+  DeleteActivityRequestDto,
+  DeleteActivityResultDto,
   UnallocatedBundle,
   UnallocatedItemDto,
   UnallocatedUsageReport,
@@ -557,6 +559,13 @@ export const api = {
 
   assignActivity: (body: AssignActivityRequestDto, signal?: AbortSignal) =>
     apiRequest<AssignActivityResultDto>('/api/v1/activity/assign', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  deleteActivity: (body: DeleteActivityRequestDto, signal?: AbortSignal) =>
+    apiRequest<DeleteActivityResultDto>('/api/v1/activity/delete', {
       method: 'POST',
       body,
       signal,

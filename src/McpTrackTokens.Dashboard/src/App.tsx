@@ -59,7 +59,7 @@ export default function App() {
         <Route path="reconciliation" element={<Navigate to="/imported-usage" replace />} />
         <Route
           path="unallocated"
-          element={<Navigate to="/imported-usage?tab=unallocated" replace />}
+          element={<Navigate to="/imported-usage?tab=unallocated-prompts" replace />}
         />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<HelpLandingPage />} />

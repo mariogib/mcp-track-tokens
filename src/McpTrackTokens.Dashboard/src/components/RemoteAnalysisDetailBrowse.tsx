@@ -22,6 +22,46 @@ import { STATUS_FILTER_NONE } from './AnalysisDetailBrowse';
 /** Max rows fetched for Excel export of a remote filtered list. */
 export const REMOTE_BROWSE_EXPORT_CAP = 5_000;
 
+/** Max server pages retained in the client cache (bounds memory while browsing). */
+export const REMOTE_BROWSE_MAX_CACHED_PAGES = 12;
+
+/**
+ * Inserts a page into the cache and drops farthest/oldest pages when over the cap.
+ * Scroll mode drops lowest indices first so the newest tail remains visible.
+ */
+export function withCachedRemotePage<T>(
+  cache: Map<number, T[]>,
+  page: number,
+  items: T[],
+  pagingMode: BrowsePagingMode,
+  maxPages: number = REMOTE_BROWSE_MAX_CACHED_PAGES,
+): Map<number, T[]> {
+  const next = new Map(cache);
+  next.set(page, items);
+  if (next.size <= maxPages) {
+    return next;
+  }
+
+  if (pagingMode === 'scroll') {
+    const keys = [...next.keys()].sort((a, b) => a - b);
+    while (next.size > maxPages && keys.length > 0) {
+      next.delete(keys.shift()!);
+    }
+    return next;
+  }
+
+  const ranked = [...next.keys()].sort(
+    (a, b) => Math.abs(a - page) - Math.abs(b - page) || a - b,
+  );
+  const keep = new Set(ranked.slice(0, maxPages));
+  for (const key of [...next.keys()]) {
+    if (!keep.has(key)) {
+      next.delete(key);
+    }
+  }
+  return next;
+}
+
 export type RemotePageFetchArgs = {
   pageIndex: number;
   pageSize: number;
@@ -171,11 +211,24 @@ export function RemoteAnalysisDetailBrowse<T>({
           return;
         }
         setTotalCount(result.totalCount);
-        const next = new Map(pageCacheRef.current);
-        next.set(targetPage, result.items);
+        const next = withCachedRemotePage(
+          pageCacheRef.current,
+          targetPage,
+          result.items,
+          pagingMode,
+        );
         pageCacheRef.current = next;
         setPageCache(next);
-        setLoadedPages((previous) => loadBrowsePage(previous, targetPage));
+        setLoadedPages((previous) => {
+          let updated = loadBrowsePage(previous, targetPage);
+          if (updated.size !== next.size) {
+            updated = new Set([...updated].filter((page) => next.has(page)));
+            if (!updated.has(targetPage) && next.has(targetPage)) {
+              updated.add(targetPage);
+            }
+          }
+          return updated;
+        });
         setReady(true);
         setError(null);
       } catch (cause) {
@@ -194,7 +247,7 @@ export function RemoteAnalysisDetailBrowse<T>({
         }
       }
     },
-    [debouncedSearch, pageSize, statusFilter],
+    [debouncedSearch, pageSize, pagingMode, statusFilter],
   );
 
   const filterToken = `${filterKey}|${debouncedSearch}|${statusFilter}|${pageSize}|${pagingMode}`;
@@ -413,7 +466,7 @@ export function RemoteAnalysisDetailBrowse<T>({
               return;
             }
             setPageIndex(nextScrollPage);
-            void ensurePageLoaded(nextScrollPage);
+            void ensurePageLoaded(nextScrollPage, requestIdRef.current);
           }}
         />
       ) : null}

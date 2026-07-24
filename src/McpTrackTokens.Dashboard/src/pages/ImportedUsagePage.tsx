@@ -21,7 +21,7 @@ import {
 } from '../utils/format';
 import { UnallocatedActivityPanel } from './UnallocatedActivityPage';
 
-const IMPORTED_USAGE_TABS = ['Upload & map', 'Imported usage', 'Unallocated'] as const;
+const IMPORTED_USAGE_TABS = ['Upload & map', 'Imported usage', 'Unallocated prompts'] as const;
 
 export function ImportedUsagePage() {
   const [tab, setTab] = useTabSearchParam(IMPORTED_USAGE_TABS, 'Upload & map');
@@ -45,7 +45,7 @@ export function ImportedUsagePage() {
 
       {tab === 'Upload & map' ? (
         <ImportUploadMapPanel />
-      ) : tab === 'Unallocated' ? (
+      ) : tab === 'Unallocated prompts' ? (
         <UnallocatedActivityPanel />
       ) : (
         <ImportedUsageList />

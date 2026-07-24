@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { HookConfig, TrackingEvent } from './shared';
 
+export const DEFAULT_MAX_QUEUED_EVENTS = 10_000;
+
 export interface SendEventOptions {
   config: HookConfig;
   fetchImpl?: typeof fetch;
@@ -29,7 +31,7 @@ export async function sendEvent(
     await postWithRetry(event, config, fetchImpl);
     return { ok: true, queued: false };
   } catch {
-    enqueue(event, config.queuePath, fsImpl);
+    enqueue(event, config.queuePath, fsImpl, config.maxQueuedEvents);
     return { ok: false, queued: true };
   }
 }
@@ -117,25 +119,37 @@ export function enqueue(
   event: TrackingEvent,
   queuePath: string,
   fsImpl: NonNullable<SendEventOptions['fsImpl']> = fs,
-): void {
+  maxQueuedEvents: number = DEFAULT_MAX_QUEUED_EVENTS,
+): boolean {
   ensureDir(path.dirname(queuePath), fsImpl);
-  // Deduplicate by externalEventId if already present
+  const max = Math.max(1, maxQueuedEvents);
+
+  let lines: string[] = [];
   if (fsImpl.existsSync(queuePath)) {
     const existing = fsImpl.readFileSync(queuePath, 'utf8');
-    for (const line of existing.split(/\r?\n/)) {
-      if (!line.trim()) continue;
+    lines = existing.split(/\r?\n/).filter((l) => l.trim());
+    for (const line of lines) {
       try {
         const parsed = JSON.parse(line) as TrackingEvent;
         if (parsed.externalEventId && parsed.externalEventId === event.externalEventId) {
-          return;
+          return false;
         }
       } catch {
         // continue
       }
     }
   }
+
+  if (lines.length >= max) {
+    const over = lines.length - max + 1;
+    const dropCount = Math.max(over, Math.max(1, Math.floor(max * 0.1)));
+    lines = lines.slice(Math.min(dropCount, lines.length));
+    fsImpl.writeFileSync(queuePath, lines.length ? `${lines.join('\n')}\n` : '', 'utf8');
+  }
+
   fsImpl.appendFileSync(queuePath, `${JSON.stringify(event)}\n`, 'utf8');
   secureFile(queuePath, fsImpl);
+  return true;
 }
 
 function ensureDir(

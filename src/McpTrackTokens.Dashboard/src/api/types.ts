@@ -311,6 +311,14 @@ export interface AssignActivityResultDto {
   assigned: number;
 }
 
+export interface DeleteActivityRequestDto {
+  eventIds: string[];
+}
+
+export interface DeleteActivityResultDto {
+  deleted: number;
+}
+
 export interface MonthlySummaryReport {
   year: number;
   month: number;

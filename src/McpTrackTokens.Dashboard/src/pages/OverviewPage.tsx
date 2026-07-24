@@ -231,10 +231,10 @@ export function OverviewPage() {
             hint={`Usage ${formatCurrency(cost?.usageBasedCost, cost?.currency)} · Sub ${formatCurrency(cost?.subscriptionAllocation, cost?.currency)} · Token ${formatCurrency(cost?.calculatedTokenCost ?? 0, cost?.currency)}`}
           />
           <MetricCard
-            label="Unallocated activity"
+            label="Unallocated prompts"
             value={formatNumber(unallocatedActivityCount)}
-            hint="Click to assign events to projects"
-            to="/imported-usage?tab=unallocated"
+            hint="Click to assign or delete prompts"
+            to="/imported-usage?tab=unallocated-prompts"
           />
           <MetricCard
             label="Unallocated usage"

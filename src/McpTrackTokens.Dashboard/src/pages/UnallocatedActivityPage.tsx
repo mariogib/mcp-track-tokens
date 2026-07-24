@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   useAssignActivityMutation,
+  useDeleteActivityMutation,
   useProjectsQuery,
   useUnallocatedQuery,
 } from '../api/hooks';
@@ -13,12 +14,13 @@ import {
   lastDaysRange,
 } from '../utils/format';
 
-/** Unallocated activity assign UI (embedded under Imported usage tabs). */
+/** Unallocated prompts assign/delete UI (embedded under Imported usage tabs). */
 export function UnallocatedActivityPanel() {
   const range = useMemo(() => lastDaysRange(30), []);
   const unallocated = useUnallocatedQuery(range.fromUtc, range.toUtc);
   const projects = useProjectsQuery();
   const assign = useAssignActivityMutation();
+  const deleteActivity = useDeleteActivityMutation();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [projectId, setProjectId] = useState('');
@@ -26,6 +28,8 @@ export function UnallocatedActivityPanel() {
 
   const items = unallocated.data?.activity ?? [];
   const activeProjects = (projects.data ?? []).filter((p) => p.isActive !== false);
+  const selectedCount = selectedIds.size;
+  const busy = assign.isPending || deleteActivity.isPending;
 
   const toggle = (id: string) => {
     setSelectedIds((prev) => {
@@ -45,14 +49,14 @@ export function UnallocatedActivityPanel() {
   };
 
   const onAssign = () => {
-    if (!projectId || selectedIds.size === 0) return;
+    if (!projectId || selectedCount === 0) return;
     setMessage(null);
     assign.mutate(
       { projectId, eventIds: [...selectedIds] },
       {
         onSuccess: (result) => {
           setSelectedIds(new Set());
-          setMessage(`Assigned ${formatNumber(result.assigned)} event(s) to the selected project.`);
+          setMessage(`Assigned ${formatNumber(result.assigned)} prompt(s) to the selected project.`);
         },
         onError: (err) => {
           setMessage(err instanceof Error ? err.message : 'Assign failed');
@@ -61,8 +65,33 @@ export function UnallocatedActivityPanel() {
     );
   };
 
+  const onDelete = () => {
+    if (selectedCount === 0) return;
+    const confirmed = window.confirm(
+      `Delete ${formatNumber(selectedCount)} unallocated prompt${selectedCount === 1 ? '' : 's'}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setMessage(null);
+    deleteActivity.mutate(
+      { eventIds: [...selectedIds] },
+      {
+        onSuccess: (result) => {
+          setSelectedIds(new Set());
+          setMessage(
+            result.deleted === 0
+              ? 'No unallocated prompts were deleted.'
+              : `Deleted ${formatNumber(result.deleted)} unallocated prompt${result.deleted === 1 ? '' : 's'}.`,
+          );
+        },
+        onError: (err) => {
+          setMessage(err instanceof Error ? err.message : 'Delete failed');
+        },
+      },
+    );
+  };
+
   if (unallocated.isLoading) {
-    return <LoadingState label="Loading unallocated activity…" />;
+    return <LoadingState label="Loading unallocated prompts…" />;
   }
 
   if (unallocated.error) {
@@ -71,7 +100,7 @@ export function UnallocatedActivityPanel() {
         message={
           unallocated.error instanceof Error
             ? unallocated.error.message
-            : 'Failed to load unallocated activity'
+            : 'Failed to load unallocated prompts'
         }
       />
     );
@@ -81,8 +110,8 @@ export function UnallocatedActivityPanel() {
     <section className="page-section">
       <div className="section-header">
         <div>
-          <h2>Unallocated activity</h2>
-          <p>Select events and assign them to a tracked project.</p>
+          <h2>Unallocated prompts</h2>
+          <p>Select events to assign them to a tracked project or delete them.</p>
         </div>
       </div>
 
@@ -105,23 +134,44 @@ export function UnallocatedActivityPanel() {
           </div>
           <div className="field" style={{ justifyContent: 'flex-end' }}>
             <label className="label">&nbsp;</label>
-            <button
-              type="button"
-              className="btn"
-              disabled={!projectId || selectedIds.size === 0 || assign.isPending}
-              onClick={onAssign}
-            >
-              {assign.isPending
-                ? 'Assigning…'
-                : `Assign ${selectedIds.size || ''} selected`}
-            </button>
+            <div className="row">
+              <button
+                type="button"
+                className="btn"
+                disabled={!projectId || selectedCount === 0 || busy}
+                onClick={onAssign}
+              >
+                {assign.isPending
+                  ? 'Assigning…'
+                  : `Assign ${selectedCount || ''} selected`}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={selectedCount === 0 || busy}
+                onClick={onDelete}
+              >
+                {deleteActivity.isPending
+                  ? 'Deleting…'
+                  : `Delete ${selectedCount || ''} selected`}
+              </button>
+            </div>
           </div>
         </div>
         {message ? <p className="hint">{message}</p> : null}
+        {deleteActivity.isError ? (
+          <ErrorState
+            message={
+              deleteActivity.error instanceof Error
+                ? deleteActivity.error.message
+                : 'Delete unallocated prompts failed'
+            }
+          />
+        ) : null}
       </Panel>
 
       {items.length === 0 ? (
-        <EmptyState message="No unallocated activity in the last 30 days." />
+        <EmptyState message="No unallocated prompts in the last 30 days." />
       ) : (
         <TablePanel>
           <table className="data">

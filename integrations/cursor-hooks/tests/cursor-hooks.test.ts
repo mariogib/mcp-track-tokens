@@ -213,6 +213,7 @@ describe('send-event queue', () => {
       enablePromptHashing: false,
       storePromptContent: false,
       queuePath,
+      maxQueuedEvents: 10_000,
     };
 
     const result = await sendEvent(sampleEvent('e1'), { config, fetchImpl });
@@ -241,6 +242,7 @@ describe('send-event queue', () => {
       enablePromptHashing: false,
       storePromptContent: false,
       queuePath,
+      maxQueuedEvents: 10_000,
     };
 
     const result = await sendEvent(sampleEvent('ok-1'), { config, fetchImpl });
@@ -260,10 +262,27 @@ describe('send-event queue', () => {
       enablePromptHashing: false,
       storePromptContent: false,
       queuePath,
+      maxQueuedEvents: 10_000,
     };
 
     const flushed = await flushQueue({ config, fetchImpl });
     expect(flushed).toBe(1);
     expect(fs.readFileSync(queuePath, 'utf8').trim()).toBe('');
+  });
+
+  it('drops oldest events when queue exceeds maxQueuedEvents', () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtt-ch-'));
+    const queuePath = path.join(dir, 'cursor-events.jsonl');
+    for (let i = 0; i < 5; i++) {
+      enqueue(sampleEvent(`e${i}`), queuePath, fs, 3);
+    }
+    const ids = fs
+      .readFileSync(queuePath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => (JSON.parse(line) as TrackingEvent).externalEventId);
+    expect(ids.length).toBeLessThanOrEqual(3);
+    expect(ids).toContain('e4');
+    expect(ids).not.toContain('e0');
   });
 });

@@ -3,6 +3,7 @@ import { api } from './client';
 import type {
   AllocationRequestDto,
   AssignActivityRequestDto,
+  DeleteActivityRequestDto,
   CreateApiKeyRequestDto,
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
@@ -787,6 +788,20 @@ export function useAssignActivityMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: AssignActivityRequestDto) => api.assignActivity(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useDeleteActivityMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DeleteActivityRequestDto) => api.deleteActivity(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });

@@ -188,6 +188,34 @@ public sealed class BrowsePagingTests : IAsyncLifetime
         text.Should().ContainEquivalentOf("OFFSET");
     }
 
+    [Fact]
+    public async Task ActivityEvents_ListAsync_FiltersByUnixRangeWithoutLoadingOutsideWindow()
+    {
+        using var scope = _services.CreateScope();
+        var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+        var events = scope.ServiceProvider.GetRequiredService<IActivityEventRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var project = Project.Create("Range Project", "range-project");
+        await projects.AddAsync(project);
+        await uow.SaveChangesAsync();
+
+        var inside = new DateTimeOffset(2024, 8, 10, 12, 0, 0, TimeSpan.Zero);
+        var outside = inside.AddDays(-30);
+        await events.AddAsync(PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted, EditorType.Cursor, inside, project.Id, model: "in"));
+        await events.AddAsync(PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted, EditorType.Cursor, outside, project.Id, model: "out"));
+        await uow.SaveChangesAsync();
+
+        var listed = await events.ListAsync(inside.AddHours(-1), inside.AddHours(1), project.Id);
+        listed.Should().ContainSingle(e => e.Model == "in");
+        listed.Should().NotContain(e => e.Model == "out");
+
+        var latest = await events.GetLatestAsync();
+        latest!.Model.Should().Be("in");
+    }
+
     private static void TryDelete(string path)
     {
         try

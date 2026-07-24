@@ -871,11 +871,11 @@ public sealed class ReportService : IReportService
 
         var now = DateTimeOffset.UtcNow;
         var todayStart = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
-        var lastEvents = await _events.ListAsync(todayStart.AddDays(-7), now, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        var last = lastEvents.OrderByDescending(e => e.TimestampUtc).FirstOrDefault();
+        var last = await _events.GetLatestAsync(cancellationToken).ConfigureAwait(false);
         var latestImport = await _imports.GetLatestAsync(UsageSource.CursorCsv, cancellationToken).ConfigureAwait(false)
             ?? await _imports.GetLatestAsync(UsageSource.CursorJson, cancellationToken).ConfigureAwait(false);
+
+        var queuePath = TrackingOptions.ExpandPath(_options.QueuePath);
 
         return new TrackingStatusDto
         {
@@ -887,12 +887,12 @@ public sealed class ReportService : IReportService
             ActiveSessionEditor = active?.Editor.ToString(),
             LastEventAtUtc = last?.TimestampUtc,
             LastEventType = last?.EventType.ToString(),
-            QueuedEventCount = 0,
+            QueuedEventCount = OfflineQueueDisk.CountEvents(queuePath),
             UnallocatedEventCount = await _events.CountUnallocatedAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false),
-            UnallocatedUsageCount = (await _usage
-                .ListUnallocatedAsync(todayStart.AddDays(-30), now, cancellationToken: cancellationToken)
-                .ConfigureAwait(false)).Count,
+            UnallocatedUsageCount = await _usage
+                .CountUnallocatedAsync(todayStart.AddDays(-30), now, cancellationToken)
+                .ConfigureAwait(false),
             LastCursorImportAtUtc = latestImport?.CompletedAtUtc ?? latestImport?.StartedAtUtc,
             LastCursorImportStatus = latestImport?.Status.ToString()
         };

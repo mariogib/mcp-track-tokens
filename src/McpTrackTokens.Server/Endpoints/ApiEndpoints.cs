@@ -67,6 +67,7 @@ public static class ApiEndpoints
         api.MapDelete("/unallocated/usage", DeleteUnallocatedUsageAsync);
         api.MapGet("/usage/imported", GetImportedUsageAsync);
         api.MapPost("/activity/assign", AssignActivityAsync);
+        api.MapPost("/activity/delete", DeleteActivityAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
         api.MapGet("/reports/clients", ListReportClientsAsync);
         api.MapGet("/reports/clients/{clientName}/cost", GetClientCostAsync);
@@ -1235,6 +1236,31 @@ public static class ApiEndpoints
             ProjectId = request.ProjectId,
             Assigned = request.EventIds.Count
         });
+    }
+
+    private static async Task<IResult> DeleteActivityAsync(
+        DeleteActivityRequestDto request,
+        IActivityEventRepository events,
+        IUnitOfWork unitOfWork,
+        CancellationToken cancellationToken)
+    {
+        if (request.EventIds is null || request.EventIds.Count == 0)
+        {
+            return Results.BadRequest(new { error = "At least one event id is required." });
+        }
+
+        try
+        {
+            var deleted = await events
+                .DeleteUnallocatedByIdsAsync(request.EventIds, cancellationToken)
+                .ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(new DeleteActivityResultDto { Deleted = deleted });
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static async Task<IResult> GetSummaryAsync(

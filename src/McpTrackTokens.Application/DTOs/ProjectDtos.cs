@@ -329,3 +329,19 @@ public sealed record AssignActivityResultDto
 
     public int Assigned { get; init; }
 }
+
+/// <summary>
+/// Request to delete unallocated activity events by id.
+/// </summary>
+public sealed record DeleteActivityRequestDto
+{
+    public IReadOnlyList<Guid> EventIds { get; init; } = [];
+}
+
+/// <summary>
+/// Result of deleting unallocated activity events.
+/// </summary>
+public sealed record DeleteActivityResultDto
+{
+    public int Deleted { get; init; }
+}

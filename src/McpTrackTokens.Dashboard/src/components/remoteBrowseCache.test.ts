@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createBrowseLoadedPages } from '@lunarq/frontend-shared/components';
+import { withCachedRemotePage } from './RemoteAnalysisDetailBrowse';
 
 /**
  * Mirrors RemoteAnalysisDetailBrowse cache-reset behaviour when filters change.
@@ -36,5 +37,25 @@ describe('remote browse page cache', () => {
     expect(next.pageIndex).toBe(0);
     expect(next.pageCache.size).toBe(0);
     expect([...next.loadedPages]).toEqual([0]);
+  });
+
+  it('keeps pages closest to the newly loaded page in lazy mode', () => {
+    let cache = new Map<number, unknown[]>();
+    for (let page = 0; page < 5; page += 1) {
+      cache = withCachedRemotePage(cache, page, [{ id: page }], 'lazy', 3);
+    }
+    expect(cache.size).toBe(3);
+    expect(cache.has(4)).toBe(true);
+    expect(cache.has(3)).toBe(true);
+    expect(cache.has(2)).toBe(true);
+    expect(cache.has(0)).toBe(false);
+  });
+
+  it('drops lowest indices first in scroll mode', () => {
+    let cache = new Map<number, unknown[]>();
+    for (let page = 0; page < 5; page += 1) {
+      cache = withCachedRemotePage(cache, page, [{ id: page }], 'scroll', 3);
+    }
+    expect([...cache.keys()].sort((a, b) => a - b)).toEqual([2, 3, 4]);
   });
 });

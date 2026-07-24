@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
@@ -76,11 +78,24 @@ public sealed class SessionRepository : ISessionRepository
         CancellationToken cancellationToken = default)
     {
         var at = timestampUtc.ToUniversalTime();
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            _db.EditorSessions.AsNoTracking(),
-            s => s.StartedAtUtc <= at && (s.EndedAtUtc == null || s.EndedAtUtc >= at),
-            items => items.OrderByDescending(s => s.LastActivityAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            return await _db.EditorSessions.AsNoTracking()
+                .Where(s => s.StartedAtUtc <= at && (s.EndedAtUtc == null || s.EndedAtUtc >= at))
+                .OrderByDescending(s => s.LastActivityAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+        var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+        var atSec = SqliteDateTimePaging.ToUnixSeconds(at);
+        var sql =
+            $"SELECT * FROM EditorSessions WHERE {started} <= {{0}} AND (EndedAtUtc IS NULL OR {ended} >= {{0}}) ORDER BY LastActivityAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.EditorSessions, sql, [atSec], cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -100,18 +115,60 @@ public sealed class SessionRepository : ISessionRepository
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
-        var query = _db.EditorSessions.AsNoTracking();
-        if (projectId is Guid pid)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(s => s.ProjectId == pid);
+            var query = _db.EditorSessions.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(s => s.ProjectId == pid);
+            }
+
+            if (from is DateTimeOffset fromValue)
+            {
+                query = query.Where(s =>
+                    s.StartedAtUtc >= fromValue || (s.EndedAtUtc != null && s.EndedAtUtc >= fromValue));
+            }
+
+            if (to is DateTimeOffset toValue)
+            {
+                query = query.Where(s => s.StartedAtUtc <= toValue);
+            }
+
+            return await query
+                .OrderByDescending(s => s.StartedAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            s => (from is null || s.StartedAtUtc >= from || (s.EndedAtUtc != null && s.EndedAtUtc >= from)) &&
-                 (to is null || s.StartedAtUtc <= to),
-            items => items.OrderByDescending(s => s.StartedAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
+        }
+
+        if (from is DateTimeOffset fromBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+        }
+
+        if (to is DateTimeOffset toBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+        }
+
+        var sql = "SELECT * FROM EditorSessions " + where + " ORDER BY StartedAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.EditorSessions, sql, args, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

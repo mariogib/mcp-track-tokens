@@ -2,11 +2,13 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using McpTrackTokens.Application.Options;
+using McpTrackTokens.Application.Services;
 
 namespace McpTrackTokens.Infrastructure.Background;
 
 /// <summary>
-/// Optional hosted service stub that can flush locally queued offline events.
+/// Enforces <see cref="TrackingOptions.MaxQueuedEvents"/> on the offline queue directory
+/// and watches for queued event files (replay remains host/client driven).
 /// </summary>
 public sealed class QueuedEventFlushService : BackgroundService
 {
@@ -26,7 +28,10 @@ public sealed class QueuedEventFlushService : BackgroundService
     {
         var queuePath = TrackingOptions.ExpandPath(_options.QueuePath);
         Directory.CreateDirectory(queuePath);
-        _logger.LogInformation("Queued event flush service watching {QueuePath}", queuePath);
+        _logger.LogInformation(
+            "Queued event flush service watching {QueuePath} (max {MaxQueuedEvents})",
+            queuePath,
+            _options.MaxQueuedEvents);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -50,17 +55,30 @@ public sealed class QueuedEventFlushService : BackgroundService
     private Task FlushOnceAsync(string queuePath, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var files = Directory.Exists(queuePath)
-            ? Directory.GetFiles(queuePath, "*.json")
-            : [];
-
-        if (files.Length == 0)
+        if (!Directory.Exists(queuePath))
         {
             return Task.CompletedTask;
         }
 
-        // Stub: persistence/replay is wired by the host when ingestion endpoints are ready.
-        _logger.LogDebug("Found {Count} queued event file(s); flush stub idle.", files.Length);
+        var dropped = OfflineQueueDisk.TrimToMax(queuePath, _options.MaxQueuedEvents);
+        if (dropped > 0)
+        {
+            _logger.LogWarning(
+                "Trimmed {Dropped} offline queued event(s) to enforce MaxQueuedEvents={Max}.",
+                dropped,
+                _options.MaxQueuedEvents);
+        }
+
+        var queued = OfflineQueueDisk.CountEvents(queuePath);
+        var jsonStubs = Directory.GetFiles(queuePath, "*.json").Length;
+        if (queued > 0)
+        {
+            _logger.LogDebug(
+                "Offline queue has {Queued} event(s) ({JsonStubs} *.json stub file(s)); clients flush JSONL on reconnect.",
+                queued,
+                jsonStubs);
+        }
+
         return Task.CompletedTask;
     }
 }

@@ -41,18 +41,60 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
-        var query = _db.TimesheetEntries.AsNoTracking();
-        if (projectId is Guid pid)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(e => e.ProjectId == pid);
+            var query = _db.TimesheetEntries.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(e => e.ProjectId == pid);
+            }
+
+            if (from is DateTimeOffset fromValue)
+            {
+                query = query.Where(e =>
+                    e.StartedAtUtc >= fromValue || (e.EndedAtUtc != null && e.EndedAtUtc >= fromValue));
+            }
+
+            if (to is DateTimeOffset toValue)
+            {
+                query = query.Where(e => e.StartedAtUtc <= toValue);
+            }
+
+            return await query
+                .OrderByDescending(e => e.StartedAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            e => (from is null || e.StartedAtUtc >= from || (e.EndedAtUtc != null && e.EndedAtUtc >= from)) &&
-                 (to is null || e.StartedAtUtc <= to),
-            items => items.OrderByDescending(e => e.StartedAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
+        }
+
+        if (from is DateTimeOffset fromBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+        }
+
+        if (to is DateTimeOffset toBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+        }
+
+        var sql = "SELECT * FROM TimesheetEntries " + where + " ORDER BY StartedAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.TimesheetEntries, sql, args, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

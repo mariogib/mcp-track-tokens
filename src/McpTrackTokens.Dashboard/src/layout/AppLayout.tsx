@@ -33,10 +33,10 @@ function titleForPath(pathname: string, search: string): { title: string; subtit
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
     case '/imported-usage': {
       const tab = new URLSearchParams(search).get('tab');
-      if (tab === 'unallocated') {
+      if (tab === 'unallocated' || tab === 'unallocated-prompts') {
         return {
           title: 'Imported usage',
-          subtitle: 'Assign unallocated prompt and agent events to projects',
+          subtitle: 'Assign or delete unallocated prompts',
         };
       }
       return {
