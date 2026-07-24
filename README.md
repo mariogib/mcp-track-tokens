@@ -1,7 +1,7 @@
 # MCP Track Tokens
 
 Local-first activity and cost tracking for AI-assisted development in **Cursor**.  
-Version **1.0.12** · Default server `http://127.0.0.1:5187` · Database `~/.mcp-track-tokens/mcp-track-tokens.db`
+Version **1.0.13** · Default server `http://127.0.0.1:5187` · Database `~/.mcp-track-tokens/mcp-track-tokens.db`
 
 MCP Track Tokens correlates **editor activity** (prompts, agents, sessions via Cursor hooks) with **imported Cursor usage exports** so you can attribute time and cost to projects — without claiming to passively intercept every model call inside the editor.
 

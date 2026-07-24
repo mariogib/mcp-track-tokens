@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] — 2026-07-24
+
 ### Added
 
 - Dashboard **New project** form and `POST /api/v1/projects` (same fields as CLI/MCP register).
@@ -20,11 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Hidden unfinished subscription methods (`ManualPercentage`, `TimeWindowMatch`, `ProportionalTimeAllocation`) from Settings until configured.
-- README / architecture copy updated for Cursor-hooks-only ingest and version **1.0.12**.
+- README / architecture copy updated for Cursor-hooks-only ingest and version **1.0.13**.
 
 ### Fixed
 
 - MSI upgrades close the tray/desktop hosts before replacing files and restart the tray after install (including silent upgrades).
+- Bumped product/assembly version so upgrades replace server binaries after the 1.0.12 same-version reinstall skip.
 
 ## [1.0.12] — 2026-07-24
 
