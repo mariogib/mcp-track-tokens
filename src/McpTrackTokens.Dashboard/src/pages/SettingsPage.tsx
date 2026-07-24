@@ -10,6 +10,7 @@ import {
   useCreateTimesheetCategoryMutation,
   useDatabaseBackupInfoQuery,
   useDeleteTimesheetCategoryMutation,
+  useCheckCursorHooksMutation,
   useIntegrationsQuery,
   useRestoreDatabaseUploadMutation,
   useRevokeApiKeyMutation,
@@ -381,6 +382,7 @@ export function SettingsPage() {
   const apiKeys = useApiKeysQuery();
   const timesheetCategories = useTimesheetCategoriesQuery();
   const integrations = useIntegrationsQuery();
+  const checkCursorHooks = useCheckCursorHooksMutation();
   const updateSettings = useUpdateSettingsMutation();
   const fetchCursorRates = useFetchCursorTokenRatesMutation();
   const createKey = useCreateApiKeyMutation();
@@ -2069,6 +2071,86 @@ export function SettingsPage() {
                 ))}
               </ul>
             ) : null}
+
+            <div className="stack" style={{ marginTop: '1rem' }}>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={checkCursorHooks.isPending}
+                  onClick={() => checkCursorHooks.mutate()}
+                >
+                  {checkCursorHooks.isPending
+                    ? 'Running check…'
+                    : 'Run Cursor hooks compatibility check'}
+                </button>
+              </div>
+              <p className="hint">
+                Checks hooks.json wiring, event names, and probes ingest (writes a Heartbeat
+                activity event when successful).
+              </p>
+              {checkCursorHooks.isError ? (
+                <ErrorState
+                  message={
+                    checkCursorHooks.error instanceof Error
+                      ? checkCursorHooks.error.message
+                      : 'Hooks compatibility check failed'
+                  }
+                />
+              ) : null}
+              {checkCursorHooks.data ? (
+                <div className="stack">
+                  <div className="row">
+                    <StatusBadge
+                      label={checkCursorHooks.data.status}
+                      tone={
+                        checkCursorHooks.data.status === 'compatible'
+                          ? 'success'
+                          : checkCursorHooks.data.status === 'degraded'
+                            ? 'warning'
+                            : 'danger'
+                      }
+                    />
+                    <span>{checkCursorHooks.data.summary}</span>
+                  </div>
+                  {checkCursorHooks.data.cursorVersion ? (
+                    <p className="hint">
+                      Cursor {checkCursorHooks.data.cursorVersion}
+                      {checkCursorHooks.data.cursorVersionSource
+                        ? ` (${checkCursorHooks.data.cursorVersionSource})`
+                        : ''}
+                    </p>
+                  ) : null}
+                  <ul>
+                    {checkCursorHooks.data.checks.map((check) => (
+                      <li key={check.id}>
+                        <StatusBadge
+                          label={check.status}
+                          tone={
+                            check.status === 'pass'
+                              ? 'success'
+                              : check.status === 'warn'
+                                ? 'warning'
+                                : 'danger'
+                          }
+                        />{' '}
+                        {check.message}
+                      </li>
+                    ))}
+                  </ul>
+                  {checkCursorHooks.data.recommendations.length > 0 ? (
+                    <>
+                      <h3>Recommendations</h3>
+                      <ul>
+                        {checkCursorHooks.data.recommendations.map((rec) => (
+                          <li key={rec}>{rec}</li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </Panel>
         </section>
       )}

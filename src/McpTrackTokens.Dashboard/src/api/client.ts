@@ -47,6 +47,7 @@ import type {
   UpdateTimesheetCategoryRequest,
   AssignActivityRequestDto,
   AssignActivityResultDto,
+  CreateProjectRequest,
   DeleteActivityRequestDto,
   DeleteActivityResultDto,
   UnallocatedBundle,
@@ -54,6 +55,7 @@ import type {
   UnallocatedUsageReport,
   DeleteUnallocatedUsageResultDto,
   CursorDocsPricingFetchResultDto,
+  CursorHooksCompatibilityReportDto,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateSettingsRequest,
@@ -271,6 +273,13 @@ export const api = {
 
   listProjects: (signal?: AbortSignal) =>
     apiRequest<ProjectDto[]>('/api/v1/projects', { signal }),
+
+  createProject: (body: CreateProjectRequest, signal?: AbortSignal) =>
+    apiRequest<ProjectDetailDto>('/api/v1/projects', {
+      method: 'POST',
+      body,
+      signal,
+    }),
 
   getProject: (id: string, signal?: AbortSignal) =>
     apiRequest<ProjectDetailDto>(`/api/v1/projects/${id}`, { signal }),
@@ -776,6 +785,12 @@ export const api = {
 
   integrationStatus: (signal?: AbortSignal) =>
     apiRequest<IntegrationStatusDto>('/api/v1/integrations/status', { signal }),
+
+  checkCursorHooks: (signal?: AbortSignal) =>
+    apiRequest<CursorHooksCompatibilityReportDto>('/api/v1/integrations/cursor-hooks/check', {
+      method: 'POST',
+      signal,
+    }),
 
   databaseBackupInfo: (destinationDirectory?: string, signal?: AbortSignal) =>
     apiRequest<DatabaseBackupInfoDto>('/api/v1/database/backup-info', {

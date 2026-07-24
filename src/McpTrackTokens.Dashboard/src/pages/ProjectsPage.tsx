@@ -4,12 +4,13 @@ import { BrowseListControls, TextLink } from '../shared/adminUi';
 import { exportToExcel } from '@lunarq/frontend-shared/utils';
 import type { BrowseViewMode } from '@lunarq/frontend-shared/components';
 import {
+  useCreateProjectMutation,
   useDeleteProjectMutation,
   useProjectsQuery,
   useReportsSummaryQuery,
   useUpdateProjectMutation,
 } from '../api/hooks';
-import type { ProjectDto, UpdateProjectRequest } from '../api/types';
+import type { CreateProjectRequest, ProjectDto, UpdateProjectRequest } from '../api/types';
 import { ErrorState, LoadingState, EmptyState } from '../components/States';
 import { Panel, TablePanel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
@@ -33,6 +34,26 @@ type EditDraft = {
   isActive: boolean;
 };
 
+type CreateDraft = {
+  name: string;
+  slug: string;
+  clientName: string;
+  billingCode: string;
+  currency: string;
+  repositoryPath: string;
+  remoteUrl: string;
+};
+
+const emptyCreateDraft = (): CreateDraft => ({
+  name: '',
+  slug: '',
+  clientName: '',
+  billingCode: '',
+  currency: 'USD',
+  repositoryPath: '',
+  remoteUrl: '',
+});
+
 function toDraft(project: ProjectDto): EditDraft {
   return {
     name: project.name,
@@ -52,10 +73,13 @@ export function ProjectsPage() {
   const projects = useProjectsQuery();
   const summary = useReportsSummaryQuery(now.getUTCFullYear(), now.getUTCMonth() + 1);
   const updateMutation = useUpdateProjectMutation();
+  const createMutation = useCreateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createDraft, setCreateDraft] = useState<CreateDraft>(emptyCreateDraft);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<BrowseViewMode>('grid');
   const [searchValue, setSearchValue] = useState('');
@@ -172,6 +196,30 @@ export function ProjectsPage() {
       setEditingId(null);
     } catch (err) {
       setActionMessage(err instanceof Error ? err.message : 'Update failed');
+    }
+  }
+
+  async function onCreate(event: React.FormEvent) {
+    event.preventDefault();
+    setActionMessage(null);
+    const body: CreateProjectRequest = {
+      name: createDraft.name.trim(),
+      slug: createDraft.slug.trim() || null,
+      clientName: createDraft.clientName.trim() || null,
+      billingCode: createDraft.billingCode.trim() || null,
+      currency: createDraft.currency.trim() || null,
+      repositoryPath: createDraft.repositoryPath.trim() || null,
+      remoteUrl: createDraft.remoteUrl.trim() || null,
+    };
+
+    try {
+      const created = await createMutation.mutateAsync(body);
+      setActionMessage(`Created “${created.name}”.`);
+      setCreating(false);
+      setCreateDraft(emptyCreateDraft());
+      navigate(`/projects/${created.id}`);
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : 'Create failed');
     }
   }
 
@@ -331,10 +379,25 @@ export function ProjectsPage() {
             : ''}
         </p>
 
+        <div className="row" style={{ marginBottom: '0.75rem' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setActionMessage(null);
+              setEditingId(null);
+              setCreating(true);
+              setCreateDraft(emptyCreateDraft());
+            }}
+          >
+            New project
+          </button>
+        </div>
+
         {actionMessage ? <p className="form-message">{actionMessage}</p> : null}
 
         {list.length === 0 ? (
-          <EmptyState message="No projects yet. Register one from the CLI or MCP tool." />
+          <EmptyState message="No projects yet. Create one with New project." />
         ) : filteredList.length === 0 ? (
           <EmptyState message="No projects match the current search or filters." />
         ) : viewMode === 'grid' ? (
@@ -470,6 +533,119 @@ export function ProjectsPage() {
           </TablePanel>
         )}
       </section>
+
+      {creating ? (
+        <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>New project</h2>
+              <p>Register a tracked project for sessions, activity, and cost attribution.</p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setCreating(false)}
+            >
+              Cancel
+            </button>
+          </div>
+
+          <Panel className="stack">
+            <form className="stack" onSubmit={(e) => void onCreate(e)}>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="create-name">Name</label>
+                  <input
+                    id="create-name"
+                    required
+                    value={createDraft.name}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="create-slug">Slug</label>
+                  <input
+                    id="create-slug"
+                    value={createDraft.slug}
+                    placeholder="Optional — generated from name"
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, slug: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="create-client">Client</label>
+                  <input
+                    id="create-client"
+                    value={createDraft.clientName}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, clientName: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="create-billing">Billing code</label>
+                  <input
+                    id="create-billing"
+                    value={createDraft.billingCode}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, billingCode: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="create-currency">Currency</label>
+                  <input
+                    id="create-currency"
+                    value={createDraft.currency}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, currency: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="create-repo">Repository path</label>
+                  <input
+                    id="create-repo"
+                    value={createDraft.repositoryPath}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, repositoryPath: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="create-remote">Remote URL</label>
+                  <input
+                    id="create-remote"
+                    value={createDraft.remoteUrl}
+                    onChange={(e) =>
+                      setCreateDraft((d) => ({ ...d, remoteUrl: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="row-actions">
+                <button type="submit" className="btn" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? 'Creating…' : 'Create project'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setCreating(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </Panel>
+        </section>
+      ) : null}
 
       {editing && draft ? (
         <section className="page-section">

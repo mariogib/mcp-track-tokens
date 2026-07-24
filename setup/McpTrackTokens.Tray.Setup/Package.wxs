@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package
       Name="MCP Track Tokens"
       Manufacturer="MCP Track Tokens"
-      Version="1.0.11.0"
+      Version="1.0.12.0"
       UpgradeCode="A7C4E2B1-6D8F-4A19-9E3C-2B5F8D1A4C70"
       Scope="perMachine"
       Compressed="yes">
@@ -33,11 +34,27 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start MCP Track Tokens now" />
 
+    <!-- Unlock Program Files during upgrade / repair. -->
+    <util:CloseApplication Id="CloseTrayHost"
+                           Target="mcp-track-tokens-tray.exe"
+                           CloseMessage="yes"
+                           RebootPrompt="no"
+                           TerminateProcess="5"
+                           Timeout="8000"
+                           EndSessionMessage="yes" />
+    <util:CloseApplication Id="CloseDesktopShell"
+                           Target="mcp-track-tokens-desktop.exe"
+                           CloseMessage="yes"
+                           RebootPrompt="no"
+                           TerminateProcess="5"
+                           Timeout="8000"
+                           EndSessionMessage="yes" />
+
     <!-- Resolve install path after costing (cannot embed [INSTALLFOLDER] in a static Property). -->
     <SetProperty Id="WixShellExecTarget"
                  Value="[INSTALLFOLDER]mcp-track-tokens-tray.exe"
                  After="CostFinalize"
-                 Sequence="ui" />
+                 Sequence="both" />
 
     <!-- Deferred quiet-exec payload: property Id must match the CustomAction Id. -->
     <SetProperty Id="InstallIntegrations"
@@ -61,6 +78,9 @@
       <!-- Always run: writes HTTP MCP example config; optionally installs Cursor hooks. -->
       <Custom Action="InstallIntegrations" After="InstallFiles"
               Condition="NOT REMOVE" />
+      <!-- Restart tray after install and upgrades (including silent /qn). -->
+      <Custom Action="LaunchApplication" After="InstallFinalize"
+              Condition="NOT REMOVE AND (NOT Installed OR WIX_UPGRADE_DETECTED)" />
     </InstallExecuteSequence>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -68,11 +88,12 @@
 
     <UI>
       <DialogRef Id="OptionsDlg" />
+      <!-- First-install ExitDialog only; upgrades start tray via InstallExecuteSequence. -->
       <Publish Dialog="ExitDialog"
                Control="Finish"
                Event="DoAction"
                Value="LaunchApplication"
-               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed" />
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 and NOT Installed and NOT WIX_UPGRADE_DETECTED" />
     </UI>
 
     <Feature Id="ProductFeature" Title="MCP Track Tokens" Level="1">

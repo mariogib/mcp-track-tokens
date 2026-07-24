@@ -5,6 +5,7 @@ import type {
   AssignActivityRequestDto,
   DeleteActivityRequestDto,
   CreateApiKeyRequestDto,
+  CreateProjectRequest,
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
@@ -230,6 +231,18 @@ export function useUpdateProjectMutation() {
     onSuccess: (_data, variables) => {
       void qc.invalidateQueries({ queryKey: queryKeys.projects });
       void qc.invalidateQueries({ queryKey: queryKeys.project(variables.id) });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useCreateProjectMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateProjectRequest) => api.createProject(body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: queryKeys.project(data.id) });
       void qc.invalidateQueries({ queryKey: ['reports'] });
     },
   });
@@ -614,6 +627,17 @@ export function useIntegrationsQuery() {
   });
 }
 
+export function useCheckCursorHooksMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.checkCursorHooks(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.integrations });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
 export function useDatabaseBackupInfoQuery(destinationDirectory?: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.databaseBackupInfo(destinationDirectory),
@@ -734,7 +758,10 @@ export function useReconciliationMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: ReconciliationRequestDto) => api.runReconciliation(body),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.dryRun) {
+        return;
+      }
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });

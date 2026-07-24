@@ -9,7 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dashboard **New project** form and `POST /api/v1/projects` (same fields as CLI/MCP register).
+- Settings → Integrations: **Run Cursor hooks compatibility check** (`POST /api/v1/integrations/cursor-hooks/check`).
+- Imported usage **Preview allocation** (dry-run) before **Apply allocation**.
+
+### Fixed
+
+- MSI upgrades close the tray/desktop hosts before replacing files and restart the tray after install (including silent upgrades).
+
+## [1.0.12] — 2026-07-24
+
+### Added
+
 - Database-backed lazy paging for project prompts and timesheet entry browse lists (`pageIndex` / `pageSize`, prompt facets).
+- Delete selected unallocated prompts (`POST /api/v1/activity/delete`).
 
 ### Removed
 
@@ -20,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Agent (min)** now sums completed prompt durations (milliseconds) instead of empty agent-end rows, then converts to minutes for display.
 - **Get Rates** (Settings → Cursor token costs): more resilient Cursor docs download (URL / User-Agent fallbacks) and parsing of current docs where Auto is listed as **Auto Cost** in the model table (maps to Auto / `*`).
 - Closing timesheets uses the last ended editor session for that project on the timesheet start day when end time is omitted.
+- MSI / assembly version bumped so upgrades replace `McpTrackTokens.Server.dll` (same-version reinstalls left an old API under a newer dashboard, causing delete unallocated prompts to return **Not found.**).
 
 ## [1.0.11] — 2026-07-23
 

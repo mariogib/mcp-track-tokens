@@ -34,6 +34,7 @@ public static class ApiEndpoints
         api.MapPost("/usage/{id:guid}/allocate-to-prompt", AllocateUsageToClosestPromptAsync);
 
         api.MapGet("/projects", ListProjectsAsync);
+        api.MapPost("/projects", CreateProjectAsync);
         api.MapGet("/projects/{id:guid}", GetProjectAsync);
         api.MapPut("/projects/{id:guid}", UpdateProjectAsync);
         api.MapDelete("/projects/{id:guid}", DeleteProjectAsync);
@@ -424,6 +425,22 @@ public static class ApiEndpoints
     {
         var list = await projects.ListAsync(activeOnly, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(ProjectMapper.ToDto).ToList());
+    }
+
+    private static async Task<IResult> CreateProjectAsync(
+        CreateProjectRequest request,
+        IProjectDetectionService projects,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await projects.RegisterAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.Created($"/api/v1/projects/{created.Id}", created);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static async Task<IResult> UpdateProjectAsync(

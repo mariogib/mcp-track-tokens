@@ -62,11 +62,32 @@ function ImportedUsageList() {
   const deleteUnallocated = useDeleteUnallocatedUsageMutation();
   const [lastResult, setLastResult] = useState<ReconciliationResultDto | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<'preview' | 'apply' | null>(null);
 
   const report = imported.data;
   const items = report?.items ?? [];
   const failed = lastResult?.unallocated ?? [];
+  const proposed = lastResult?.attributions ?? [];
   const unallocatedCount = unallocated.data?.usage?.count ?? 0;
+  const previewReady = Boolean(lastResult?.dryRun);
+
+  const runReconciliation = (dryRun: boolean) => {
+    setLastResult(null);
+    setDeleteMessage(null);
+    setPendingMode(dryRun ? 'preview' : 'apply');
+    allocateAll.mutate(
+      {
+        fromUtc: range.fromUtc,
+        toUtc: range.toUtc,
+        dryRun,
+        includeLowConfidence: true,
+      },
+      {
+        onSuccess: (result) => setLastResult(result),
+        onSettled: () => setPendingMode(null),
+      },
+    );
+  };
 
   return (
     <section className="page-section">
@@ -74,8 +95,8 @@ function ImportedUsageList() {
         <div>
           <h2>Imported usage</h2>
           <p>
-            All Cursor usage rows imported in the last 90 days. Allocate all links each row (Total
-            Tokens &gt; 0) to the closest prompt at or before its timestamp.
+            All Cursor usage rows imported in the last 90 days. Preview allocation first, then apply
+            to link each row (Total Tokens &gt; 0) to the closest prompt at or before its timestamp.
           </p>
         </div>
         <div className="row">
@@ -88,23 +109,26 @@ function ImportedUsageList() {
           ) : null}
           <button
             type="button"
-            className="btn"
+            className="btn btn-secondary"
             disabled={allocateAll.isPending || items.length === 0}
+            onClick={() => runReconciliation(true)}
+          >
+            {pendingMode === 'preview' ? 'Previewing…' : 'Preview allocation'}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={allocateAll.isPending || items.length === 0 || !previewReady}
             onClick={() => {
-              setLastResult(null);
-              setDeleteMessage(null);
-              allocateAll.mutate(
-                {
-                  fromUtc: range.fromUtc,
-                  toUtc: range.toUtc,
-                  dryRun: false,
-                  includeLowConfidence: true,
-                },
-                { onSuccess: (result) => setLastResult(result) },
+              const confirmed = window.confirm(
+                `Apply allocation for ${formatNumber(lastResult?.allocatedCount ?? 0)} row(s)? ` +
+                  `${formatNumber(lastResult?.unallocatedCount ?? 0)} will remain unallocated.`,
               );
+              if (!confirmed) return;
+              runReconciliation(false);
             }}
           >
-            {allocateAll.isPending ? 'Allocating…' : 'Allocate all'}
+            {pendingMode === 'apply' ? 'Applying…' : 'Apply allocation'}
           </button>
           <button
             type="button"
@@ -184,13 +208,19 @@ function ImportedUsageList() {
               message={
                 allocateAll.error instanceof Error
                   ? allocateAll.error.message
-                  : 'Allocate all failed'
+                  : 'Allocation failed'
               }
             />
           ) : null}
 
           {lastResult ? (
             <Panel className="stack">
+              <div className="row">
+                <StatusBadge
+                  label={lastResult.dryRun ? 'Preview (dry run)' : 'Applied'}
+                  tone={lastResult.dryRun ? 'info' : 'success'}
+                />
+              </div>
               <p>
                 Processed {formatNumber(lastResult.processedCount)} · allocated{' '}
                 {formatNumber(lastResult.allocatedCount)} · could not allocate{' '}
@@ -199,7 +229,58 @@ function ImportedUsageList() {
                   ? ` · skipped ${formatNumber(lastResult.skippedCount)}`
                   : ''}
               </p>
+              {lastResult.dryRun ? (
+                <p className="hint">
+                  Preview only — nothing was written. Review the proposed links, then Apply
+                  allocation.
+                </p>
+              ) : null}
             </Panel>
+          ) : null}
+
+          {lastResult && proposed.length > 0 ? (
+            <div className="stack" style={{ marginTop: '1rem' }}>
+              <h3>{lastResult.dryRun ? 'Proposed allocations' : 'Allocated'}</h3>
+              <TablePanel>
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>When</th>
+                      <th>Model</th>
+                      <th>Project</th>
+                      <th>Method</th>
+                      <th>Confidence</th>
+                      <th>Tokens</th>
+                      <th>Calculated cost</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {proposed.slice(0, 50).map((row, index) => (
+                      <tr key={`${row.usageRecordId}-ok-${index}`}>
+                        <td>{formatDateTime(row.timestampUtc)}</td>
+                        <td>{row.model ?? '—'}</td>
+                        <td>
+                          {row.projectId ? (
+                            <TextLink to={`/projects/${row.projectId}`}>
+                              {row.projectName ?? row.projectId}
+                            </TextLink>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>{row.attributionMethod ?? '—'}</td>
+                        <td>{row.confidence ?? '—'}</td>
+                        <td>{formatNumber(row.allocatedTotalTokens)}</td>
+                        <td>{formatCurrency(row.calculatedTokenCost ?? 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TablePanel>
+              {proposed.length > 50 ? (
+                <p className="hint">Showing first 50 of {formatNumber(proposed.length)} rows.</p>
+              ) : null}
+            </div>
           ) : null}
 
           {lastResult && failed.length > 0 ? (
@@ -235,7 +316,7 @@ function ImportedUsageList() {
             </div>
           ) : null}
 
-          {lastResult && failed.length === 0 && lastResult.processedCount > 0 ? (
+          {lastResult && failed.length === 0 && lastResult.processedCount > 0 && !lastResult.dryRun ? (
             <Panel>All eligible usage rows were allocated.</Panel>
           ) : null}
 

@@ -33,6 +33,17 @@ export interface UpdateProjectRequest {
   isActive?: boolean | null;
 }
 
+export interface CreateProjectRequest {
+  name: string;
+  slug?: string | null;
+  clientName?: string | null;
+  billingCode?: string | null;
+  currency?: string | null;
+  repositoryPath?: string | null;
+  remoteUrl?: string | null;
+  aliases?: string[] | null;
+}
+
 export interface ProjectRepositoryDto {
   id: string;
   projectId: string;
@@ -863,6 +874,31 @@ export interface IntegrationStatusDto {
   mcpConfigured: boolean;
   lastIngestAtUtc?: string | null;
   notes?: string[];
+}
+
+export interface CursorHooksCompatibilityCheckDto {
+  id: string;
+  status: string;
+  message: string;
+}
+
+export interface CursorHooksCompatibilityReportDto {
+  status: string;
+  summary: string;
+  cursorVersion?: string | null;
+  cursorVersionSource?: string | null;
+  cursorUserDirectory: string;
+  hooksInstallDirectory?: string | null;
+  hooksConfigPath?: string | null;
+  hooksConfigSchemaVersion?: number | null;
+  checks: CursorHooksCompatibilityCheckDto[];
+  wiredEvents: string[];
+  legacyEvents: string[];
+  recommendations: string[];
+  lastCursorEventAtUtc?: string | null;
+  lastCursorEventEditorVersion?: string | null;
+  probeEventId?: string | null;
+  probeIngestedAtUtc?: string | null;
 }
 
 export interface DatabaseBackupFileDto {

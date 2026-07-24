@@ -31,6 +31,7 @@ public static class DashboardAdminEndpoints
         api.MapPut("/timesheet-categories/{id:guid}", UpdateTimesheetCategoryAsync);
         api.MapDelete("/timesheet-categories/{id:guid}", DeleteTimesheetCategoryAsync);
         api.MapGet("/integrations/status", GetIntegrationsAsync);
+        api.MapPost("/integrations/cursor-hooks/check", CheckCursorHooksAsync);
         api.MapGet("/database/backup-info", GetDatabaseBackupInfo);
         api.MapPost("/database/backup", BackupDatabaseAsync);
         api.MapGet("/database/backup-download", DownloadDatabaseBackupAsync);
@@ -391,6 +392,22 @@ public static class DashboardAdminEndpoints
             lastIngestAtUtc = status.LastEventAtUtc,
             notes
         });
+    }
+
+    private static async Task<IResult> CheckCursorHooksAsync(
+        ICursorHooksCompatibilityService hooksCompatibility,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var report = await hooksCompatibility.CheckAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static IResult GetDatabaseBackupInfo(
