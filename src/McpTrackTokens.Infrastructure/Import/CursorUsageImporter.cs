@@ -340,6 +340,21 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             warnings.Add("No timestamp/date column was detected.");
         }
 
+        var looksAggregated =
+            mappings.ContainsKey("TimestampUtc") &&
+            mappings.ContainsKey("ReportedCost") &&
+            mappings.ContainsKey("RequestCount") &&
+            !mappings.ContainsKey("TotalTokens") &&
+            !mappings.ContainsKey("Model") &&
+            !mappings.ContainsKey("InputTokens") &&
+            !mappings.ContainsKey("OutputTokens");
+        if (looksAggregated)
+        {
+            warnings.Add(
+                "Aggregated daily export detected (Day/Requests/Usage Cost). " +
+                "Rows without Total Tokens are skipped; attribution precision is low compared with per-request exports.");
+        }
+
         warnings.Add("Only rows with Total Tokens > 0 are imported; each dated row imports at most once.");
 
         return new ParsedUsageFile(fileName, hash, source, headers, mappings, records, invalid, errors, warnings);

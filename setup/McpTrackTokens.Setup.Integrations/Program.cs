@@ -143,7 +143,7 @@ internal static class Program
         CopyDirectory(source, hooksTarget);
 
         var exampleConfigPath = Path.Combine(cursorDir, "mcp-track-tokens-hooks.example.json");
-        File.WriteAllText(exampleConfigPath, """
+        var exampleJson = """
             {
               "version": 1,
               "hooks": {
@@ -167,14 +167,117 @@ internal static class Program
                 ]
               }
             }
-            """);
+            """;
+        File.WriteAllText(exampleConfigPath, exampleJson);
+
+        var hooksJsonPath = Path.Combine(cursorDir, "hooks.json");
+        var mergeNote = TryMergeHooksJson(hooksJsonPath, exampleJson);
 
         Console.WriteLine($"Installed Cursor hooks scaffold to {hooksTarget}");
         Console.WriteLine($"Wrote example config to {exampleConfigPath}");
+        if (!string.IsNullOrWhiteSpace(mergeNote))
+        {
+            Console.WriteLine(mergeNote);
+        }
+
         TryWriteNote(
             "cursor-hooks-installed.txt",
             $"Hooks installed to:{Environment.NewLine}{hooksTarget}{Environment.NewLine}{Environment.NewLine}" +
-            $"Merge {exampleConfigPath} into your Cursor hooks configuration manually.");
+            $"Example config:{Environment.NewLine}{exampleConfigPath}{Environment.NewLine}{Environment.NewLine}" +
+            (mergeNote ?? $"Merge {exampleConfigPath} into {hooksJsonPath} manually."));
+    }
+
+    /// <summary>
+    /// Additive merge into ~/.cursor/hooks.json: ensure version=1 and append our hook
+    /// commands only when mcp-track-tokens-hooks is not already present for that event.
+    /// Never deletes user entries. Returns a short status note.
+    /// </summary>
+    private static string? TryMergeHooksJson(string hooksJsonPath, string exampleJson)
+    {
+        try
+        {
+            using var exampleDoc = System.Text.Json.JsonDocument.Parse(exampleJson);
+            var exampleRoot = exampleDoc.RootElement;
+            if (!exampleRoot.TryGetProperty("hooks", out var exampleHooks) ||
+                exampleHooks.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            System.Text.Json.Nodes.JsonObject root;
+            if (File.Exists(hooksJsonPath))
+            {
+                var backup = hooksJsonPath + $".bak-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                File.Copy(hooksJsonPath, backup, overwrite: false);
+                var existingText = File.ReadAllText(hooksJsonPath);
+                var parsed = System.Text.Json.Nodes.JsonNode.Parse(existingText) as System.Text.Json.Nodes.JsonObject;
+                root = parsed ?? new System.Text.Json.Nodes.JsonObject();
+            }
+            else
+            {
+                root = new System.Text.Json.Nodes.JsonObject();
+            }
+
+            root["version"] = 1;
+            var hooksNode = root["hooks"] as System.Text.Json.Nodes.JsonObject
+                ?? new System.Text.Json.Nodes.JsonObject();
+            root["hooks"] = hooksNode;
+
+            var addedEvents = new List<string>();
+            foreach (var property in exampleHooks.EnumerateObject())
+            {
+                var eventName = property.Name;
+                var existingArray = hooksNode[eventName] as System.Text.Json.Nodes.JsonArray
+                    ?? new System.Text.Json.Nodes.JsonArray();
+                hooksNode[eventName] = existingArray;
+
+                var alreadyPresent = existingArray.Any(entry =>
+                {
+                    var command = entry?["command"]?.GetValue<string>();
+                    return !string.IsNullOrWhiteSpace(command) &&
+                           command.Contains("mcp-track-tokens-hooks", StringComparison.OrdinalIgnoreCase);
+                });
+                if (alreadyPresent)
+                {
+                    continue;
+                }
+
+                foreach (var entry in property.Value.EnumerateArray())
+                {
+                    var command = entry.TryGetProperty("command", out var cmdEl)
+                        ? cmdEl.GetString()
+                        : null;
+                    if (string.IsNullOrWhiteSpace(command))
+                    {
+                        continue;
+                    }
+
+                    var timeout = entry.TryGetProperty("timeout", out var timeoutEl) &&
+                                  timeoutEl.TryGetInt32(out var t)
+                        ? t
+                        : 5;
+                    existingArray.Add(new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["command"] = command,
+                        ["timeout"] = timeout
+                    });
+                }
+
+                addedEvents.Add(eventName);
+            }
+
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(hooksJsonPath, root.ToJsonString(options) + Environment.NewLine);
+
+            return addedEvents.Count == 0
+                ? $"hooks.json already contains MCP Track Tokens bindings ({hooksJsonPath})."
+                : $"Merged MCP Track Tokens hooks into {hooksJsonPath} for: {string.Join(", ", addedEvents)}.";
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"hooks.json merge skipped: {ex.Message}");
+            return $"hooks.json merge skipped ({ex.Message}). Merge the example config manually.";
+        }
     }
 
     private static void PurgeUserData()

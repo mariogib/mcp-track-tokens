@@ -638,6 +638,20 @@ export function useCheckCursorHooksMutation() {
   });
 }
 
+export function useReplayOfflineQueueMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.replayOfflineQueue(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.integrations });
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
 export function useDatabaseBackupInfoQuery(destinationDirectory?: string, enabled = true) {
   return useQuery({
     queryKey: queryKeys.databaseBackupInfo(destinationDirectory),
@@ -792,7 +806,10 @@ export function useAllocateUsageMutation() {
     mutationFn: (body: AllocationRequestDto) => api.allocateUsage(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }

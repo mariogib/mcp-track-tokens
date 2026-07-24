@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard **New project** form and `POST /api/v1/projects` (same fields as CLI/MCP register).
 - Settings → Integrations: **Run Cursor hooks compatibility check** (`POST /api/v1/integrations/cursor-hooks/check`).
 - Imported usage **Preview allocation** (dry-run) before **Apply allocation**.
+- Per-row usage actions: allocate to closest prompt or to a selected project.
+- Overview **Replay queue** for offline hook events (`POST /api/v1/integrations/offline-queue/replay`).
+- MSI post-install additive merge of Cursor `hooks.json` (backup first; never deletes user entries).
+- Import preview warning for aggregated Day/Requests/Usage Cost CSV shapes.
+
+### Changed
+
+- Hidden unfinished subscription methods (`ManualPercentage`, `TimeWindowMatch`, `ProportionalTimeAllocation`) from Settings until configured.
+- README / architecture copy updated for Cursor-hooks-only ingest and version **1.0.12**.
 
 ### Fixed
 

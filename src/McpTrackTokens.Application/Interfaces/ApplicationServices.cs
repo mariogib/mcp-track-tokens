@@ -411,3 +411,11 @@ public interface ICursorHooksCompatibilityService
         string? cursorUserDirectory = null,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Replays offline queued hook events from disk into the ingest pipeline.
+/// </summary>
+public interface IOfflineQueueReplayService
+{
+    Task<OfflineQueueReplayResultDto> ReplayAsync(CancellationToken cancellationToken = default);
+}

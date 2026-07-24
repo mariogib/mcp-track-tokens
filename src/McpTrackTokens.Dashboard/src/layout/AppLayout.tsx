@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
@@ -58,6 +59,7 @@ function titleForPath(pathname: string, search: string): { title: string; subtit
 
 export function AppLayout() {
   const location = useLocation();
+  const queryClient = useQueryClient();
   useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();
@@ -83,6 +85,9 @@ export function AppLayout() {
       }
       userName="Local"
       userEmail={activeProject ? `Active: ${activeProject}` : 'No active project'}
+      onContentRefresh={() => {
+        void queryClient.invalidateQueries();
+      }}
       topBarContent={
         <div className="dashboard-topbar">
           <div className="dashboard-topbar-title">

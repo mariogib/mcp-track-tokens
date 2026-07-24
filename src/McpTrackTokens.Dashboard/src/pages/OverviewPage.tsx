@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useActiveSessionQuery,
   useHealthQuery,
+  useReplayOfflineQueueMutation,
   useReportsSummaryQuery,
   useStatusQuery,
   useUnallocatedQuery,
@@ -57,6 +58,8 @@ export function OverviewPage() {
   const summary = useReportsSummaryQuery(year, month);
   const session = useActiveSessionQuery();
   const unallocated = useUnallocatedQuery(unallocatedRange.fromUtc, unallocatedRange.toUtc);
+  const replayQueue = useReplayOfflineQueueMutation();
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const {
     projectIds,
     aggregatedActivity,
@@ -408,6 +411,35 @@ export function OverviewPage() {
             <div>
               <div className="label">Queued events</div>
               <strong>{formatNumber(status.data?.queuedEventCount)}</strong>
+              {(status.data?.queuedEventCount ?? 0) > 0 ? (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    disabled={replayQueue.isPending}
+                    onClick={() => {
+                      setQueueMessage(null);
+                      replayQueue.mutate(undefined, {
+                        onSuccess: (result) => {
+                          setQueueMessage(
+                            `Replayed ${formatNumber(result.flushed)} of ${formatNumber(result.attempted)}; ` +
+                              `${formatNumber(result.remaining)} remaining` +
+                              (result.failed > 0 ? `, ${formatNumber(result.failed)} failed` : '') +
+                              '.',
+                          );
+                        },
+                        onError: (err) => {
+                          setQueueMessage(
+                            err instanceof Error ? err.message : 'Offline queue replay failed',
+                          );
+                        },
+                      });
+                    }}
+                  >
+                    {replayQueue.isPending ? 'Replaying…' : 'Replay queue'}
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div>
               <div className="label">Last event</div>
@@ -423,6 +455,16 @@ export function OverviewPage() {
               </strong>
             </div>
           </div>
+          {queueMessage ? <p className="hint">{queueMessage}</p> : null}
+          {replayQueue.isError && !queueMessage ? (
+            <ErrorState
+              message={
+                replayQueue.error instanceof Error
+                  ? replayQueue.error.message
+                  : 'Offline queue replay failed'
+              }
+            />
+          ) : null}
         </Panel>
       </section>
     </Page>

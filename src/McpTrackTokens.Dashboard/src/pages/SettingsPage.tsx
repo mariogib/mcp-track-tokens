@@ -12,6 +12,7 @@ import {
   useDeleteTimesheetCategoryMutation,
   useCheckCursorHooksMutation,
   useIntegrationsQuery,
+  useReplayOfflineQueueMutation,
   useRestoreDatabaseUploadMutation,
   useRevokeApiKeyMutation,
   useSettingsQuery,
@@ -281,9 +282,6 @@ const ALLOCATION_METHODS = [
   'ByActiveProjectTime',
   'ByPromptCount',
   'ByAgentDuration',
-  'ManualPercentage',
-  'TimeWindowMatch',
-  'ProportionalTimeAllocation',
 ];
 
 const SETTINGS_TABS = [
@@ -383,6 +381,7 @@ export function SettingsPage() {
   const timesheetCategories = useTimesheetCategoriesQuery();
   const integrations = useIntegrationsQuery();
   const checkCursorHooks = useCheckCursorHooksMutation();
+  const replayQueue = useReplayOfflineQueueMutation();
   const updateSettings = useUpdateSettingsMutation();
   const fetchCursorRates = useFetchCursorTokenRatesMutation();
   const createKey = useCreateApiKeyMutation();
@@ -2084,11 +2083,35 @@ export function SettingsPage() {
                     ? 'Running check…'
                     : 'Run Cursor hooks compatibility check'}
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={replayQueue.isPending}
+                  onClick={() => replayQueue.mutate()}
+                >
+                  {replayQueue.isPending ? 'Replaying…' : 'Replay offline queue'}
+                </button>
               </div>
               <p className="hint">
-                Checks hooks.json wiring, event names, and probes ingest (writes a Heartbeat
-                activity event when successful).
+                Compatibility check probes ingest (writes a Heartbeat when successful). Replay
+                flushes queued hook events from disk without waiting for the next Cursor prompt.
               </p>
+              {replayQueue.isError ? (
+                <ErrorState
+                  message={
+                    replayQueue.error instanceof Error
+                      ? replayQueue.error.message
+                      : 'Offline queue replay failed'
+                  }
+                />
+              ) : null}
+              {replayQueue.data ? (
+                <p className="hint">
+                  Replayed {replayQueue.data.flushed} of {replayQueue.data.attempted};{' '}
+                  {replayQueue.data.remaining} remaining
+                  {replayQueue.data.failed > 0 ? `, ${replayQueue.data.failed} failed` : ''}.
+                </p>
+              ) : null}
               {checkCursorHooks.isError ? (
                 <ErrorState
                   message={

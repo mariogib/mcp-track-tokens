@@ -1,9 +1,9 @@
 # MCP Track Tokens
 
-Local-first activity and cost tracking for AI-assisted development in **Cursor** and **VS Code**.  
-Version **1.0.0** · Default server `http://127.0.0.1:5187` · Database `~/.mcp-track-tokens/mcp-track-tokens.db`
+Local-first activity and cost tracking for AI-assisted development in **Cursor**.  
+Version **1.0.12** · Default server `http://127.0.0.1:5187` · Database `~/.mcp-track-tokens/mcp-track-tokens.db`
 
-MCP Track Tokens correlates **editor activity** (prompts, agents, sessions) with **imported Cursor usage exports** so you can attribute time and cost to projects — without claiming to passively intercept every model call inside the editor.
+MCP Track Tokens correlates **editor activity** (prompts, agents, sessions via Cursor hooks) with **imported Cursor usage exports** so you can attribute time and cost to projects — without claiming to passively intercept every model call inside the editor.
 
 | Surface | Path |
 | --- | --- |
@@ -80,7 +80,7 @@ Data stays on your machine by default (SQLite under `~/.mcp-track-tokens/`).
 
 | Limitation | Reality |
 | --- | --- |
-| Passive interception of all Cursor/VS Code prompts | MCP servers do **not** see every chat turn automatically |
+| Passive interception of all Cursor prompts | MCP servers do **not** see every chat turn automatically |
 | Automatic internal Cursor token meters | Token/cost numbers come from **exports you import**, not live meter scraping |
 | Guaranteed coverage without hooks | Install Cursor hooks for ambient activity |
 | Prompt/response bodies by default | Content is **not** stored unless you explicitly enable and configure encryption |
@@ -608,7 +608,7 @@ Copy-Item -Recurse "$HOME\.mcp-track-tokens" "D:\Backups\mcp-track-tokens-$(Get-
 - Rate limits: events 120/min, sessions 60/min (configurable in `appsettings.json`).
 - API keys are stored hashed; `create-api-key` prints plaintext **once**.
 - Prompt content off by default; enable only with a clear threat model.
-- Install scripts **never silently modify** Cursor/VS Code settings — they print MCP/hook snippets for you to apply.
+- Install scripts **never silently overwrite** editor settings — they print MCP snippets and additively merge Cursor `hooks.json` when installing hooks.
 
 ---
 
@@ -627,11 +627,11 @@ Full guide: [`docs/troubleshooting.md`](docs/troubleshooting.md).
 
 ## 21. Known limitations
 
-1. **MCP cannot passively intercept all Cursor/VS Code prompts.** Tools report what was ingested; they do not wrap the editor’s model transport.
+1. **MCP cannot passively intercept all Cursor prompts.** Tools report what was ingested; they do not wrap the editor’s model transport.
 2. **Cursor needs hooks** for ambient activity events.
 3. **Costs come from Cursor exports** you import — not from live internal token capture.
 4. **Activity and usage are separate datasets** correlated by attribution rules; expect unallocated rows.
-5. **No claim of automatic internal token capture** from Cursor/VS Code runtimes.
+5. **No claim of automatic internal token capture** from Cursor runtimes.
 6. **No prompt content by default** — length/hash only unless you explicitly opt in.
 
 ---
@@ -675,7 +675,7 @@ chmod +x scripts/*.sh
 ./scripts/uninstall-linux.sh --remove-hooks --remove-data -y
 ```
 
-Scripts never rewrite editor settings; remove MCP/hook entries from Cursor/VS Code manually if you added them.
+Scripts never rewrite MCP settings wholesale; remove MCP/hook entries from Cursor manually if you added them.
 
 ## License
 

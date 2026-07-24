@@ -32,6 +32,7 @@ public static class DashboardAdminEndpoints
         api.MapDelete("/timesheet-categories/{id:guid}", DeleteTimesheetCategoryAsync);
         api.MapGet("/integrations/status", GetIntegrationsAsync);
         api.MapPost("/integrations/cursor-hooks/check", CheckCursorHooksAsync);
+        api.MapPost("/integrations/offline-queue/replay", ReplayOfflineQueueAsync);
         api.MapGet("/database/backup-info", GetDatabaseBackupInfo);
         api.MapPost("/database/backup", BackupDatabaseAsync);
         api.MapGet("/database/backup-download", DownloadDatabaseBackupAsync);
@@ -403,6 +404,21 @@ public static class DashboardAdminEndpoints
             var report = await hooksCompatibility.CheckAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> ReplayOfflineQueueAsync(
+        IOfflineQueueReplayService replay,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await replay.ReplayAsync(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(result);
         }
         catch (Exception ex)
         {

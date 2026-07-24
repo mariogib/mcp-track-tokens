@@ -56,6 +56,7 @@ import type {
   DeleteUnallocatedUsageResultDto,
   CursorDocsPricingFetchResultDto,
   CursorHooksCompatibilityReportDto,
+  OfflineQueueReplayResultDto,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateSettingsRequest,
@@ -788,6 +789,12 @@ export const api = {
 
   checkCursorHooks: (signal?: AbortSignal) =>
     apiRequest<CursorHooksCompatibilityReportDto>('/api/v1/integrations/cursor-hooks/check', {
+      method: 'POST',
+      signal,
+    }),
+
+  replayOfflineQueue: (signal?: AbortSignal) =>
+    apiRequest<OfflineQueueReplayResultDto>('/api/v1/integrations/offline-queue/replay', {
       method: 'POST',
       signal,
     }),

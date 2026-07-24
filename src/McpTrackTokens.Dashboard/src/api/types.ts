@@ -901,6 +901,14 @@ export interface CursorHooksCompatibilityReportDto {
   probeIngestedAtUtc?: string | null;
 }
 
+export interface OfflineQueueReplayResultDto {
+  attempted: number;
+  flushed: number;
+  remaining: number;
+  failed: number;
+  errors: string[];
+}
+
 export interface DatabaseBackupFileDto {
   fileName: string;
   fullPath: string;

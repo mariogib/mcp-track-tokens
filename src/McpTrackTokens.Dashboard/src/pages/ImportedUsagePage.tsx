@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
+  useAllocateUsageMutation,
+  useAllocateUsageToClosestPromptMutation,
   useDeleteUnallocatedUsageMutation,
   useImportedUsageQuery,
+  useProjectsQuery,
   useReconciliationMutation,
   useUnallocatedQuery,
 } from '../api/hooks';
@@ -59,10 +62,16 @@ function ImportedUsageList() {
   const imported = useImportedUsageQuery(range.fromUtc, range.toUtc);
   const unallocated = useUnallocatedQuery(range.fromUtc, range.toUtc);
   const allocateAll = useReconciliationMutation();
+  const allocateClosest = useAllocateUsageToClosestPromptMutation();
+  const allocateManual = useAllocateUsageMutation();
+  const projects = useProjectsQuery();
   const deleteUnallocated = useDeleteUnallocatedUsageMutation();
   const [lastResult, setLastResult] = useState<ReconciliationResultDto | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const [rowMessage, setRowMessage] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<'preview' | 'apply' | null>(null);
+  const [rowProjectId, setRowProjectId] = useState('');
+  const [busyUsageId, setBusyUsageId] = useState<string | null>(null);
 
   const report = imported.data;
   const items = report?.items ?? [];
@@ -70,10 +79,12 @@ function ImportedUsageList() {
   const proposed = lastResult?.attributions ?? [];
   const unallocatedCount = unallocated.data?.usage?.count ?? 0;
   const previewReady = Boolean(lastResult?.dryRun);
+  const activeProjects = (projects.data ?? []).filter((p) => p.isActive !== false);
 
   const runReconciliation = (dryRun: boolean) => {
     setLastResult(null);
     setDeleteMessage(null);
+    setRowMessage(null);
     setPendingMode(dryRun ? 'preview' : 'apply');
     allocateAll.mutate(
       {
@@ -85,6 +96,50 @@ function ImportedUsageList() {
       {
         onSuccess: (result) => setLastResult(result),
         onSettled: () => setPendingMode(null),
+      },
+    );
+  };
+
+  const onAllocateClosest = (usageRecordId: string) => {
+    setBusyUsageId(usageRecordId);
+    setRowMessage(null);
+    allocateClosest.mutate(usageRecordId, {
+      onSuccess: (rows) => {
+        const first = rows[0];
+        setRowMessage(
+          first?.projectName
+            ? `Allocated usage row to ${first.projectName}.`
+            : rows.length > 0
+              ? 'Allocated usage row to closest prompt.'
+              : 'No attribution produced for this usage row.',
+        );
+      },
+      onError: (err) => {
+        setRowMessage(err instanceof Error ? err.message : 'Allocate to closest prompt failed');
+      },
+      onSettled: () => setBusyUsageId(null),
+    });
+  };
+
+  const onAllocateManual = (usageRecordId: string) => {
+    if (!rowProjectId) return;
+    setBusyUsageId(usageRecordId);
+    setRowMessage(null);
+    allocateManual.mutate(
+      {
+        usageRecordId,
+        projectAllocations: [{ projectId: rowProjectId, percentage: 100 }],
+        replaceExisting: true,
+      },
+      {
+        onSuccess: () => {
+          const project = activeProjects.find((p) => p.id === rowProjectId);
+          setRowMessage(`Allocated usage row to ${project?.name ?? 'selected project'}.`);
+        },
+        onError: (err) => {
+          setRowMessage(err instanceof Error ? err.message : 'Manual allocate failed');
+        },
+        onSettled: () => setBusyUsageId(null),
       },
     );
   };
@@ -185,6 +240,7 @@ function ImportedUsageList() {
       ) : null}
 
       {deleteMessage ? <Panel>{deleteMessage}</Panel> : null}
+      {rowMessage ? <Panel>{rowMessage}</Panel> : null}
 
       {!imported.isLoading && !imported.error ? (
         <>
@@ -202,6 +258,30 @@ function ImportedUsageList() {
               )}
             />
           </div>
+
+          <Panel className="stack">
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="row-alloc-project">Project for row allocate</label>
+                <select
+                  id="row-alloc-project"
+                  value={rowProjectId}
+                  onChange={(e) => setRowProjectId(e.target.value)}
+                >
+                  <option value="">Select project…</option>
+                  {activeProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <p className="hint">
+              For unallocated rows: Allocate to prompt links to the closest prior prompt, or Allocate
+              to project uses the project selected above.
+            </p>
+          </Panel>
 
           {allocateAll.isError ? (
             <ErrorState
@@ -336,32 +416,61 @@ function ImportedUsageList() {
                     <th>Prompt link</th>
                     <th>Method</th>
                     <th>Imported</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td>{formatDateTime(item.timestampUtc)}</td>
-                      <td>{item.model ?? '—'}</td>
-                      <td>{formatNumber(item.totalTokens)}</td>
-                      <td>{formatCurrency(item.reportedCost, item.currency)}</td>
-                      <td>
-                        {formatCurrency(item.calculatedTokenCost ?? 0, item.currency)}
-                      </td>
-                      <td>
-                        {item.projectId ? (
-                          <TextLink to={`/projects/${item.projectId}`}>
-                            {item.projectName ?? item.projectId}
-                          </TextLink>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="mono">{item.activityEventId ?? '—'}</td>
-                      <td>{item.attributionMethod ?? '—'}</td>
-                      <td>{formatDateTime(item.importedAtUtc)}</td>
-                    </tr>
-                  ))}
+                  {items.map((item) => {
+                    const canAllocate = !item.projectId && (item.totalTokens ?? 0) > 0;
+                    const busy = busyUsageId === item.id;
+                    return (
+                      <tr key={item.id}>
+                        <td>{formatDateTime(item.timestampUtc)}</td>
+                        <td>{item.model ?? '—'}</td>
+                        <td>{formatNumber(item.totalTokens)}</td>
+                        <td>{formatCurrency(item.reportedCost, item.currency)}</td>
+                        <td>
+                          {formatCurrency(item.calculatedTokenCost ?? 0, item.currency)}
+                        </td>
+                        <td>
+                          {item.projectId ? (
+                            <TextLink to={`/projects/${item.projectId}`}>
+                              {item.projectName ?? item.projectId}
+                            </TextLink>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="mono">{item.activityEventId ?? '—'}</td>
+                        <td>{item.attributionMethod ?? '—'}</td>
+                        <td>{formatDateTime(item.importedAtUtc)}</td>
+                        <td>
+                          {canAllocate ? (
+                            <div className="row-actions">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-compact"
+                                disabled={busy || allocateClosest.isPending}
+                                onClick={() => onAllocateClosest(item.id)}
+                              >
+                                {busy ? '…' : 'To prompt'}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-compact"
+                                disabled={busy || !rowProjectId || allocateManual.isPending}
+                                onClick={() => onAllocateManual(item.id)}
+                              >
+                                To project
+                              </button>
+                            </div>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </TablePanel>
