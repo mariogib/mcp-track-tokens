@@ -138,6 +138,81 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
             .ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedClient = clientName?.Trim();
+        var needsJoin = !string.IsNullOrEmpty(normalizedClient);
+        var fromSql = needsJoin
+            ? "FROM TimesheetEntries AS e INNER JOIN Projects AS p ON p.Id = e.ProjectId"
+            : "FROM TimesheetEntries AS e";
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (projectId is Guid pid)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND e.ProjectId = {{{args.Count}}}");
+            args.Add(pid);
+        }
+
+        if (!string.IsNullOrEmpty(normalizedClient))
+        {
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND lower(IFNULL(p.ClientName,'')) = lower({{{args.Count}}})");
+            args.Add(normalizedClient);
+        }
+
+        // StartedAtUtc is stored as DateTimeOffset TEXT; first 7 chars are YYYY-MM.
+        var sql =
+            "SELECT substr(e.StartedAtUtc, 1, 7) AS \"MonthKey\", COUNT(*) AS \"EntryCount\" " +
+            fromSql + " " + where +
+            " GROUP BY substr(e.StartedAtUtc, 1, 7) ORDER BY MonthKey DESC";
+
+        var rows = await _db.Database
+            .SqlQueryRaw<MonthCountRow>(sql, args.ToArray())
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows
+            .Select(ParseMonthRow)
+            .Where(static m => m is not null)
+            .Select(static m => m!)
+            .ToList();
+    }
+
+    private static TimesheetMonthAvailabilityDto? ParseMonthRow(MonthCountRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.MonthKey) || row.MonthKey.Length < 7)
+        {
+            return null;
+        }
+
+        if (!int.TryParse(row.MonthKey.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year) ||
+            !int.TryParse(row.MonthKey.AsSpan(5, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var month) ||
+            month is < 1 or > 12)
+        {
+            return null;
+        }
+
+        return new TimesheetMonthAvailabilityDto
+        {
+            Year = year,
+            Month = month,
+            EntryCount = row.EntryCount
+        };
+    }
+
+    private sealed class MonthCountRow
+    {
+        public string MonthKey { get; set; } = string.Empty;
+
+        public int EntryCount { get; set; }
+    }
+
     private static (string FromSql, string WhereSql, List<object> Args) BuildBrowseSql(
         TimesheetEntryPageFilter filter,
         bool forCount)

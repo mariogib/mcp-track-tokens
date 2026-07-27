@@ -229,6 +229,14 @@ public interface ITimesheetReportService
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists UTC months that contain timesheet entries, optionally scoped.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

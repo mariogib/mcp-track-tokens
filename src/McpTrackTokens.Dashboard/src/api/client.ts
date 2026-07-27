@@ -42,6 +42,7 @@ import type {
   TimesheetClientReport,
   TimesheetEntryDto,
   TimesheetBrowseQuery,
+  TimesheetMonthAvailabilityDto,
   TimesheetOverallReport,
   TimesheetProjectReport,
   TrackingStatusDto,
@@ -510,6 +511,18 @@ export const api = {
   getTimesheetOverallReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<TimesheetOverallReport>('/api/v1/timesheet/reports/overall', {
       query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getTimesheetReportMonths: (
+    query?: { projectId?: string; clientName?: string },
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetMonthAvailabilityDto[]>('/api/v1/timesheet/reports/months', {
+      query: {
+        projectId: query?.projectId,
+        clientName: query?.clientName,
+      },
       signal,
     }),
 

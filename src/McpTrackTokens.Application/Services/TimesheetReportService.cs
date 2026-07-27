@@ -114,6 +114,13 @@ public sealed class TimesheetReportService : ITimesheetReportService
         };
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default)
+        => _timesheets.ListMonthsWithEntriesAsync(projectId, clientName, cancellationToken);
+
     private static (DateTimeOffset From, DateTimeOffset To) NormalizeRange(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc)

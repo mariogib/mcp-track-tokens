@@ -841,6 +841,12 @@ export interface TimesheetDailyBreakdownRow {
   entryCount: number;
 }
 
+export interface TimesheetMonthAvailabilityDto {
+  year: number;
+  month: number;
+  entryCount: number;
+}
+
 export interface TimesheetOverallReport {
   fromUtc: string;
   toUtc: string;

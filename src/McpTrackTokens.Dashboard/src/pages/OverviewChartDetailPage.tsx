@@ -19,7 +19,10 @@ import {
 import { Page } from '../layout/AppLayout';
 import { Breadcrumb, TextLink } from '../shared/adminUi';
 import {
+  currentUtcYearMonth,
+  parseMonthParam,
   parseRangePreset,
+  parseYearParam,
   resolveRange,
   toDateInputValue,
   type RangePreset,
@@ -46,6 +49,8 @@ export function OverviewChartDetailPage() {
   const preset = parseRangePreset(searchParams.get('range'));
   const fromDate = searchParams.get('from') ?? '';
   const toDate = searchParams.get('to') ?? '';
+  const rangeYear = parseYearParam(searchParams.get('year'));
+  const rangeMonth = parseMonthParam(searchParams.get('month'));
   const modelFilter = searchParams.get('model') ?? '';
   const projectFilter = searchParams.get('project') ?? '';
   const dayFilter = searchParams.get('day') ?? '';
@@ -56,8 +61,10 @@ export function OverviewChartDetailPage() {
         preset === 'custom' || (fromDate && toDate) ? 'custom' : preset,
         fromDate,
         toDate,
+        rangeYear,
+        rangeMonth,
       ),
-    [preset, fromDate, toDate],
+    [preset, fromDate, toDate, rangeYear, rangeMonth],
   );
 
   const {
@@ -87,10 +94,33 @@ export function OverviewChartDetailPage() {
         range: 'custom',
         from: toDateInputValue(defaults.fromUtc),
         to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
       });
       return;
     }
-    updateParams({ range: next, from: null, to: null });
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (nextYear: number, nextMonth: number) => {
+    updateParams({
+      range: 'month',
+      year: String(nextYear),
+      month: String(nextMonth),
+      from: null,
+      to: null,
+    });
   };
 
   const reportedTotalCost = aggregatedCost.totalAiCost;
@@ -250,6 +280,8 @@ export function OverviewChartDetailPage() {
                 range: 'custom',
                 from: value,
                 to: toDate || toDateInputValue(range.toUtc),
+                year: null,
+                month: null,
               })
             }
             onToDateChange={(value) =>
@@ -257,8 +289,13 @@ export function OverviewChartDetailPage() {
                 range: 'custom',
                 to: value,
                 from: fromDate || toDateInputValue(range.fromUtc),
+                year: null,
+                month: null,
               })
             }
+            year={rangeYear ?? currentUtcYearMonth().year}
+            month={rangeMonth ?? currentUtcYearMonth().month}
+            onYearMonthChange={onYearMonthChange}
           />
 
           {def.filter === 'model' ? (

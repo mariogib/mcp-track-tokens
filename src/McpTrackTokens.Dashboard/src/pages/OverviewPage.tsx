@@ -17,7 +17,10 @@ import { StatusBadge } from '../components/StatusBadge';
 import { overviewChartPath, type OverviewChartKey } from '../data/overviewCharts';
 import { Page } from '../layout/AppLayout';
 import {
+  currentUtcYearMonth,
+  parseMonthParam,
   parseRangePreset,
+  parseYearParam,
   resolveRange,
   toDateInputValue,
   type RangePreset,
@@ -43,14 +46,18 @@ export function OverviewPage() {
   const preset = parseRangePreset(searchParams.get('range'));
   const fromDate = searchParams.get('from') ?? '';
   const toDate = searchParams.get('to') ?? '';
+  const rangeYear = parseYearParam(searchParams.get('year'));
+  const rangeMonth = parseMonthParam(searchParams.get('month'));
   const chartRange = useMemo(
     () =>
       resolveRange(
         preset === 'custom' || (fromDate && toDate) ? 'custom' : preset,
         fromDate,
         toDate,
+        rangeYear,
+        rangeMonth,
       ),
-    [preset, fromDate, toDate],
+    [preset, fromDate, toDate, rangeYear, rangeMonth],
   );
 
   const health = useHealthQuery();
@@ -90,10 +97,33 @@ export function OverviewPage() {
         range: 'custom',
         from: toDateInputValue(defaults.fromUtc),
         to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
       });
       return;
     }
-    updateParams({ range: next, from: null, to: null });
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (nextYear: number, nextMonth: number) => {
+    updateParams({
+      range: 'month',
+      year: String(nextYear),
+      month: String(nextMonth),
+      from: null,
+      to: null,
+    });
   };
 
   const chartLink = (key: OverviewChartKey) =>
@@ -269,6 +299,8 @@ export function OverviewPage() {
               range: 'custom',
               from: value,
               to: toDate || toDateInputValue(chartRange.toUtc),
+              year: null,
+              month: null,
             })
           }
           onToDateChange={(value) =>
@@ -276,8 +308,13 @@ export function OverviewPage() {
               range: 'custom',
               from: fromDate || toDateInputValue(chartRange.fromUtc),
               to: value,
+              year: null,
+              month: null,
             })
           }
+          year={rangeYear ?? currentUtcYearMonth().year}
+          month={rangeMonth ?? currentUtcYearMonth().month}
+          onYearMonthChange={onYearMonthChange}
           idPrefix="overview-range"
         />
 

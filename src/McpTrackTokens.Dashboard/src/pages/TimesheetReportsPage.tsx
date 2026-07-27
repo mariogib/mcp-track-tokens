@@ -8,6 +8,7 @@ import {
   useTimesheetClientReportQuery,
   useTimesheetOverallReportQuery,
   useTimesheetProjectReportQuery,
+  useTimesheetReportMonthsQuery,
 } from '../api/hooks';
 import type {
   PromptEventDto,
@@ -19,10 +20,20 @@ import type {
   TimesheetReportTotals,
 } from '../api/types';
 import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
+import { DateRangeFilters } from '../components/DateRangeFilters';
 import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { PopupForm, TextLink } from '../shared/adminUi';
-import { parseRangePreset, resolveRange } from '../utils/dateRange';
+import {
+  currentUtcYearMonth,
+  monthDateInputs,
+  parseMonthParam,
+  parseRangePreset,
+  parseYearParam,
+  resolveRange,
+  toDateInputValue,
+  type RangePreset,
+} from '../utils/dateRange';
 import {
   formatDateTime,
   formatDurationMs,
@@ -710,12 +721,30 @@ export function TimesheetReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const scope = parseReportScope(searchParams.get('scope'));
   const rangePreset = parseRangePreset(searchParams.get('range'));
+  const fromDate = searchParams.get('from') ?? '';
+  const toDate = searchParams.get('to') ?? '';
+  const selectedYear = parseYearParam(searchParams.get('year'));
+  const selectedMonth = parseMonthParam(searchParams.get('month'));
   const projectId = searchParams.get('project') ?? '';
   const clientName = searchParams.get('client') ?? '';
-  const range = useMemo(() => resolveRange(rangePreset), [rangePreset]);
+  const range = useMemo(
+    () =>
+      resolveRange(
+        rangePreset === 'custom' || (fromDate && toDate) ? 'custom' : rangePreset,
+        fromDate,
+        toDate,
+        selectedYear,
+        selectedMonth,
+      ),
+    [rangePreset, fromDate, toDate, selectedYear, selectedMonth],
+  );
 
   const projects = useProjectsQuery();
   const clients = useReportClientsQuery();
+  const monthsQuery = useTimesheetReportMonthsQuery(
+    scope === 'project' ? projectId || null : null,
+    scope === 'client' ? clientName || null : null,
+  );
 
   const [selectedDay, setSelectedDay] = useState<{
     day: string;
@@ -753,6 +782,53 @@ export function TimesheetReportsPage() {
     });
   };
 
+  const onPresetChange = (next: RangePreset) => {
+    if (next === 'custom') {
+      const defaults = resolveRange('30d');
+      updateParams({
+        range: 'custom',
+        from: toDateInputValue(defaults.fromUtc),
+        to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
+      });
+      return;
+    }
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (year: number, month: number) => {
+    updateParams({
+      range: 'month',
+      year: String(year),
+      month: String(month),
+      from: null,
+      to: null,
+    });
+  };
+
+  const onMonthSelect = (year: number, month: number) => {
+    const bounds = monthDateInputs(year, month);
+    updateParams({
+      range: 'custom',
+      from: bounds.from,
+      to: bounds.to,
+      year: null,
+      month: null,
+    });
+  };
+
   const openDay = (day: string, projectIds?: string[]) => {
     setSelectedSession(null);
     setSelectedDay({ day, projectIds: projectIds?.filter(Boolean) });
@@ -779,70 +855,90 @@ export function TimesheetReportsPage() {
           </div>
         </div>
 
-        <Panel className="field-row">
-          <div className="field">
-            <label htmlFor="timesheet-report-scope">Scope</label>
-            <select
-              id="timesheet-report-scope"
-              value={scope}
-              onChange={(e) => setScope(e.target.value as ReportScope)}
-            >
-              <option value="all">All projects</option>
-              <option value="project">One project</option>
-              <option value="client">One client</option>
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="timesheet-report-range">Range</label>
-            <select
-              id="timesheet-report-range"
-              value={rangePreset === 'custom' ? '30d' : rangePreset}
-              onChange={(e) => updateParams({ range: e.target.value })}
-            >
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-              <option value="90d">Last 90 days</option>
-              <option value="month">This month</option>
-            </select>
-          </div>
-          {scope === 'project' ? (
+        <Panel>
+          <div className="field-row">
             <div className="field">
-              <label htmlFor="timesheet-report-project">Project</label>
+              <label htmlFor="timesheet-report-scope">Scope</label>
               <select
-                id="timesheet-report-project"
-                value={projectId}
-                onChange={(e) => updateParams({ project: e.target.value || null })}
+                id="timesheet-report-scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value as ReportScope)}
               >
-                <option value="">Select project…</option>
-                {(projects.data ?? []).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
+                <option value="all">All projects</option>
+                <option value="project">One project</option>
+                <option value="client">One client</option>
               </select>
             </div>
-          ) : null}
-          {scope === 'client' ? (
+            {scope === 'project' ? (
+              <div className="field">
+                <label htmlFor="timesheet-report-project">Project</label>
+                <select
+                  id="timesheet-report-project"
+                  value={projectId}
+                  onChange={(e) => updateParams({ project: e.target.value || null })}
+                >
+                  <option value="">Select project…</option>
+                  {(projects.data ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            {scope === 'client' ? (
+              <div className="field">
+                <label htmlFor="timesheet-report-client">Client</label>
+                <select
+                  id="timesheet-report-client"
+                  value={clientName}
+                  onChange={(e) => updateParams({ client: e.target.value || null })}
+                >
+                  <option value="">Select client…</option>
+                  {(clients.data ?? []).map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             <div className="field">
-              <label htmlFor="timesheet-report-client">Client</label>
-              <select
-                id="timesheet-report-client"
-                value={clientName}
-                onChange={(e) => updateParams({ client: e.target.value || null })}
-              >
-                <option value="">Select client…</option>
-                {(clients.data ?? []).map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <label className="label">Period</label>
+              <p className="hint">{range.label}</p>
             </div>
-          ) : null}
-          <div className="field">
-            <label className="label">Period</label>
-            <p className="hint">{range.label}</p>
           </div>
+
+          <DateRangeFilters
+            preset={range.preset}
+            fromDate={fromDate || toDateInputValue(range.fromUtc)}
+            toDate={toDate || toDateInputValue(range.toUtc)}
+            onPresetChange={onPresetChange}
+            onFromDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: value,
+                to: toDate || toDateInputValue(range.toUtc),
+                year: null,
+                month: null,
+              })
+            }
+            onToDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: fromDate || toDateInputValue(range.fromUtc),
+                to: value,
+                year: null,
+                month: null,
+              })
+            }
+            year={selectedYear ?? currentUtcYearMonth().year}
+            month={selectedMonth ?? currentUtcYearMonth().month}
+            onYearMonthChange={onYearMonthChange}
+            monthsWithData={monthsQuery.data}
+            onMonthSelect={onMonthSelect}
+            idPrefix="timesheet-report-range"
+          />
         </Panel>
 
         {scope === 'all' ? (

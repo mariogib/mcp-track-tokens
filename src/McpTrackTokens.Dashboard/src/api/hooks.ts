@@ -131,6 +131,8 @@ export const queryKeys = {
     ['timesheet-reports', 'project', projectId, from, to] as const,
   timesheetClientReport: (clientName: string, from: string, to: string) =>
     ['timesheet-reports', 'client', clientName, from, to] as const,
+  timesheetReportMonths: (projectId?: string, clientName?: string) =>
+    ['timesheet-reports', 'months', projectId ?? '', clientName ?? ''] as const,
   activeSession: ['sessions', 'active'] as const,
   unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
   importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
@@ -554,6 +556,21 @@ export function useTimesheetOverallReportQuery(fromUtc: string, toUtc: string, e
   return useQuery({
     queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc),
     queryFn: ({ signal }) => api.getTimesheetOverallReport(fromUtc, toUtc, signal),
+    enabled,
+  });
+}
+
+export function useTimesheetReportMonthsQuery(
+  projectId?: string | null,
+  clientName?: string | null,
+  enabled = true,
+) {
+  const pid = projectId?.trim() || undefined;
+  const client = clientName?.trim() || undefined;
+  return useQuery({
+    queryKey: queryKeys.timesheetReportMonths(pid, client),
+    queryFn: ({ signal }) =>
+      api.getTimesheetReportMonths({ projectId: pid, clientName: client }, signal),
     enabled,
   });
 }

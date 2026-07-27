@@ -168,6 +168,14 @@ public interface ITimesheetEntryRepository
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Distinct calendar months (UTC) that contain at least one timesheet entry.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<TimesheetEntry>> ListOpenByProjectAsync(
         Guid projectId,
         CancellationToken cancellationToken = default);

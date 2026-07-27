@@ -29,10 +29,31 @@ export function toDateInputValue(isoUtc: string): string {
   return `${y}-${m}-${d}`;
 }
 
+export function currentUtcYearMonth(): { year: number; month: number } {
+  const now = new Date();
+  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
+}
+
+export function parseYearParam(value: string | null | undefined): number | null {
+  if (!value || !/^\d{4}$/.test(value)) return null;
+  const year = Number(value);
+  if (year < 2000 || year > 2100) return null;
+  return year;
+}
+
+export function parseMonthParam(value: string | null | undefined): number | null {
+  if (!value || !/^\d{1,2}$/.test(value)) return null;
+  const month = Number(value);
+  if (month < 1 || month > 12) return null;
+  return month;
+}
+
 export function resolveRange(
   preset: RangePreset,
   fromDate?: string | null,
   toDate?: string | null,
+  year?: number | null,
+  month?: number | null,
 ): ResolvedRange {
   if (preset === 'custom' || (fromDate && toDate)) {
     const fromUtc = parseUtcDateInput(fromDate ?? '', false);
@@ -53,13 +74,13 @@ export function resolveRange(
   }
 
   if (preset === 'month') {
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
-    const bounds = monthBoundsUtc(year, month);
+    const defaults = currentUtcYearMonth();
+    const y = year != null && year >= 2000 && year <= 2100 ? year : defaults.year;
+    const m = month != null && month >= 1 && month <= 12 ? month : defaults.month;
+    const bounds = monthBoundsUtc(y, m);
     return {
       ...bounds,
-      label: `${year}-${String(month).padStart(2, '0')}`,
+      label: `${y}-${String(m).padStart(2, '0')}`,
       preset: 'month',
     };
   }
@@ -77,4 +98,14 @@ export function parseRangePreset(value: string | null | undefined): RangePreset 
     return value;
   }
   return '30d';
+}
+
+/** Inclusive UTC calendar-month bounds as YYYY-MM-DD inputs for custom range. */
+export function monthDateInputs(year: number, month: number): { from: string; to: string } {
+  const mm = String(month).padStart(2, '0');
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    from: `${year}-${mm}-01`,
+    to: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+  };
 }

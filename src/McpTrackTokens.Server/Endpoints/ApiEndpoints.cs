@@ -58,6 +58,7 @@ public static class ApiEndpoints
         api.MapGet("/timesheet/reports/overall", GetTimesheetOverallReportAsync);
         api.MapGet("/timesheet/reports/projects/{id:guid}", GetTimesheetProjectReportAsync);
         api.MapGet("/timesheet/reports/clients/{clientName}", GetTimesheetClientReportAsync);
+        api.MapGet("/timesheet/reports/months", GetTimesheetReportMonthsAsync);
         api.MapPost("/timesheet/start", StartTimesheetAsync);
         api.MapPost("/timesheet/end", EndTimesheetAsync);
         api.MapPut("/timesheet-entries/{id:guid}", UpdateTimesheetEntryAsync);
@@ -852,6 +853,25 @@ public static class ApiEndpoints
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
             var report = await reports.GetOverallReportAsync(from, to, cancellationToken).ConfigureAwait(false);
             return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetReportMonthsAsync(
+        ITimesheetReportService reports,
+        Guid? projectId,
+        string? clientName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var months = await reports
+                .ListMonthsWithEntriesAsync(projectId, clientName, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(months);
         }
         catch (Exception ex)
         {

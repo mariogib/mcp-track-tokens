@@ -23,7 +23,10 @@ import {
 import { Page } from '../layout/AppLayout';
 import { Breadcrumb, TextLink } from '../shared/adminUi';
 import {
+  currentUtcYearMonth,
+  parseMonthParam,
   parseRangePreset,
+  parseYearParam,
   resolveRange,
   toDateInputValue,
   type RangePreset,
@@ -50,13 +53,22 @@ export function ProjectChartDetailPage() {
   const preset = parseRangePreset(searchParams.get('range'));
   const fromDate = searchParams.get('from') ?? '';
   const toDate = searchParams.get('to') ?? '';
+  const rangeYear = parseYearParam(searchParams.get('year'));
+  const rangeMonth = parseMonthParam(searchParams.get('month'));
   const modelFilter = searchParams.get('model') ?? '';
   const branchFilter = searchParams.get('branch') ?? '';
   const dayFilter = searchParams.get('day') ?? '';
 
   const range = useMemo(
-    () => resolveRange(preset === 'custom' || (fromDate && toDate) ? 'custom' : preset, fromDate, toDate),
-    [preset, fromDate, toDate],
+    () =>
+      resolveRange(
+        preset === 'custom' || (fromDate && toDate) ? 'custom' : preset,
+        fromDate,
+        toDate,
+        rangeYear,
+        rangeMonth,
+      ),
+    [preset, fromDate, toDate, rangeYear, rangeMonth],
   );
 
   const project = useProjectQuery(projectId);
@@ -81,10 +93,33 @@ export function ProjectChartDetailPage() {
         range: 'custom',
         from: toDateInputValue(defaults.fromUtc),
         to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
       });
       return;
     }
-    updateParams({ range: next, from: null, to: null });
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (nextYear: number, nextMonth: number) => {
+    updateParams({
+      range: 'month',
+      year: String(nextYear),
+      month: String(nextMonth),
+      from: null,
+      to: null,
+    });
   };
 
   const reportedTotalCost = cost.data?.totalAiCost ?? 0;
@@ -246,11 +281,26 @@ export function ProjectChartDetailPage() {
             toDate={toDate || toDateInputValue(range.toUtc)}
             onPresetChange={onPresetChange}
             onFromDateChange={(value) =>
-              updateParams({ range: 'custom', from: value, to: toDate || toDateInputValue(range.toUtc) })
+              updateParams({
+                range: 'custom',
+                from: value,
+                to: toDate || toDateInputValue(range.toUtc),
+                year: null,
+                month: null,
+              })
             }
             onToDateChange={(value) =>
-              updateParams({ range: 'custom', to: value, from: fromDate || toDateInputValue(range.fromUtc) })
+              updateParams({
+                range: 'custom',
+                to: value,
+                from: fromDate || toDateInputValue(range.fromUtc),
+                year: null,
+                month: null,
+              })
             }
+            year={rangeYear ?? currentUtcYearMonth().year}
+            month={rangeMonth ?? currentUtcYearMonth().month}
+            onYearMonthChange={onYearMonthChange}
           />
 
           {def.filter === 'model' ? (
