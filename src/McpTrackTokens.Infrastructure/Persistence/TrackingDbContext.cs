@@ -42,6 +42,8 @@ public sealed class TrackingDbContext : DbContext
 
     public DbSet<TrackingApiKey> TrackingApiKeys => Set<TrackingApiKey>();
 
+    public DbSet<PersistedAppSettings> AppSettings => Set<PersistedAppSettings>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

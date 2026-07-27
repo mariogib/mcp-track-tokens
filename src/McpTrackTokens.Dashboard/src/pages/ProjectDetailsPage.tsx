@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
@@ -35,7 +35,7 @@ import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
-import { Breadcrumb, TextLink } from '../shared/adminUi';
+import { Breadcrumb, PopupForm, TextLink } from '../shared/adminUi';
 import {
   formatCurrency,
   formatDateTime,
@@ -816,202 +816,211 @@ export function ProjectDetailsPage() {
           </div>
 
           {sessionEditorOpen ? (
-            <Panel className="stack"><form
-              className="stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+            <PopupForm
+              title={editingSessionId ? 'Edit session' : 'New session'}
+              onClose={() => {
+                setSessionEditorOpen(false);
+                setEditingSessionId(null);
                 setSessionMessage(null);
-                if (!isCompleteLocalDateTime(sessionDraft.startedAtLocal)) {
-                  setSessionMessage('Started date and time are required.');
-                  return;
-                }
-                const startedAtUtc = fromLocalInputValue(sessionDraft.startedAtLocal);
-                if (!startedAtUtc) {
-                  setSessionMessage('Started date and time are invalid.');
-                  return;
-                }
-                if (
-                  sessionDraft.endedAtLocal.trim() &&
-                  !isCompleteLocalDateTime(sessionDraft.endedAtLocal)
-                ) {
-                  setSessionMessage('Ended date and time are incomplete.');
-                  return;
-                }
-                const endedAtUtc = fromLocalInputValue(sessionDraft.endedAtLocal);
-                if (
-                  endedAtUtc &&
-                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
-                ) {
-                  setSessionMessage('Ended time cannot be earlier than started time.');
-                  return;
-                }
-                const payload = {
-                  editor: sessionDraft.editor,
-                  status: sessionDraft.status,
-                  startedAtUtc,
-                  endedAtUtc,
-                  branch: sessionDraft.branch.trim() || null,
-                  workspacePath: sessionDraft.workspacePath.trim() || null,
-                  repositoryPath: sessionDraft.repositoryPath.trim() || null,
-                  remoteUrl: sessionDraft.remoteUrl.trim() || null,
-                  externalSessionId: sessionDraft.externalSessionId.trim() || null,
-                  editorVersion: sessionDraft.editorVersion.trim() || null,
-                  machineName: sessionDraft.machineName.trim() || null,
-                  userName: sessionDraft.userName.trim() || null,
-                };
-                try {
-                  if (editingSessionId) {
-                    await updateSessionMutation.mutateAsync({
-                      id: editingSessionId,
-                      body: {
-                        ...payload,
-                        projectId: detail.id,
-                        status: sessionDraft.status,
-                        startedAtUtc,
-                      },
-                    });
-                    setSessionMessage('Session updated.');
-                  } else {
-                    await createSessionMutation.mutateAsync({
-                      projectId: detail.id,
-                      body: payload,
-                    });
-                    setSessionMessage('Session created.');
-                  }
-                  setSessionEditorOpen(false);
-                  setEditingSessionId(null);
-                  setSessionBrowseEpoch((value) => value + 1);
-                } catch (err) {
-                  setSessionMessage(err instanceof Error ? err.message : 'Save failed');
-                }
               }}
-            >
-              <h3>{editingSessionId ? 'Edit session' : 'New session'}</h3>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-editor">Editor</label>
-                  <select
-                    id="session-editor"
-                    value={sessionDraft.editor}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, editor: e.target.value }))}
-                  >
-                    {SESSION_EDITORS.map((editor) => (
-                      <option key={editor} value={editor}>
-                        {editor}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="session-status">Status</label>
-                  <select
-                    id="session-status"
-                    value={sessionDraft.status}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, status: e.target.value }))}
-                  >
-                    {SESSION_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <DateTimeField
-                  id="session-started"
-                  label="Started"
-                  required
-                  value={sessionDraft.startedAtLocal}
-                  onChange={(startedAtLocal) =>
-                    setSessionDraft((s) => ({ ...s, startedAtLocal }))
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                void (async () => {
+                  setSessionMessage(null);
+                  if (!isCompleteLocalDateTime(sessionDraft.startedAtLocal)) {
+                    setSessionMessage('Started date and time are required.');
+                    return;
                   }
-                />
-                <DateTimeField
-                  id="session-ended"
-                  label="Ended"
-                  value={sessionDraft.endedAtLocal}
-                  onChange={(endedAtLocal) => setSessionDraft((s) => ({ ...s, endedAtLocal }))}
-                />
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-branch">Branch</label>
-                  <input
-                    id="session-branch"
-                    value={sessionDraft.branch}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, branch: e.target.value }))}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-workspace">Workspace path</label>
-                  <input
-                    id="session-workspace"
-                    value={sessionDraft.workspacePath}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, workspacePath: e.target.value }))
+                  const startedAtUtc = fromLocalInputValue(sessionDraft.startedAtLocal);
+                  if (!startedAtUtc) {
+                    setSessionMessage('Started date and time are invalid.');
+                    return;
+                  }
+                  if (
+                    sessionDraft.endedAtLocal.trim() &&
+                    !isCompleteLocalDateTime(sessionDraft.endedAtLocal)
+                  ) {
+                    setSessionMessage('Ended date and time are incomplete.');
+                    return;
+                  }
+                  const endedAtUtc = fromLocalInputValue(sessionDraft.endedAtLocal);
+                  if (
+                    endedAtUtc &&
+                    new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                  ) {
+                    setSessionMessage('Ended time cannot be earlier than started time.');
+                    return;
+                  }
+                  const payload = {
+                    editor: sessionDraft.editor,
+                    status: sessionDraft.status,
+                    startedAtUtc,
+                    endedAtUtc,
+                    branch: sessionDraft.branch.trim() || null,
+                    workspacePath: sessionDraft.workspacePath.trim() || null,
+                    repositoryPath: sessionDraft.repositoryPath.trim() || null,
+                    remoteUrl: sessionDraft.remoteUrl.trim() || null,
+                    externalSessionId: sessionDraft.externalSessionId.trim() || null,
+                    editorVersion: sessionDraft.editorVersion.trim() || null,
+                    machineName: sessionDraft.machineName.trim() || null,
+                    userName: sessionDraft.userName.trim() || null,
+                  };
+                  try {
+                    if (editingSessionId) {
+                      await updateSessionMutation.mutateAsync({
+                        id: editingSessionId,
+                        body: {
+                          ...payload,
+                          projectId: detail.id,
+                          status: sessionDraft.status,
+                          startedAtUtc,
+                        },
+                      });
+                      setSessionMessage('Session updated.');
+                    } else {
+                      await createSessionMutation.mutateAsync({
+                        projectId: detail.id,
+                        body: payload,
+                      });
+                      setSessionMessage('Session created.');
                     }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-repo">Repository path</label>
-                  <input
-                    id="session-repo"
-                    value={sessionDraft.repositoryPath}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, repositoryPath: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-remote">Remote URL</label>
-                  <input
-                    id="session-remote"
-                    value={sessionDraft.remoteUrl}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-external">External session id</label>
-                  <input
-                    id="session-external"
-                    value={sessionDraft.externalSessionId}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, externalSessionId: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="row-actions">
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={createSessionMutation.isPending || updateSessionMutation.isPending}
-                >
-                  {createSessionMutation.isPending || updateSessionMutation.isPending
-                    ? 'Saving…'
-                    : editingSessionId
-                      ? 'Save session'
-                      : 'Create session'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
                     setSessionEditorOpen(false);
                     setEditingSessionId(null);
-                    setSessionMessage(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                {sessionMessage ? <span className="form-message">{sessionMessage}</span> : null}
+                    setSessionBrowseEpoch((value) => value + 1);
+                  } catch (err) {
+                    setSessionMessage(err instanceof Error ? err.message : 'Save failed');
+                  }
+                })();
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={createSessionMutation.isPending || updateSessionMutation.isPending}
+                  >
+                    {createSessionMutation.isPending || updateSessionMutation.isPending
+                      ? 'Saving…'
+                      : editingSessionId
+                        ? 'Save session'
+                        : 'Create session'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setSessionEditorOpen(false);
+                      setEditingSessionId(null);
+                      setSessionMessage(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="stack">
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-editor">Editor</label>
+                    <select
+                      id="session-editor"
+                      value={sessionDraft.editor}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, editor: e.target.value }))}
+                    >
+                      {SESSION_EDITORS.map((editor) => (
+                        <option key={editor} value={editor}>
+                          {editor}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-status">Status</label>
+                    <select
+                      id="session-status"
+                      value={sessionDraft.status}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, status: e.target.value }))}
+                    >
+                      {SESSION_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <DateTimeField
+                    id="session-started"
+                    label="Started"
+                    required
+                    value={sessionDraft.startedAtLocal}
+                    onChange={(startedAtLocal) =>
+                      setSessionDraft((s) => ({ ...s, startedAtLocal }))
+                    }
+                  />
+                  <DateTimeField
+                    id="session-ended"
+                    label="Ended"
+                    value={sessionDraft.endedAtLocal}
+                    onChange={(endedAtLocal) => setSessionDraft((s) => ({ ...s, endedAtLocal }))}
+                  />
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-branch">Branch</label>
+                    <input
+                      id="session-branch"
+                      value={sessionDraft.branch}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, branch: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-workspace">Workspace path</label>
+                    <input
+                      id="session-workspace"
+                      value={sessionDraft.workspacePath}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, workspacePath: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-repo">Repository path</label>
+                    <input
+                      id="session-repo"
+                      value={sessionDraft.repositoryPath}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, repositoryPath: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-remote">Remote URL</label>
+                    <input
+                      id="session-remote"
+                      value={sessionDraft.remoteUrl}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-external">External session id</label>
+                    <input
+                      id="session-external"
+                      value={sessionDraft.externalSessionId}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, externalSessionId: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
               </div>
-            </form></Panel>
+            </PopupForm>
           ) : null}
 
-          {!sessionEditorOpen && sessionMessage ? (
+          {sessionMessage ? (
             <p className="form-message">{sessionMessage}</p>
           ) : null}
 
@@ -1229,159 +1238,170 @@ export function ProjectDetailsPage() {
           </div>
 
           {timesheetEditorOpen ? (
-            <Panel className="stack"><form
-              className="stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+            <PopupForm
+              title={editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}
+              onClose={() => {
+                setTimesheetEditorOpen(false);
+                setEditingTimesheetId(null);
                 setTimesheetMessage(null);
-                if (!isCompleteLocalDateTime(timesheetDraft.startedAtLocal)) {
-                  setTimesheetMessage('Started date and time are required.');
-                  return;
-                }
-                const startedAtUtc = fromLocalInputValue(timesheetDraft.startedAtLocal);
-                if (!startedAtUtc) {
-                  setTimesheetMessage('Started date and time are invalid.');
-                  return;
-                }
-                if (
-                  timesheetDraft.endedAtLocal.trim() &&
-                  !isCompleteLocalDateTime(timesheetDraft.endedAtLocal)
-                ) {
-                  setTimesheetMessage('Ended date and time are incomplete.');
-                  return;
-                }
-                const endedAtUtc = fromLocalInputValue(timesheetDraft.endedAtLocal);
-                if (
-                  endedAtUtc &&
-                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
-                ) {
-                  setTimesheetMessage('Ended time cannot be earlier than started time.');
-                  return;
-                }
-                if (!timesheetDraft.categoryId) {
-                  setTimesheetMessage('Category is required.');
-                  return;
-                }
-                const payload = {
-                  categoryId: timesheetDraft.categoryId,
-                  startedAtUtc,
-                  endedAtUtc,
-                  notes: timesheetDraft.notes.trim() || null,
-                };
-                try {
-                  if (editingTimesheetId) {
-                    await updateTimesheetMutation.mutateAsync({
-                      id: editingTimesheetId,
-                      body: {
-                        categoryId: payload.categoryId,
-                        startedAtUtc,
-                        endedAtUtc,
-                        notes: payload.notes,
-                      },
-                    });
-                    setTimesheetMessage('Timesheet entry updated.');
-                  } else {
-                    await createTimesheetMutation.mutateAsync({
-                      projectId: detail.id,
-                      body: payload,
-                    });
-                    setTimesheetMessage('Timesheet entry created.');
-                  }
-                  setTimesheetEditorOpen(false);
-                  setEditingTimesheetId(null);
-                  await Promise.resolve();
-                  setTimesheetBrowseEpoch((value) => value + 1);
-                } catch (err) {
-                  setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
-                }
               }}
-            >
-              <h3>{editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}</h3>
-              <div className="field">
-                <label htmlFor="timesheet-category">Category</label>
-                <select
-                  id="timesheet-category"
-                  required
-                  value={timesheetDraft.categoryId}
-                  onChange={(e) =>
-                    setTimesheetDraft((s) => ({ ...s, categoryId: e.target.value }))
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                void (async () => {
+                  setTimesheetMessage(null);
+                  if (!isCompleteLocalDateTime(timesheetDraft.startedAtLocal)) {
+                    setTimesheetMessage('Started date and time are required.');
+                    return;
                   }
-                >
-                  <option value="" disabled>
-                    Select category…
-                  </option>
-                  {(timesheetCategories.data ?? []).map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                  {editingTimesheetId &&
-                  timesheetDraft.categoryId &&
-                  !(timesheetCategories.data ?? []).some(
-                    (c) => c.id === timesheetDraft.categoryId,
-                  ) ? (
-                    <option value={timesheetDraft.categoryId}>
-                      Inactive category
-                    </option>
-                  ) : null}
-                </select>
-              </div>
-              <div className="field-row">
-                <DateTimeField
-                  id="timesheet-started"
-                  label="Started"
-                  required
-                  value={timesheetDraft.startedAtLocal}
-                  onChange={(startedAtLocal) =>
-                    setTimesheetDraft((s) => ({ ...s, startedAtLocal }))
+                  const startedAtUtc = fromLocalInputValue(timesheetDraft.startedAtLocal);
+                  if (!startedAtUtc) {
+                    setTimesheetMessage('Started date and time are invalid.');
+                    return;
                   }
-                />
-                <DateTimeField
-                  id="timesheet-ended"
-                  label="Ended"
-                  value={timesheetDraft.endedAtLocal}
-                  onChange={(endedAtLocal) => setTimesheetDraft((s) => ({ ...s, endedAtLocal }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="timesheet-notes">Notes</label>
-                <textarea
-                  id="timesheet-notes"
-                  value={timesheetDraft.notes}
-                  onChange={(e) => setTimesheetDraft((s) => ({ ...s, notes: e.target.value }))}
-                  rows={4}
-                />
-              </div>
-              <div className="row-actions">
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
-                >
-                  {createTimesheetMutation.isPending || updateTimesheetMutation.isPending
-                    ? 'Saving…'
-                    : editingTimesheetId
-                      ? 'Save entry'
-                      : 'Create entry'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
+                  if (
+                    timesheetDraft.endedAtLocal.trim() &&
+                    !isCompleteLocalDateTime(timesheetDraft.endedAtLocal)
+                  ) {
+                    setTimesheetMessage('Ended date and time are incomplete.');
+                    return;
+                  }
+                  const endedAtUtc = fromLocalInputValue(timesheetDraft.endedAtLocal);
+                  if (
+                    endedAtUtc &&
+                    new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                  ) {
+                    setTimesheetMessage('Ended time cannot be earlier than started time.');
+                    return;
+                  }
+                  if (!timesheetDraft.categoryId) {
+                    setTimesheetMessage('Category is required.');
+                    return;
+                  }
+                  const payload = {
+                    categoryId: timesheetDraft.categoryId,
+                    startedAtUtc,
+                    endedAtUtc,
+                    notes: timesheetDraft.notes.trim() || null,
+                  };
+                  try {
+                    if (editingTimesheetId) {
+                      await updateTimesheetMutation.mutateAsync({
+                        id: editingTimesheetId,
+                        body: {
+                          categoryId: payload.categoryId,
+                          startedAtUtc,
+                          endedAtUtc,
+                          notes: payload.notes,
+                        },
+                      });
+                      setTimesheetMessage('Timesheet entry updated.');
+                    } else {
+                      await createTimesheetMutation.mutateAsync({
+                        projectId: detail.id,
+                        body: payload,
+                      });
+                      setTimesheetMessage('Timesheet entry created.');
+                    }
                     setTimesheetEditorOpen(false);
                     setEditingTimesheetId(null);
-                    setTimesheetMessage(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                {timesheetMessage ? <span className="form-message">{timesheetMessage}</span> : null}
+                    await Promise.resolve();
+                    setTimesheetBrowseEpoch((value) => value + 1);
+                  } catch (err) {
+                    setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
+                  }
+                })();
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={
+                      createTimesheetMutation.isPending || updateTimesheetMutation.isPending
+                    }
+                  >
+                    {createTimesheetMutation.isPending || updateTimesheetMutation.isPending
+                      ? 'Saving…'
+                      : editingTimesheetId
+                        ? 'Save entry'
+                        : 'Create entry'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setTimesheetEditorOpen(false);
+                      setEditingTimesheetId(null);
+                      setTimesheetMessage(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="stack">
+                <div className="field">
+                  <label htmlFor="timesheet-category">Category</label>
+                  <select
+                    id="timesheet-category"
+                    required
+                    value={timesheetDraft.categoryId}
+                    onChange={(e) =>
+                      setTimesheetDraft((s) => ({ ...s, categoryId: e.target.value }))
+                    }
+                  >
+                    <option value="" disabled>
+                      Select category…
+                    </option>
+                    {(timesheetCategories.data ?? []).map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                    {editingTimesheetId &&
+                    timesheetDraft.categoryId &&
+                    !(timesheetCategories.data ?? []).some(
+                      (c) => c.id === timesheetDraft.categoryId,
+                    ) ? (
+                      <option value={timesheetDraft.categoryId}>Inactive category</option>
+                    ) : null}
+                  </select>
+                </div>
+                <div className="field-row">
+                  <DateTimeField
+                    id="timesheet-started"
+                    label="Started"
+                    required
+                    value={timesheetDraft.startedAtLocal}
+                    onChange={(startedAtLocal) =>
+                      setTimesheetDraft((s) => ({ ...s, startedAtLocal }))
+                    }
+                  />
+                  <DateTimeField
+                    id="timesheet-ended"
+                    label="Ended"
+                    value={timesheetDraft.endedAtLocal}
+                    onChange={(endedAtLocal) =>
+                      setTimesheetDraft((s) => ({ ...s, endedAtLocal }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="timesheet-notes">Notes</label>
+                  <textarea
+                    id="timesheet-notes"
+                    value={timesheetDraft.notes}
+                    onChange={(e) => setTimesheetDraft((s) => ({ ...s, notes: e.target.value }))}
+                    rows={4}
+                  />
+                </div>
               </div>
-            </form></Panel>
+            </PopupForm>
           ) : null}
 
-          {!timesheetEditorOpen && timesheetMessage ? (
+          {timesheetMessage ? (
             <p className="form-message">{timesheetMessage}</p>
           ) : null}
 

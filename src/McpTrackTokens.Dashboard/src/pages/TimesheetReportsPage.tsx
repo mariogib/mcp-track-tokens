@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useProjectsQuery,
@@ -21,7 +21,7 @@ import type {
 import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
 import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
-import { TextLink } from '../shared/adminUi';
+import { PopupForm, TextLink } from '../shared/adminUi';
 import { parseRangePreset, resolveRange } from '../utils/dateRange';
 import {
   formatDateTime,
@@ -460,41 +460,6 @@ function ClientReportView({
   );
 }
 
-function DialogFrame({
-  title,
-  subtitle,
-  onClose,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div
-        className="card modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="section-header">
-          <div>
-            <h2>{title}</h2>
-            {subtitle ? <p className="muted">{subtitle}</p> : null}
-          </div>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 function DaySessionsDialog({
   day,
   projectIds,
@@ -548,10 +513,15 @@ function DaySessionsDialog({
   }, [allowedProjectIds, sessions.data]);
 
   return (
-    <DialogFrame
+    <PopupForm
       title={`Sessions on ${day}`}
       subtitle="Click a session to view its prompts."
       onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
     >
       {sessions.isLoading ? (
         <LoadingState label="Loading sessions…" />
@@ -628,7 +598,7 @@ function DaySessionsDialog({
           )}
         </div>
       )}
-    </DialogFrame>
+    </PopupForm>
   );
 }
 
@@ -661,10 +631,15 @@ function SessionPromptsDialog({
   }, [prompts.data, statusFilter]);
 
   return (
-    <DialogFrame
+    <PopupForm
       title="Session prompts"
       subtitle={`${projectName ?? session.projectId ?? 'Unknown project'} · ${formatDateTime(session.startedAtUtc)}`}
       onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
     >
       {prompts.isLoading ? (
         <LoadingState label="Loading prompts…" />
@@ -727,7 +702,7 @@ function SessionPromptsDialog({
           )}
         </div>
       )}
-    </DialogFrame>
+    </PopupForm>
   );
 }
 

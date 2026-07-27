@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   API_KEY_STORAGE,
   getStoredApiKey,
@@ -34,7 +34,7 @@ import { ErrorState, LoadingState } from '../components/States';
 import { Panel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
-import { TextLink } from '../shared/adminUi';
+import { PopupForm, TextLink } from '../shared/adminUi';
 import {
   deleteLocalBackupFile,
   getStoredBackupFolder,
@@ -139,25 +139,17 @@ function SettingCheck({
 
 function CursorCostHelpDialog({ onClose }: { onClose: () => void }) {
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <div
-        className="card modal-panel modal-panel--help"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="cursor-cost-help-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="section-header">
-          <div>
-            <h2 id="cursor-cost-help-title">How Cursor calculates cost</h2>
-            <p>Based on Cursor’s Models &amp; Pricing for individual and team plans.</p>
-          </div>
-          <button type="button" className="btn btn-secondary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-
-        <div className="stack help-dialog-body">
+    <PopupForm
+      title="How Cursor calculates cost"
+      subtitle="Based on Cursor’s Models & Pricing for individual and team plans."
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      <div className="stack help-dialog-body">
           <section>
             <h3>Per-token formula</h3>
             <p>
@@ -271,8 +263,7 @@ function CursorCostHelpDialog({ onClose }: { onClose: () => void }) {
             </p>
           </section>
         </div>
-      </div>
-    </div>
+    </PopupForm>
   );
 }
 
@@ -354,7 +345,7 @@ function toDraft(settings: SettingsDto): SettingsDraft {
     enablePromptHashing: settings.enablePromptHashing,
     exportPath: settings.exportPath,
     dataRetentionDays: settings.dataRetentionDays ?? null,
-    autoCreateProjects: settings.autoCreateProjects,
+    autoCreateProjects: settings.autoCreateProjects ?? true,
     estimateCostFromTokenRates: settings.estimateCostFromTokenRates ?? false,
     cursorTokenRates:
       settings.cursorTokenRates && settings.cursorTokenRates.length > 0
@@ -396,6 +387,8 @@ export function SettingsPage() {
   const [localKey, setLocalKey] = useState(() => getStoredApiKey() ?? '');
   const [newKeyName, setNewKeyName] = useState('Dashboard');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryCreateOpen, setCategoryCreateOpen] = useState(false);
+  const [apiKeyCreateOpen, setApiKeyCreateOpen] = useState(false);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [categoryDraft, setCategoryDraft] = useState({ name: '', sortOrder: 0, isActive: true });
   const [categoryMessage, setCategoryMessage] = useState<string | null>(null);
@@ -487,11 +480,17 @@ export function SettingsPage() {
     }
 
     setMessage(null);
-    updateSettings.mutate(payload, {
-      onSuccess: () => setMessage('Settings saved.'),
-      onError: (err) =>
-        setMessage(err instanceof Error ? err.message : 'Failed to save settings'),
-    });
+    updateSettings.mutate(
+      {
+        ...payload,
+        clearDataRetentionDays: payload.dataRetentionDays == null,
+      },
+      {
+        onSuccess: () => setMessage('Settings saved.'),
+        onError: (err) =>
+          setMessage(err instanceof Error ? err.message : 'Failed to save settings'),
+      },
+    );
   };
 
   const updateRate = (
@@ -914,7 +913,7 @@ export function SettingsPage() {
                 type="submit"
                 className="btn"
                 disabled={updateSettings.isPending}
-                title="Save tracking preferences to the server"
+                title="Save tracking preferences to the database"
               >
                 Save settings
               </button>
@@ -1036,7 +1035,7 @@ export function SettingsPage() {
                 type="button"
                 className="btn"
                 disabled={updateSettings.isPending}
-                title="Save the rate card and estimate-cost flag to the server"
+                title="Save the rate card and estimate-cost flag to the database"
                 onClick={() => saveDraft()}
               >
                 Save rates
@@ -1292,57 +1291,22 @@ export function SettingsPage() {
                 Deleting a category that is in use deactivates it so history stays intact.
               </p>
             </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setNewCategoryName('');
+                setCategoryMessage(null);
+                setCategoryCreateOpen(true);
+              }}
+            >
+              Add category
+            </button>
           </div>
 
-          <Panel className="stack">
-            <div className="field-row">
-              <div className="field">
-                <SettingLabel
-                  htmlFor="new-category-name"
-                  help={{
-                    summary: 'Display name for a new timesheet category.',
-                    detail:
-                      'Shown on timesheet entries and filters (for example Work or Meetings). Seeded defaults already include Work and Meetings; add custom names for how you classify time. Deleting a category in use deactivates it so history stays intact.',
-                  }}
-                >
-                  New category
-                </SettingLabel>
-                <input
-                  id="new-category-name"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="e.g. Research"
-                />
-              </div>
-            </div>
-            <div className="row">
-              <button
-                type="button"
-                className="btn"
-                disabled={createCategory.isPending || !newCategoryName.trim()}
-                onClick={() => {
-                  setCategoryMessage(null);
-                  createCategory.mutate(
-                    { name: newCategoryName.trim() },
-                    {
-                      onSuccess: () => {
-                        setNewCategoryName('');
-                        setCategoryMessage('Category created.');
-                      },
-                      onError: (err) => {
-                        setCategoryMessage(
-                          err instanceof Error ? err.message : 'Failed to create category',
-                        );
-                      },
-                    },
-                  );
-                }}
-              >
-                {createCategory.isPending ? 'Adding…' : 'Add category'}
-              </button>
-              {categoryMessage ? <span className="form-message">{categoryMessage}</span> : null}
-            </div>
+          {categoryMessage ? <p className="form-message">{categoryMessage}</p> : null}
 
+          <Panel className="stack">
             {timesheetCategories.isError ? (
               <ErrorState
                 message={
@@ -1378,114 +1342,23 @@ export function SettingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCategories.map((category: TimesheetCategoryDto) => {
-                      const editing = editingCategoryId === category.id;
-                      return (
+                    {filteredCategories.map((category: TimesheetCategoryDto) => (
                         <tr key={category.id}>
+                          <td>{category.name}</td>
+                          <td>{category.sortOrder}</td>
                           <td>
-                            {editing ? (
-                              <input
-                                value={categoryDraft.name}
-                                onChange={(e) =>
-                                  setCategoryDraft((d) => ({ ...d, name: e.target.value }))
-                                }
-                              />
-                            ) : (
-                              category.name
-                            )}
-                          </td>
-                          <td>
-                            {editing ? (
-                              <input
-                                type="number"
-                                value={categoryDraft.sortOrder}
-                                onChange={(e) =>
-                                  setCategoryDraft((d) => ({
-                                    ...d,
-                                    sortOrder: Number(e.target.value) || 0,
-                                  }))
-                                }
-                                style={{ width: '5rem' }}
-                              />
-                            ) : (
-                              category.sortOrder
-                            )}
-                          </td>
-                          <td>
-                            {editing ? (
-                              <label className="row">
-                                <input
-                                  type="checkbox"
-                                  checked={categoryDraft.isActive}
-                                  onChange={(e) =>
-                                    setCategoryDraft((d) => ({
-                                      ...d,
-                                      isActive: e.target.checked,
-                                    }))
-                                  }
-                                />
-                                Active
-                              </label>
-                            ) : (
                               <StatusBadge
                                 label={category.isActive ? 'Active' : 'Inactive'}
                                 tone={category.isActive ? 'success' : 'neutral'}
                               />
-                            )}
                           </td>
                           <td>
                             <div className="row-actions">
-                              {editing ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="btn btn-compact"
-                                    disabled={
-                                      updateCategory.isPending || !categoryDraft.name.trim()
-                                    }
-                                    onClick={() => {
-                                      setCategoryMessage(null);
-                                      updateCategory.mutate(
-                                        {
-                                          id: category.id,
-                                          body: {
-                                            name: categoryDraft.name.trim(),
-                                            sortOrder: categoryDraft.sortOrder,
-                                            isActive: categoryDraft.isActive,
-                                          },
-                                        },
-                                        {
-                                          onSuccess: () => {
-                                            setEditingCategoryId(null);
-                                            setCategoryMessage('Category updated.');
-                                          },
-                                          onError: (err) => {
-                                            setCategoryMessage(
-                                              err instanceof Error
-                                                ? err.message
-                                                : 'Failed to update category',
-                                            );
-                                          },
-                                        },
-                                      );
-                                    }}
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn btn-compact btn-secondary"
-                                    onClick={() => setEditingCategoryId(null)}
-                                  >
-                                    Cancel
-                                  </button>
-                                </>
-                              ) : (
-                                <>
                                   <button
                                     type="button"
                                     className="btn btn-compact btn-secondary"
                                     onClick={() => {
+                                      setCategoryCreateOpen(false);
                                       setEditingCategoryId(category.id);
                                       setCategoryDraft({
                                         name: category.name,
@@ -1525,19 +1398,187 @@ export function SettingsPage() {
                                   >
                                     Delete
                                   </button>
-                                </>
-                              )}
                             </div>
                           </td>
                         </tr>
-                      );
-                    })}
+                      ))}
                   </tbody>
                 </table>
               </div>
               </div>
             )}
           </Panel>
+
+          {categoryCreateOpen ? (
+            <PopupForm
+              title="Add category"
+              contentClassName="popup-form--narrow"
+              onClose={() => {
+                setCategoryCreateOpen(false);
+                setNewCategoryName('');
+              }}
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                if (!newCategoryName.trim()) {
+                  return;
+                }
+                setCategoryMessage(null);
+                createCategory.mutate(
+                  { name: newCategoryName.trim() },
+                  {
+                    onSuccess: () => {
+                      setNewCategoryName('');
+                      setCategoryCreateOpen(false);
+                      setCategoryMessage('Category created.');
+                    },
+                    onError: (err) => {
+                      setCategoryMessage(
+                        err instanceof Error ? err.message : 'Failed to create category',
+                      );
+                    },
+                  },
+                );
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={createCategory.isPending || !newCategoryName.trim()}
+                  >
+                    {createCategory.isPending ? 'Adding…' : 'Add category'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setCategoryCreateOpen(false);
+                      setNewCategoryName('');
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="field">
+                <SettingLabel
+                  htmlFor="new-category-name"
+                  help={{
+                    summary: 'Display name for a new timesheet category.',
+                    detail:
+                      'Shown on timesheet entries and filters (for example Work or Meetings). Seeded defaults already include Work and Meetings; add custom names for how you classify time. Deleting a category in use deactivates it so history stays intact.',
+                  }}
+                >
+                  Name
+                </SettingLabel>
+                <input
+                  id="new-category-name"
+                  required
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="e.g. Research"
+                />
+              </div>
+            </PopupForm>
+          ) : null}
+
+          {editingCategoryId ? (
+            <PopupForm
+              title="Edit category"
+              contentClassName="popup-form--narrow"
+              onClose={() => setEditingCategoryId(null)}
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                if (!categoryDraft.name.trim()) {
+                  return;
+                }
+                setCategoryMessage(null);
+                updateCategory.mutate(
+                  {
+                    id: editingCategoryId,
+                    body: {
+                      name: categoryDraft.name.trim(),
+                      sortOrder: categoryDraft.sortOrder,
+                      isActive: categoryDraft.isActive,
+                    },
+                  },
+                  {
+                    onSuccess: () => {
+                      setEditingCategoryId(null);
+                      setCategoryMessage('Category updated.');
+                    },
+                    onError: (err) => {
+                      setCategoryMessage(
+                        err instanceof Error ? err.message : 'Failed to update category',
+                      );
+                    },
+                  },
+                );
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={updateCategory.isPending || !categoryDraft.name.trim()}
+                  >
+                    {updateCategory.isPending ? 'Saving…' : 'Save category'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setEditingCategoryId(null)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="stack">
+                <div className="field">
+                  <label htmlFor="edit-category-name">Name</label>
+                  <input
+                    id="edit-category-name"
+                    required
+                    value={categoryDraft.name}
+                    onChange={(e) =>
+                      setCategoryDraft((d) => ({ ...d, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="edit-category-sort">Sort</label>
+                  <input
+                    id="edit-category-sort"
+                    type="number"
+                    value={categoryDraft.sortOrder}
+                    onChange={(e) =>
+                      setCategoryDraft((d) => ({
+                        ...d,
+                        sortOrder: Number(e.target.value) || 0,
+                      }))
+                    }
+                  />
+                </div>
+                <label className="row">
+                  <input
+                    type="checkbox"
+                    checked={categoryDraft.isActive}
+                    onChange={(e) =>
+                      setCategoryDraft((d) => ({
+                        ...d,
+                        isActive: e.target.checked,
+                      }))
+                    }
+                  />
+                  Active
+                </label>
+              </div>
+            </PopupForm>
+          ) : null}
         </section>
       )}
 
@@ -1550,50 +1591,19 @@ export function SettingsPage() {
                 Create and revoke server API keys. The browser still uses the localStorage key above.
               </p>
             </div>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setNewKeyName('Dashboard');
+                setApiKeyCreateOpen(true);
+              }}
+            >
+              Create API key
+            </button>
           </div>
 
           <Panel className="stack">
-            <div className="field-row">
-              <div className="field">
-                <SettingLabel
-                  htmlFor="new-key-name"
-                  help={{
-                    summary: 'Friendly name for a new server API key.',
-                    detail:
-                      'Label only—used to identify the key in the list. After creation the plaintext secret is shown once; copy it into Bearer key for this browser or your client. Revoking a key invalidates it immediately; clearing the local browser key does not revoke the server key.',
-                  }}
-                >
-                  Create server API key
-                </SettingLabel>
-                <input
-                  id="new-key-name"
-                  value={newKeyName}
-                  onChange={(e) => setNewKeyName(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="row">
-              <button
-                type="button"
-                className="btn"
-                disabled={createKey.isPending || !newKeyName.trim()}
-                title="Create a new server API key with the name above. The plaintext secret is shown only once."
-                onClick={() =>
-                  createKey.mutate(
-                    { name: newKeyName.trim() },
-                    {
-                      onSuccess: (result) => {
-                        setCreatedPlaintext(result.apiKey);
-                        setLocalKey(result.apiKey);
-                        setStoredApiKey(result.apiKey);
-                      },
-                    },
-                  )
-                }
-              >
-                Create via API
-              </button>
-            </div>
             {createdPlaintext ? (
               <div className="warning-banner" role="status">
                 Copy this key now — it is shown only once:
@@ -1669,6 +1679,70 @@ export function SettingsPage() {
               </div>
             )}
           </Panel>
+
+          {apiKeyCreateOpen ? (
+            <PopupForm
+              title="Create API key"
+              contentClassName="popup-form--narrow"
+              onClose={() => setApiKeyCreateOpen(false)}
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                if (!newKeyName.trim()) {
+                  return;
+                }
+                createKey.mutate(
+                  { name: newKeyName.trim() },
+                  {
+                    onSuccess: (result) => {
+                      setCreatedPlaintext(result.apiKey);
+                      setLocalKey(result.apiKey);
+                      setStoredApiKey(result.apiKey);
+                      setApiKeyCreateOpen(false);
+                    },
+                  },
+                );
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={createKey.isPending || !newKeyName.trim()}
+                    title="Create a new server API key with the name above. The plaintext secret is shown only once."
+                  >
+                    {createKey.isPending ? 'Creating…' : 'Create API key'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setApiKeyCreateOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="field">
+                <SettingLabel
+                  htmlFor="new-key-name"
+                  help={{
+                    summary: 'Friendly name for a new server API key.',
+                    detail:
+                      'Label only—used to identify the key in the list. After creation the plaintext secret is shown once; copy it into Bearer key for this browser or your client. Revoking a key invalidates it immediately; clearing the local browser key does not revoke the server key.',
+                  }}
+                >
+                  Name
+                </SettingLabel>
+                <input
+                  id="new-key-name"
+                  required
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                />
+              </div>
+            </PopupForm>
+          ) : null}
         </section>
       )}
 

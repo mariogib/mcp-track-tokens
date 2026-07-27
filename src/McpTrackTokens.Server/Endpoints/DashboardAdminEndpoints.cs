@@ -58,7 +58,7 @@ public static class DashboardAdminEndpoints
     private static async Task<IResult> FetchCursorTokenRatesAsync(
         ICursorDocsPricingClient pricingClient,
         IOptions<TrackingOptions> optionsAccessor,
-        ICursorTokenRateStore rateStore,
+        ITrackingSettingsStore settingsStore,
         CancellationToken cancellationToken)
     {
         try
@@ -88,7 +88,7 @@ public static class DashboardAdminEndpoints
                 options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
             }
 
-            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
+            await settingsStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
 
             return Results.Ok(new
             {
@@ -120,7 +120,7 @@ public static class DashboardAdminEndpoints
     private static async Task<IResult> UpdateSettingsAsync(
         UpdateSettingsRequestDto request,
         IOptions<TrackingOptions> optionsAccessor,
-        ICursorTokenRateStore rateStore,
+        ITrackingSettingsStore settingsStore,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -191,11 +191,9 @@ public static class DashboardAdminEndpoints
             options.DataRetentionDays = null;
         }
 
-        var ratesChanged = false;
         if (request.EstimateCostFromTokenRates is bool estimate)
         {
             options.EstimateCostFromTokenRates = estimate;
-            ratesChanged = true;
         }
 
         if (request.CursorTokenRates is not null)
@@ -218,14 +216,9 @@ public static class DashboardAdminEndpoints
             {
                 options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
             }
-
-            ratesChanged = true;
         }
 
-        if (ratesChanged)
-        {
-            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
-        }
+        await settingsStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
 
         return Results.Ok(ToSettingsDto(options));
     }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import type {
   BrowseCalendarScope,
   BrowseViewMode,
@@ -17,11 +17,10 @@ import {
 import { api } from '../api/client';
 import type { TimesheetEntryDto } from '../api/types';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
-import { Panel } from '../components/MetricCard';
 import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
-import { BrowseListControls, TextLink } from '../shared/adminUi';
+import { BrowseListControls, PopupForm, TextLink } from '../shared/adminUi';
 import { type RangePreset, resolveRange } from '../utils/dateRange';
 import { formatDateTime, formatDurationMs, formatNumber } from '../utils/format';
 
@@ -732,12 +731,17 @@ export function TimesheetPage() {
         ) : null}
 
         {startOpen ? (
-          <Panel className="stack">
-            <form
-              className="stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+          <PopupForm
+            title="Start timer"
+            contentClassName="popup-form--narrow"
+            onClose={() => {
+              setStartOpen(false);
+              setMessage(null);
+            }}
+            onSubmit={(e) => {
+              const event = e as FormEvent;
+              event.preventDefault();
+              void (async () => {
                 setMessage(null);
                 if (!startProjectId) {
                   setMessage('Project is required to start a timesheet.');
@@ -755,44 +759,10 @@ export function TimesheetPage() {
                 } catch (err) {
                   setMessage(err instanceof Error ? err.message : 'Start failed');
                 }
-              }}
-            >
-              <h3>Start timer</h3>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="start-project">Project</label>
-                  <select
-                    id="start-project"
-                    required
-                    value={startProjectId}
-                    onChange={(e) => setStartProjectId(e.target.value)}
-                  >
-                    <option value="" disabled>
-                      Select project…
-                    </option>
-                    {activeProjects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="start-category">Category</label>
-                  <select
-                    id="start-category"
-                    value={startCategoryId}
-                    onChange={(e) => setStartCategoryId(e.target.value)}
-                  >
-                    {(timesheetCategories.data ?? []).map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="row-actions">
+              })();
+            }}
+            footer={
+              <>
                 <button type="submit" className="btn" disabled={startMutation.isPending}>
                   {startMutation.isPending ? 'Starting…' : 'Start'}
                 </button>
@@ -806,19 +776,59 @@ export function TimesheetPage() {
                 >
                   Cancel
                 </button>
-                {message ? <span className="form-message">{message}</span> : null}
+              </>
+            }
+          >
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="start-project">Project</label>
+                <select
+                  id="start-project"
+                  required
+                  value={startProjectId}
+                  onChange={(e) => setStartProjectId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Select project…
+                  </option>
+                  {activeProjects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </form>
-          </Panel>
+              <div className="field">
+                <label htmlFor="start-category">Category</label>
+                <select
+                  id="start-category"
+                  value={startCategoryId}
+                  onChange={(e) => setStartCategoryId(e.target.value)}
+                >
+                  {(timesheetCategories.data ?? []).map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {message ? <p className="form-message">{message}</p> : null}
+          </PopupForm>
         ) : null}
 
         {editorOpen ? (
-          <Panel className="stack">
-            <form
-              className="stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+          <PopupForm
+            title={editingId ? 'Edit timesheet entry' : 'New timesheet entry'}
+            onClose={() => {
+              setEditorOpen(false);
+              setEditingId(null);
+              setMessage(null);
+            }}
+            onSubmit={(e) => {
+              const event = e as FormEvent;
+              event.preventDefault();
+              void (async () => {
                 setMessage(null);
                 if (!editingId && !draft.projectId) {
                   setMessage('Project is required.');
@@ -880,9 +890,36 @@ export function TimesheetPage() {
                 } catch (err) {
                   setMessage(err instanceof Error ? err.message : 'Save failed');
                 }
-              }}
-            >
-              <h3>{editingId ? 'Edit timesheet entry' : 'New timesheet entry'}</h3>
+              })();
+            }}
+            footer={
+              <>
+                <button
+                  type="submit"
+                  className="btn"
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  {createMutation.isPending || updateMutation.isPending
+                    ? 'Saving…'
+                    : editingId
+                      ? 'Save entry'
+                      : 'Create entry'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setEditorOpen(false);
+                    setEditingId(null);
+                    setMessage(null);
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
+            }
+          >
+            <div className="stack">
               {!editingId ? (
                 <div className="field">
                   <label htmlFor="timesheet-project">Project</label>
@@ -953,33 +990,9 @@ export function TimesheetPage() {
                   rows={4}
                 />
               </div>
-              <div className="row-actions">
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? 'Saving…'
-                    : editingId
-                      ? 'Save entry'
-                      : 'Create entry'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setEditorOpen(false);
-                    setEditingId(null);
-                    setMessage(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                {message ? <span className="form-message">{message}</span> : null}
-              </div>
-            </form>
-          </Panel>
+              {message ? <p className="form-message">{message}</p> : null}
+            </div>
+          </PopupForm>
         ) : null}
 
         {!editorOpen && !startOpen && message ? (

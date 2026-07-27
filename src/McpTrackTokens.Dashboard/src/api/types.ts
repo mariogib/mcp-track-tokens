@@ -596,6 +596,7 @@ export interface UpdateSettingsRequest {
   enablePromptHashing?: boolean;
   exportPath?: string;
   dataRetentionDays?: number | null;
+  clearDataRetentionDays?: boolean;
   autoCreateProjects?: boolean;
   estimateCostFromTokenRates?: boolean;
   cursorTokenRates?: CursorModelTokenRateDto[];

@@ -368,8 +368,8 @@ public static class TrackingHost
         }
 
         await EnsureDirectoriesAsync(options).ConfigureAwait(false);
-        var rateStore = scope.ServiceProvider.GetRequiredService<ICursorTokenRateStore>();
-        await rateStore.LoadIntoAsync(options, cancellationToken).ConfigureAwait(false);
+        var settingsStore = scope.ServiceProvider.GetRequiredService<ITrackingSettingsStore>();
+        await settingsStore.LoadIntoAsync(options, cancellationToken).ConfigureAwait(false);
         await BootstrapApiKeyAsync(scope.ServiceProvider, options, cancellationToken).ConfigureAwait(false);
     }
 
