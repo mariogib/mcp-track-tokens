@@ -65,7 +65,7 @@ function resolveHelp(help: HelpContent): { summary: string; detail: string } {
   return help;
 }
 
-/** `?` control: short native hover (`title`) + richer CSS popup (`data-tooltip`). */
+/** `?` control: CSS popup via `data-tooltip` (no native `title` tooltip). */
 function SettingHelp({
   help,
   align = 'start',
@@ -73,7 +73,7 @@ function SettingHelp({
   help: HelpContent;
   align?: 'center' | 'start' | 'end';
 }) {
-  const { summary, detail } = resolveHelp(help);
+  const { detail } = resolveHelp(help);
   const alignClass =
     align === 'center'
       ? ' setting-help--align-center'
@@ -84,7 +84,6 @@ function SettingHelp({
     <span
       className={`setting-help${alignClass}`}
       data-tooltip={detail}
-      title={summary}
       tabIndex={0}
       role="img"
       aria-label={detail}
@@ -103,9 +102,8 @@ function SettingLabel({
   help: HelpContent;
   children: ReactNode;
 }) {
-  const { summary } = resolveHelp(help);
   return (
-    <label htmlFor={htmlFor} className="setting-label" title={summary}>
+    <label htmlFor={htmlFor} className="setting-label">
       <span>{children}</span>
       <SettingHelp help={help} />
     </label>
@@ -123,9 +121,8 @@ function SettingCheck({
   onChange: (checked: boolean) => void;
   children: ReactNode;
 }) {
-  const { summary } = resolveHelp(help);
   return (
-    <label className="row setting-label--row" title={summary}>
+    <label className="row setting-label--row">
       <input
         type="checkbox"
         checked={checked}
