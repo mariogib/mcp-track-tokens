@@ -1,14 +1,18 @@
-import { type ReactNode } from 'react';
+import React, { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
+import { createFluentNavIcons } from '@lunarq/frontend-shared/admin';
+import type { ThemeLookAndFeel } from '@lunarq/frontend-shared/theme';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
 import { AdminShell, TextLink, ThemeButton } from '../shared/adminUi';
 
-const navItems: AdminNavItem[] = [
+const fluentIcons = createFluentNavIcons(React);
+
+const lunarqNavItems: AdminNavItem[] = [
   { to: '/', label: 'Overview', icon: '⌂', end: true },
   { to: '/projects', label: 'Projects', icon: '◫' },
   { to: '/timesheet', label: 'Timesheet', icon: '◷' },
@@ -17,6 +21,39 @@ const navItems: AdminNavItem[] = [
   { to: '/settings', label: 'Settings', icon: '⚙' },
   { to: '/help', label: 'Help', icon: '?' },
 ];
+
+const fluentNavItems: AdminNavItem[] = [
+  { to: '/', label: 'Overview', icon: fluentIcons.overview, end: true },
+  { to: '/projects', label: 'Projects', icon: fluentIcons.projects },
+  { to: '/timesheet', label: 'Timesheet', icon: fluentIcons.timesheet },
+  { to: '/reports', label: 'Reports', icon: fluentIcons.reports },
+  { to: '/imported-usage', label: 'Imported usage', icon: fluentIcons.import },
+  { to: '/settings', label: 'Settings', icon: fluentIcons.settings },
+  { to: '/help', label: 'Help', icon: fluentIcons.help },
+];
+
+function readLookAndFeel(): ThemeLookAndFeel {
+  if (typeof document === 'undefined') {
+    return 'lunarq';
+  }
+  return document.documentElement.dataset.lookAndFeel === 'fluent' ? 'fluent' : 'lunarq';
+}
+
+function useLookAndFeel(): ThemeLookAndFeel {
+  const [lookAndFeel, setLookAndFeel] = useState<ThemeLookAndFeel>(readLookAndFeel);
+
+  useEffect(() => {
+    function sync() {
+      setLookAndFeel(readLookAndFeel());
+    }
+
+    sync();
+    document.addEventListener('lunarq:themechange', sync);
+    return () => document.removeEventListener('lunarq:themechange', sync);
+  }, []);
+
+  return lookAndFeel;
+}
 
 function titleForPath(pathname: string, search: string): { title: string; subtitle: string } {
   if (pathname.startsWith('/projects/')) {
@@ -60,6 +97,7 @@ function titleForPath(pathname: string, search: string): { title: string; subtit
 export function AppLayout() {
   const location = useLocation();
   const queryClient = useQueryClient();
+  const lookAndFeel = useLookAndFeel();
   useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();
@@ -70,6 +108,10 @@ export function AppLayout() {
     (health.isSuccess && !health.isError);
   const hasApiKey = Boolean(getStoredApiKey());
   const activeProject = status.data?.currentProject?.name;
+  const navItems = useMemo(
+    () => (lookAndFeel === 'fluent' ? fluentNavItems : lunarqNavItems),
+    [lookAndFeel],
+  );
 
   return (
     <AdminShell

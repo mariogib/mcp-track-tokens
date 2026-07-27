@@ -115,7 +115,7 @@ p {
   align-items: center;
 }
 
-/* Half-size nav icons vs @lunarq/frontend-shared admin defaults (1.25rem / 1rem). */
+/* Fluent SVG icons use fixed 20px strokes; keep them readable open or collapsed. */
 .sidebar-nav .nav-icon {
   font-size: 0.625rem;
 }
@@ -124,13 +124,56 @@ p {
   font-size: 0.5rem;
 }
 
+.sidebar-nav .nav-icon .fluent-nav-icon,
+.sidebar-nav .fluent-nav-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
 /* Closed icon rail: 3× the open-menu icon size so glyphs stay readable. */
 .admin-layout.sidebar-collapsed .sidebar-nav .nav-icon {
   font-size: 1.875rem;
+  width: 1.875rem;
+  height: 1.875rem;
 }
 
 .admin-layout.sidebar-collapsed .sidebar-nav .nav-submenu .nav-icon {
   font-size: 1.5rem;
+}
+
+.admin-layout.sidebar-collapsed .sidebar-nav .fluent-nav-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+[data-look-and-feel='fluent'] .sidebar-nav .nav-icon,
+[data-theme='fluent'] .sidebar-nav .nav-icon,
+[data-theme='fluent-dark'] .sidebar-nav .nav-icon {
+  font-size: 16px;
+  width: 20px;
+  height: 20px;
+}
+
+[data-look-and-feel='fluent'] .sidebar-nav .fluent-nav-icon,
+[data-theme='fluent'] .sidebar-nav .fluent-nav-icon,
+[data-theme='fluent-dark'] .sidebar-nav .fluent-nav-icon {
+  width: 20px;
+  height: 20px;
+}
+
+[data-look-and-feel='fluent'] .admin-layout.sidebar-collapsed .sidebar-nav .nav-icon,
+[data-theme='fluent'] .admin-layout.sidebar-collapsed .sidebar-nav .nav-icon,
+[data-theme='fluent-dark'] .admin-layout.sidebar-collapsed .sidebar-nav .nav-icon {
+  width: 20px;
+  height: 20px;
+  font-size: 16px;
+}
+
+[data-look-and-feel='fluent'] .admin-layout.sidebar-collapsed .sidebar-nav .fluent-nav-icon,
+[data-theme='fluent'] .admin-layout.sidebar-collapsed .sidebar-nav .fluent-nav-icon,
+[data-theme='fluent-dark'] .admin-layout.sidebar-collapsed .sidebar-nav .fluent-nav-icon {
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-header .logo-image {
@@ -236,7 +279,7 @@ tr.is-selected {
   transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled):not(.btn-secondary):not(.btn-ghost):not(.btn-danger) {
   background: var(--accent-hover);
 }
 
@@ -251,13 +294,24 @@ tr.is-selected {
   color: var(--text-primary);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: var(--bg-muted);
 }
 
 .btn-danger {
-  background: var(--danger);
-  color: #fff;
+  background: var(--danger, var(--danger-color));
+  border-color: var(--danger, var(--danger-color));
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, var(--danger-color)) 88%, #000000);
+  border-color: color-mix(in srgb, var(--danger, var(--danger-color)) 88%, #000000);
+}
+
+.btn-danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger, var(--danger-color)) 78%, #000000);
+  border-color: color-mix(in srgb, var(--danger, var(--danger-color)) 78%, #000000);
 }
 
 .btn-compact {
@@ -1169,4 +1223,319 @@ table.data.token-rates td:last-child {
 .analysis-browse-tile span {
   color: var(--text-secondary);
   font-size: 0.85rem;
+}
+
+/* Fluent look-and-feel: denser page chrome, sentence-case labels, 4px radii. */
+[data-look-and-feel='fluent'] body,
+[data-theme='fluent'] body,
+[data-theme='fluent-dark'] body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-look-and-feel='fluent'] .btn,
+[data-look-and-feel='fluent'] button.btn,
+[data-theme='fluent'] .btn,
+[data-theme='fluent-dark'] .btn {
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+[data-look-and-feel='fluent'] .status-pill,
+[data-look-and-feel='fluent'] .chip,
+[data-look-and-feel='fluent'] .tab-btn,
+[data-theme='fluent'] .status-pill,
+[data-theme='fluent'] .chip,
+[data-theme='fluent'] .tab-btn,
+[data-theme='fluent-dark'] .status-pill,
+[data-theme='fluent-dark'] .chip,
+[data-theme='fluent-dark'] .tab-btn {
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-look-and-feel='fluent'] .section-kicker,
+[data-look-and-feel='fluent'] .eyebrow,
+[data-look-and-feel='fluent'] .metric-label,
+[data-look-and-feel='fluent'] .stat-label,
+[data-theme='fluent'] .section-kicker,
+[data-theme='fluent'] .eyebrow,
+[data-theme='fluent'] .metric-label,
+[data-theme='fluent-dark'] .section-kicker,
+[data-theme='fluent-dark'] .eyebrow,
+[data-theme='fluent-dark'] .metric-label {
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+[data-look-and-feel='fluent'] .panel,
+[data-look-and-feel='fluent'] .metric-card,
+[data-look-and-feel='fluent'] .table-panel,
+[data-theme='fluent'] .panel,
+[data-theme='fluent'] .metric-card,
+[data-theme='fluent'] .table-panel,
+[data-theme='fluent-dark'] .panel,
+[data-theme='fluent-dark'] .metric-card,
+[data-theme='fluent-dark'] .table-panel {
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+[data-look-and-feel='fluent'] .field input,
+[data-look-and-feel='fluent'] .field select,
+[data-look-and-feel='fluent'] .field textarea,
+[data-theme='fluent'] .field input,
+[data-theme='fluent'] .field select,
+[data-theme='fluent'] .field textarea,
+[data-theme='fluent-dark'] .field input,
+[data-theme='fluent-dark'] .field select,
+[data-theme='fluent-dark'] .field textarea {
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-look-and-feel='fluent'] .browse-table th,
+[data-theme='fluent'] .browse-table th,
+[data-theme='fluent-dark'] .browse-table th {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+[data-look-and-feel='fluent'] .browse-table td,
+[data-theme='fluent'] .browse-table td,
+[data-theme='fluent-dark'] .browse-table td {
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+[data-look-and-feel='fluent'] .stack,
+[data-theme='fluent'] .stack,
+[data-theme='fluent-dark'] .stack {
+  gap: 16px;
+}
+
+[data-look-and-feel='fluent'] .page-section,
+[data-theme='fluent'] .page-section,
+[data-theme='fluent-dark'] .page-section {
+  gap: 12px;
+}
+
+/* Pass 1 — uppercase / pill sweep */
+[data-look-and-feel='fluent'] table.data th,
+[data-look-and-feel='fluent'] .projects-browse-tile-stats dt,
+[data-look-and-feel='fluent'] .timesheet-browse-tile-meta,
+[data-look-and-feel='fluent'] .metric-kicker,
+[data-look-and-feel='fluent'] .section-label,
+[data-theme='fluent'] table.data th,
+[data-theme='fluent'] .projects-browse-tile-stats dt,
+[data-theme='fluent'] .timesheet-browse-tile-meta,
+[data-theme='fluent'] .metric-kicker,
+[data-theme='fluent'] .section-label,
+[data-theme='fluent-dark'] table.data th,
+[data-theme='fluent-dark'] .projects-browse-tile-stats dt,
+[data-theme='fluent-dark'] .timesheet-browse-tile-meta,
+[data-theme='fluent-dark'] .metric-kicker,
+[data-theme='fluent-dark'] .section-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+[data-look-and-feel='fluent'] .setting-help,
+[data-look-and-feel='fluent'] .status-dot-wrap,
+[data-look-and-feel='fluent'] .health-pill,
+[data-theme='fluent'] .setting-help,
+[data-theme='fluent'] .health-pill,
+[data-theme='fluent-dark'] .setting-help,
+[data-theme='fluent-dark'] .health-pill {
+  border-radius: var(--radius-sm);
+}
+
+/* Pass 2 — button / input states */
+[data-look-and-feel='fluent'] .btn,
+[data-theme='fluent'] .btn,
+[data-theme='fluent-dark'] .btn {
+  transition:
+    background-color 100ms cubic-bezier(0.33, 0, 0.67, 1),
+    border-color 100ms cubic-bezier(0.33, 0, 0.67, 1),
+    color 100ms cubic-bezier(0.33, 0, 0.67, 1);
+}
+
+[data-look-and-feel='fluent'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover:not(:disabled),
+[data-theme='fluent'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover:not(:disabled),
+[data-theme='fluent-dark'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+[data-look-and-feel='fluent'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):active:not(:disabled),
+[data-theme='fluent'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):active:not(:disabled),
+[data-theme='fluent-dark'] .btn:not(.btn-secondary):not(.btn-ghost):not(.btn-danger):active:not(:disabled) {
+  background: color-mix(in srgb, var(--accent-hover) 82%, #000);
+  border-color: color-mix(in srgb, var(--accent-hover) 82%, #000);
+}
+
+[data-look-and-feel='fluent'] .btn-secondary:hover:not(:disabled),
+[data-look-and-feel='fluent'] .btn-ghost:hover:not(:disabled),
+[data-theme='fluent'] .btn-secondary:hover:not(:disabled),
+[data-theme='fluent'] .btn-ghost:hover:not(:disabled),
+[data-theme='fluent-dark'] .btn-secondary:hover:not(:disabled),
+[data-theme='fluent-dark'] .btn-ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border-color: var(--border-strong);
+}
+
+[data-look-and-feel='fluent'] .btn-secondary:active:not(:disabled),
+[data-theme='fluent'] .btn-secondary:active:not(:disabled),
+[data-theme='fluent-dark'] .btn-secondary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+[data-look-and-feel='fluent'] .btn-danger:hover:not(:disabled),
+[data-theme='fluent'] .btn-danger:hover:not(:disabled),
+[data-theme='fluent-dark'] .btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, #000);
+  border-color: color-mix(in srgb, var(--danger) 88%, #000);
+}
+
+[data-look-and-feel='fluent'] .btn:disabled,
+[data-theme='fluent'] .btn:disabled,
+[data-theme='fluent-dark'] .btn:disabled {
+  opacity: 1;
+  color: color-mix(in srgb, var(--text-primary) 45%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+[data-look-and-feel='fluent'] .field input:hover:not(:disabled):not(:focus),
+[data-look-and-feel='fluent'] .field select:hover:not(:disabled):not(:focus),
+[data-look-and-feel='fluent'] .field textarea:hover:not(:disabled):not(:focus),
+[data-theme='fluent'] .field input:hover:not(:disabled):not(:focus),
+[data-theme='fluent'] .field select:hover:not(:disabled):not(:focus),
+[data-theme='fluent'] .field textarea:hover:not(:disabled):not(:focus),
+[data-theme='fluent-dark'] .field input:hover:not(:disabled):not(:focus),
+[data-theme='fluent-dark'] .field select:hover:not(:disabled):not(:focus),
+[data-theme='fluent-dark'] .field textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--border-strong);
+}
+
+[data-look-and-feel='fluent'] .field input:focus,
+[data-look-and-feel='fluent'] .field select:focus,
+[data-look-and-feel='fluent'] .field textarea:focus,
+[data-theme='fluent'] .field input:focus,
+[data-theme='fluent'] .field select:focus,
+[data-theme='fluent'] .field textarea:focus,
+[data-theme='fluent-dark'] .field input:focus,
+[data-theme='fluent-dark'] .field select:focus,
+[data-theme='fluent-dark'] .field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+[data-look-and-feel='fluent'] .field input:disabled,
+[data-look-and-feel='fluent'] .field select:disabled,
+[data-look-and-feel='fluent'] .field textarea:disabled,
+[data-theme='fluent'] .field input:disabled,
+[data-theme='fluent'] .field select:disabled,
+[data-theme='fluent'] .field textarea:disabled,
+[data-theme='fluent-dark'] .field input:disabled,
+[data-theme='fluent-dark'] .field select:disabled,
+[data-theme='fluent-dark'] .field textarea:disabled {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Pass 3 — table density */
+[data-look-and-feel='fluent'] table.data th,
+[data-look-and-feel='fluent'] table.data td,
+[data-look-and-feel='fluent'] .browse-table th,
+[data-look-and-feel='fluent'] .browse-table td,
+[data-theme='fluent'] table.data th,
+[data-theme='fluent'] table.data td,
+[data-theme='fluent'] .browse-table th,
+[data-theme='fluent'] .browse-table td,
+[data-theme='fluent-dark'] table.data th,
+[data-theme='fluent-dark'] table.data td,
+[data-theme='fluent-dark'] .browse-table th,
+[data-theme='fluent-dark'] .browse-table td {
+  min-height: 32px;
+  height: 32px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  vertical-align: middle;
+}
+
+[data-look-and-feel='fluent'] table.data th,
+[data-look-and-feel='fluent'] .browse-table th,
+[data-theme='fluent'] table.data th,
+[data-theme='fluent'] .browse-table th,
+[data-theme='fluent-dark'] table.data th,
+[data-theme='fluent-dark'] .browse-table th {
+  height: 36px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+}
+
+[data-look-and-feel='fluent'] table.data tbody tr:hover td,
+[data-look-and-feel='fluent'] .browse-table tbody tr:hover td,
+[data-theme='fluent'] table.data tbody tr:hover td,
+[data-theme='fluent'] .browse-table tbody tr:hover td,
+[data-theme='fluent-dark'] table.data tbody tr:hover td,
+[data-theme='fluent-dark'] .browse-table tbody tr:hover td {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+
+/* Pass 4 — dialog chrome (PopupForm already shared; reinforce dashboard surfaces) */
+[data-look-and-feel='fluent'] .popup-form,
+[data-look-and-feel='fluent'] .modal-content,
+[data-theme='fluent'] .popup-form,
+[data-theme='fluent'] .modal-content,
+[data-theme='fluent-dark'] .popup-form,
+[data-theme='fluent-dark'] .modal-content {
+  border-radius: 8px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.14);
+}
+
+[data-look-and-feel='fluent'] .popup-form-overlay,
+[data-look-and-feel='fluent'] .modal-overlay,
+[data-theme='fluent'] .popup-form-overlay,
+[data-theme='fluent'] .modal-overlay,
+[data-theme='fluent-dark'] .popup-form-overlay,
+[data-theme='fluent-dark'] .modal-overlay {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-look-and-feel='fluent'] *,
+  [data-theme='fluent'] *,
+  [data-theme='fluent-dark'] * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

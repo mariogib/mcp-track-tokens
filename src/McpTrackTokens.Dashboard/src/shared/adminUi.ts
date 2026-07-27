@@ -40,6 +40,7 @@ function applyDashboardTheme(theme: ThemeResponseBase): void {
   const isLight = theme.bgColor.trim().toLowerCase().startsWith('#')
     ? luminanceHint(theme.bgColor) > 0.55
     : false;
+  const isFluent = theme.tenantId.startsWith('fluent');
 
   root.style.setProperty('--bg-base', theme.bgColor);
   root.style.setProperty('--bg-elevated', theme.cardBgColor);
@@ -65,7 +66,27 @@ function applyDashboardTheme(theme: ThemeResponseBase): void {
   root.style.setProperty('--success', theme.successColor);
   root.style.setProperty('--warning', theme.warningColor);
   root.style.setProperty('--danger', theme.dangerColor);
+  root.style.setProperty('--danger-soft', hexToRgba(theme.dangerColor, isLight ? 0.16 : 0.18));
   root.style.setProperty('--shadow-md', theme.shadowColor);
+
+  if (isFluent) {
+    root.style.setProperty(
+      '--font-sans',
+      '"Segoe UI Variable", "Segoe UI", system-ui, sans-serif',
+    );
+    root.style.setProperty('--font-mono', '"Cascadia Mono", Consolas, ui-monospace, monospace');
+    root.style.setProperty('--radius-sm', '4px');
+    root.style.setProperty('--radius-md', '8px');
+    root.style.setProperty('--radius-lg', '12px');
+    root.style.setProperty('--shadow-sm', '0 0 2px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.14)');
+  } else {
+    root.style.removeProperty('--font-sans');
+    root.style.removeProperty('--font-mono');
+    root.style.removeProperty('--radius-sm');
+    root.style.removeProperty('--radius-md');
+    root.style.removeProperty('--radius-lg');
+    root.style.removeProperty('--shadow-sm');
+  }
 }
 
 function luminanceHint(cssColor: string): number {

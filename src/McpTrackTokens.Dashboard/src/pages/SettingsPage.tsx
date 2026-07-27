@@ -1269,7 +1269,7 @@ export function SettingsPage() {
                             )
                           }
                         >
-                          Remove
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -1377,7 +1377,7 @@ export function SettingsPage() {
                                     onClick={() => {
                                       const ok = window.confirm(
                                         category.isActive
-                                          ? `Remove category "${category.name}"? If it is used on timesheet entries it will be deactivated instead of deleted.`
+                                          ? `Delete category "${category.name}"? If it is used on timesheet entries it will be deactivated instead of deleted.`
                                           : `Delete inactive category "${category.name}"?`,
                                       );
                                       if (!ok) return;
