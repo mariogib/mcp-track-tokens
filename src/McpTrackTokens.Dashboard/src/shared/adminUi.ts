@@ -7,6 +7,7 @@ import {
   createBrowseScrollSentinel,
   createCard,
   createChartCard,
+  createPopupForm,
   createTextLink,
   type ChartCardProps,
 } from '@lunarq/frontend-shared/components';
@@ -135,6 +136,9 @@ export const ThemeButton = createThemeButton(React, {
 
 /** Shared card surface. */
 export const Card = createCard(React);
+
+/** Shared draggable popup shell for add/edit forms. */
+export const PopupForm = createPopupForm(React);
 
 const SharedChartCard = createChartCard(React, Card);
 

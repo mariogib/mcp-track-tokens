@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent, type MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BrowseListControls, TextLink } from '../shared/adminUi';
+import { BrowseListControls, PopupForm, TextLink } from '../shared/adminUi';
 import { exportToExcel } from '@lunarq/frontend-shared/utils';
 import type { BrowseViewMode } from '@lunarq/frontend-shared/components';
 import {
@@ -12,7 +12,7 @@ import {
 } from '../api/hooks';
 import type { CreateProjectRequest, ProjectDto, UpdateProjectRequest } from '../api/types';
 import { ErrorState, LoadingState, EmptyState } from '../components/States';
-import { Panel, TablePanel } from '../components/MetricCard';
+import { TablePanel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import {
   formatCurrency,
@@ -535,137 +535,130 @@ export function ProjectsPage() {
       </section>
 
       {creating ? (
-        <section className="page-section">
-          <div className="section-header">
-            <div>
-              <h2>New project</h2>
-              <p>Register a tracked project for sessions, activity, and cost attribution.</p>
+        <PopupForm
+          title="New project"
+          subtitle="Register a tracked project for sessions, activity, and cost attribution."
+          onClose={() => setCreating(false)}
+          onSubmit={(e) => void onCreate(e as FormEvent)}
+          footer={
+            <>
+              <button type="submit" className="btn" disabled={createMutation.isPending}>
+                {createMutation.isPending ? 'Creating…' : 'Create project'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCreating(false)}
+              >
+                Cancel
+              </button>
+            </>
+          }
+        >
+          <div className="stack">
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="create-name">Name</label>
+                <input
+                  id="create-name"
+                  required
+                  value={createDraft.name}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, name: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="create-slug">Slug</label>
+                <input
+                  id="create-slug"
+                  value={createDraft.slug}
+                  placeholder="Optional — generated from name"
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, slug: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="create-client">Client</label>
+                <input
+                  id="create-client"
+                  value={createDraft.clientName}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, clientName: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="create-billing">Billing code</label>
+                <input
+                  id="create-billing"
+                  value={createDraft.billingCode}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, billingCode: e.target.value }))
+                  }
+                />
+              </div>
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setCreating(false)}
-            >
-              Cancel
-            </button>
+
+            <div className="field-row">
+              <div className="field">
+                <label htmlFor="create-currency">Currency</label>
+                <input
+                  id="create-currency"
+                  value={createDraft.currency}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, currency: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="create-repo">Repository path</label>
+                <input
+                  id="create-repo"
+                  value={createDraft.repositoryPath}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, repositoryPath: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="create-remote">Remote URL</label>
+                <input
+                  id="create-remote"
+                  value={createDraft.remoteUrl}
+                  onChange={(e) =>
+                    setCreateDraft((d) => ({ ...d, remoteUrl: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
           </div>
-
-          <Panel className="stack">
-            <form className="stack" onSubmit={(e) => void onCreate(e)}>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="create-name">Name</label>
-                  <input
-                    id="create-name"
-                    required
-                    value={createDraft.name}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, name: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="create-slug">Slug</label>
-                  <input
-                    id="create-slug"
-                    value={createDraft.slug}
-                    placeholder="Optional — generated from name"
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, slug: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="create-client">Client</label>
-                  <input
-                    id="create-client"
-                    value={createDraft.clientName}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, clientName: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="create-billing">Billing code</label>
-                  <input
-                    id="create-billing"
-                    value={createDraft.billingCode}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, billingCode: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="create-currency">Currency</label>
-                  <input
-                    id="create-currency"
-                    value={createDraft.currency}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, currency: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="create-repo">Repository path</label>
-                  <input
-                    id="create-repo"
-                    value={createDraft.repositoryPath}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, repositoryPath: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="create-remote">Remote URL</label>
-                  <input
-                    id="create-remote"
-                    value={createDraft.remoteUrl}
-                    onChange={(e) =>
-                      setCreateDraft((d) => ({ ...d, remoteUrl: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              <div className="row-actions">
-                <button type="submit" className="btn" disabled={createMutation.isPending}>
-                  {createMutation.isPending ? 'Creating…' : 'Create project'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => setCreating(false)}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </Panel>
-        </section>
+        </PopupForm>
       ) : null}
 
       {editing && draft ? (
-        <section className="page-section">
-          <div className="section-header">
-            <div>
-              <h2>Edit project</h2>
-              <p>
-                Updating <TextLink to={`/projects/${editing.id}`}>{editing.name}</TextLink>
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => setEditingId(null)}
-            >
-              Cancel
-            </button>
-          </div>
-
-          <Panel className="stack"><form className="stack" onSubmit={(e) => void onSaveEdit(e)}>
+        <PopupForm
+          title="Edit project"
+          subtitle={`Updating ${editing.name}`}
+          onClose={() => setEditingId(null)}
+          onSubmit={(e) => void onSaveEdit(e as FormEvent)}
+          footer={
+            <>
+              <button type="submit" className="btn" disabled={updateMutation.isPending}>
+                {updateMutation.isPending ? 'Saving…' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setEditingId(null)}
+              >
+                Cancel
+              </button>
+            </>
+          }
+        >
+          <div className="stack">
             <div className="field-row">
               <div className="field">
                 <label htmlFor="edit-name">Name</label>
@@ -743,21 +736,8 @@ export function ProjectsPage() {
                 </label>
               </div>
             </div>
-
-            <div className="row-actions">
-              <button type="submit" className="btn" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Saving…' : 'Save changes'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setEditingId(null)}
-              >
-                Cancel
-              </button>
-            </div>
-          </form></Panel>
-        </section>
+          </div>
+        </PopupForm>
       ) : null}
     </Page>
   );
