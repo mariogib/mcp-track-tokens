@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.14] — 2026-07-27
+
+### Added
+
+- Database-backed `AppSettings` store so Tracking / Cursor token-rate preferences survive restarts.
+- Shared `PopupForm` for dashboard add/edit dialogs (title bar, drag, close).
+- Server-paged project sessions browse.
+
+### Changed
+
+- Auto-create projects for unknown repositories now defaults to **on**.
+- Overview unallocated usage card deep-links to the Imported usage tab.
+
 ## [1.0.13] — 2026-07-24
 
 ### Added
