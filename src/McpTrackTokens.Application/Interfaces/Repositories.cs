@@ -77,6 +77,16 @@ public interface ISessionRepository
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    Task<int> CountAsync(
+        SessionPageFilter filter,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<EditorSession>> ListPagedAsync(
+        SessionPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(EditorSession session, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(EditorSession session, CancellationToken cancellationToken = default);

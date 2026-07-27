@@ -34,6 +34,7 @@ import type {
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
   EndTimesheetRequest,
+  SessionBrowseQuery,
   SessionDto,
   SettingsDto,
   StartTimesheetRequest,
@@ -349,6 +350,23 @@ export const api = {
   getProjectSessions: (id: string, fromUtc?: string, toUtc?: string, signal?: AbortSignal) =>
     apiRequest<SessionDto[]>(`/api/v1/projects/${id}/sessions`, {
       query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getProjectSessionsPaged: (
+    id: string,
+    query: SessionBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<SessionDto>>(`/api/v1/projects/${id}/sessions`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        status: query.status,
+      },
       signal,
     }),
 

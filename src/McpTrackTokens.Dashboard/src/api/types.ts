@@ -682,6 +682,15 @@ export interface TimesheetBrowseQuery {
   openClosed?: string;
 }
 
+export interface SessionBrowseQuery {
+  fromUtc?: string;
+  toUtc?: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+}
+
 export interface SessionDto {
   id: string;
   projectId?: string | null;

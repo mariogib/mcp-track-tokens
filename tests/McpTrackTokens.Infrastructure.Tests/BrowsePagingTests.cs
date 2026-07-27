@@ -174,6 +174,72 @@ public sealed class BrowsePagingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Sessions_ListPaged_UsesPageBoundariesAndFilters()
+    {
+        using var scope = _services.CreateScope();
+        var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();
+        var sessions = scope.ServiceProvider.GetRequiredService<ISessionRepository>();
+        var uow = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var project = Project.Create("Session Paging", "session-paging");
+        await projects.AddAsync(project);
+        await uow.SaveChangesAsync();
+
+        var baseTime = new DateTimeOffset(2024, 9, 1, 10, 0, 0, TimeSpan.Zero);
+        for (var i = 0; i < 5; i++)
+        {
+            var session = EditorSession.Start(
+                EditorType.Cursor,
+                baseTime.AddMinutes(i),
+                project.Id,
+                branch: i < 3 ? "main" : "feature",
+                workspacePath: i % 2 == 0 ? @"D:\alpha" : @"D:\beta");
+            if (i >= 3)
+            {
+                session.TransitionTo(SessionStatus.Ended, baseTime.AddMinutes(i + 30));
+            }
+
+            await sessions.AddAsync(session);
+        }
+
+        await uow.SaveChangesAsync();
+
+        var filter = new SessionPageFilter
+        {
+            ProjectId = project.Id,
+            FromUtc = baseTime.AddHours(-1),
+            ToUtc = baseTime.AddHours(2)
+        };
+
+        (await sessions.CountAsync(filter)).Should().Be(5);
+
+        var page0 = await sessions.ListPagedAsync(filter, 0, 2);
+        page0.Should().HaveCount(2);
+        page0[0].StartedAtUtc.Should().BeAfter(page0[1].StartedAtUtc);
+
+        var page1 = await sessions.ListPagedAsync(filter, 1, 2);
+        page1.Should().HaveCount(2);
+        page1.Select(s => s.Id).Should().NotIntersectWith(page0.Select(s => s.Id));
+
+        var page2 = await sessions.ListPagedAsync(filter, 2, 2);
+        page2.Should().HaveCount(1);
+
+        var closed = filter with { Status = "Closed" };
+        (await sessions.CountAsync(closed)).Should().Be(2);
+        var closedPage = await sessions.ListPagedAsync(closed, 0, 10);
+        closedPage.Should().HaveCount(2);
+        closedPage.Should().OnlyContain(s =>
+            s.Status == SessionStatus.Ended || s.Status == SessionStatus.Abandoned);
+
+        var search = filter with { Search = "alpha" };
+        (await sessions.CountAsync(search)).Should().Be(3);
+        var searchPage = await sessions.ListPagedAsync(search, 0, 10);
+        searchPage.Should().HaveCount(3);
+        searchPage.Should().OnlyContain(s =>
+            s.WorkspacePath != null && s.WorkspacePath.Contains("alpha", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ActivityEvents_ListPaged_SqlContainsLimitOffset()
     {
         using var scope = _services.CreateScope();

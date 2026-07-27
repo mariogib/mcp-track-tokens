@@ -243,7 +243,7 @@ export function OverviewPage() {
             label="Unallocated usage"
             value={formatNumber(unallocatedUsageCount)}
             hint={formatCurrency(cost?.unallocatedCost, cost?.currency)}
-            to="/imported-usage"
+            to="/imported-usage?tab=imported-usage"
           />
         </div>
       </section>

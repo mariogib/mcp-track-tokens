@@ -600,6 +600,10 @@ public static class ApiEndpoints
         ISessionRepository sessions,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -609,6 +613,32 @@ public static class ApiEndpoints
         }
 
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new SessionPageFilter
+            {
+                ProjectId = id,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status
+            };
+            var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var page = await sessions
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = page.Select(SessionMapper.ToDto).Cast<object>().ToList(),
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await sessions.ListByProjectAsync(id, from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
     }
@@ -618,9 +648,39 @@ public static class ApiEndpoints
         Guid? projectId,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
         CancellationToken cancellationToken)
     {
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new SessionPageFilter
+            {
+                ProjectId = projectId,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status
+            };
+            var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var page = await sessions
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = page.Select(SessionMapper.ToDto).Cast<object>().ToList(),
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await sessions.ListAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
     }

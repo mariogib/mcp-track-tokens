@@ -76,3 +76,22 @@ public sealed record TimesheetEntryPageFilter
     /// </summary>
     public string? OpenClosed { get; init; }
 }
+
+/// <summary>
+/// Browse filters for paged editor session lists.
+/// </summary>
+public sealed record SessionPageFilter
+{
+    public Guid? ProjectId { get; init; }
+
+    public DateTimeOffset? FromUtc { get; init; }
+
+    public DateTimeOffset? ToUtc { get; init; }
+
+    public string? Search { get; init; }
+
+    /// <summary>
+    /// Exact <see cref="Domain.Enums.SessionStatus"/> name, or <c>Closed</c> for Ended/Abandoned.
+    /// </summary>
+    public string? Status { get; init; }
+}

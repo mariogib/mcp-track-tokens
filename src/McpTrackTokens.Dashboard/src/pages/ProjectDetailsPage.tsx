@@ -12,7 +12,6 @@ import {
   useProjectTokenCostQuery,
   useProjectPromptFacetsQuery,
   useProjectQuery,
-  useProjectSessionsQuery,
   useProjectUsageQuery,
   useTimesheetCategoriesQuery,
   useUpdateProjectMutation,
@@ -209,9 +208,9 @@ export function ProjectDetailsPage() {
     range.toUtc,
     tab === 'Prompts',
   );
-  // Omit toUtc so the server uses "now" on each fetch — a frozen page-load toUtc
-  // was hiding newly created/edited sessions from the table.
-  const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
+  // Omit toUtc so each page request resolves "now" on the server — a frozen
+  // page-load toUtc was hiding newly created/edited sessions from the table.
+  const [sessionBrowseEpoch, setSessionBrowseEpoch] = useState(0);
   const timesheetCategories = useTimesheetCategoriesQuery(true);
   const [timesheetBrowseEpoch, setTimesheetBrowseEpoch] = useState(0);
   const exportMutation = useExportMutation();
@@ -882,7 +881,7 @@ export function ProjectDetailsPage() {
                   }
                   setSessionEditorOpen(false);
                   setEditingSessionId(null);
-                  await sessions.refetch();
+                  setSessionBrowseEpoch((value) => value + 1);
                 } catch (err) {
                   setSessionMessage(err instanceof Error ? err.message : 'Save failed');
                 }
@@ -1016,193 +1015,185 @@ export function ProjectDetailsPage() {
             <p className="form-message">{sessionMessage}</p>
           ) : null}
 
-          {sessions.isLoading ? (
-            <LoadingState />
-          ) : sessions.error ? (
-            <ErrorState
-              message={sessions.error instanceof Error ? sessions.error.message : 'Failed'}
-            />
-          ) : (
-            <AnalysisDetailBrowse
-              embedded
-              heading="Sessions"
-              showHeading={false}
-              searchPlaceholder="Search sessions..."
-              rows={Array.isArray(sessions.data) ? sessions.data : []}
-              getStatusValue={(s) => s.status || (s.isActive ? 'Active' : 'Closed')}
-              statusOptions={[
-                ...SESSION_STATUSES.map((status) => ({ value: status, label: status })),
-                { value: 'Closed', label: 'Closed' },
-              ]}
-              getSearchText={(s) =>
-                [
-                  s.id,
-                  s.editor,
-                  formatDateTime(s.startedAtUtc),
-                  formatDateTime(s.endedAtUtc),
-                  s.branch,
-                  s.status,
-                  s.isActive ? 'Active' : 'Closed',
-                ]
-                  .filter(Boolean)
-                  .join(' ')
-              }
-              exportFilename={`project-${detail.id}-sessions.xlsx`}
-              exportTitle={`${detail.name} · Sessions`}
-              exportColumns={[
-                { header: 'Session', key: 'id' },
-                { header: 'Editor', key: 'editor' },
-                { header: 'Started', key: 'startedAtUtc' },
-                { header: 'Ended', key: 'endedAtUtc' },
-                { header: 'Duration (ms)', key: 'durationMilliseconds' },
-                { header: 'Branch', key: 'branch' },
-                { header: 'Status', key: 'status' },
-              ]}
-              toExportRow={(s) => ({
-                id: s.id,
-                editor: s.editor ?? '',
-                startedAtUtc: formatDateTime(s.startedAtUtc),
-                endedAtUtc: formatDateTime(s.endedAtUtc),
-                durationMilliseconds: sessionDurationMs(s) ?? '',
-                branch: s.branch ?? '',
-                status: s.status || (s.isActive ? 'Active' : 'Closed'),
-              })}
-              emptySourceMessage="No sessions in the selected range."
-              renderTable={(rows) => (
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Session</th>
-                      <th>Editor</th>
-                      <th>Started</th>
-                      <th>Ended</th>
-                      <th>Duration</th>
-                      <th>Branch</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((s) => {
-                      const durationMs = sessionDurationMs(s);
-                      return (
-                        <tr key={s.id}>
-                          <td className="mono">{s.id.slice(0, 8)}</td>
-                          <td>{s.editor ?? '—'}</td>
-                          <td>{formatDateTime(s.startedAtUtc)}</td>
-                          <td>{formatDateTime(s.endedAtUtc)}</td>
-                          <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
-                          <td>{s.branch ?? '—'}</td>
-                          <td>
-                            <StatusBadge
-                              label={s.status || (s.isActive ? 'Active' : 'Closed')}
-                              tone={
-                                s.isActive || s.status === 'Active' ? 'success' : 'neutral'
-                              }
-                            />
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <button
-                                type="button"
-                                className="btn btn-compact btn-secondary"
-                                onClick={() => {
-                                  setEditingSessionId(s.id);
-                                  setSessionDraft(draftFromSession(s));
-                                  setSessionMessage(null);
-                                  setSessionEditorOpen(true);
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-compact btn-danger"
-                                disabled={deleteSessionMutation.isPending}
-                                onClick={() => {
-                                  const ok = window.confirm(
-                                    `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
-                                  );
-                                  if (!ok) return;
-                                  void deleteSessionMutation
-                                    .mutateAsync({ id: s.id, projectId: detail.id })
-                                    .then(() => {
-                                      setSessionMessage(null);
-                                      return sessions.refetch();
-                                    })
-                                    .catch((err: unknown) => {
-                                      setSessionMessage(
-                                        err instanceof Error ? err.message : 'Delete failed',
-                                      );
-                                    });
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-              renderGrid={(rows) =>
-                rows.map((s) => {
-                  const durationMs = sessionDurationMs(s);
-                  return (
-                    <article key={s.id} className="analysis-browse-tile">
-                      <strong className="mono">{s.id.slice(0, 8)}</strong>
-                      <span>{s.editor ?? '—'}</span>
-                      <span>{formatDateTime(s.startedAtUtc)}</span>
-                      <span>
-                        {durationMs == null ? '—' : formatDurationMs(durationMs)}
-                      </span>
-                      <span>{s.branch ?? 'No branch'}</span>
-                      <div className="row-actions">
-                        <button
-                          type="button"
-                          className="btn btn-compact btn-secondary"
-                          onClick={() => {
-                            setEditingSessionId(s.id);
-                            setSessionDraft(draftFromSession(s));
-                            setSessionMessage(null);
-                            setSessionEditorOpen(true);
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-compact btn-danger"
-                          disabled={deleteSessionMutation.isPending}
-                          onClick={() => {
-                            const ok = window.confirm(
-                              `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
-                            );
-                            if (!ok) return;
-                            void deleteSessionMutation
-                              .mutateAsync({ id: s.id, projectId: detail.id })
-                              .then(() => {
+          <RemoteAnalysisDetailBrowse<SessionDto>
+            embedded
+            heading="Sessions"
+            showHeading={false}
+            searchPlaceholder="Search sessions..."
+            filterKey={[projectId, range.fromUtc, sessionBrowseEpoch].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectSessionsPaged(
+                projectId!,
+                {
+                  fromUtc: range.fromUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  status: status || undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(s) => s.status || (s.isActive ? 'Active' : 'Closed')}
+            statusOptions={[
+              ...SESSION_STATUSES.map((status) => ({ value: status, label: status })),
+              { value: 'Closed', label: 'Closed' },
+            ]}
+            exportFilename={`project-${detail.id}-sessions.xlsx`}
+            exportTitle={`${detail.name} · Sessions`}
+            exportColumns={[
+              { header: 'Session', key: 'id' },
+              { header: 'Editor', key: 'editor' },
+              { header: 'Started', key: 'startedAtUtc' },
+              { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Duration (ms)', key: 'durationMilliseconds' },
+              { header: 'Branch', key: 'branch' },
+              { header: 'Status', key: 'status' },
+            ]}
+            toExportRow={(s) => ({
+              id: s.id,
+              editor: s.editor ?? '',
+              startedAtUtc: formatDateTime(s.startedAtUtc),
+              endedAtUtc: formatDateTime(s.endedAtUtc),
+              durationMilliseconds: sessionDurationMs(s) ?? '',
+              branch: s.branch ?? '',
+              status: s.status || (s.isActive ? 'Active' : 'Closed'),
+            })}
+            emptySourceMessage="No sessions in the selected range."
+            renderTable={(rows) => (
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Session</th>
+                    <th>Editor</th>
+                    <th>Started</th>
+                    <th>Ended</th>
+                    <th>Duration</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((s) => {
+                    const durationMs = sessionDurationMs(s);
+                    return (
+                      <tr key={s.id}>
+                        <td className="mono">{s.id.slice(0, 8)}</td>
+                        <td>{s.editor ?? '—'}</td>
+                        <td>{formatDateTime(s.startedAtUtc)}</td>
+                        <td>{formatDateTime(s.endedAtUtc)}</td>
+                        <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
+                        <td>{s.branch ?? '—'}</td>
+                        <td>
+                          <StatusBadge
+                            label={s.status || (s.isActive ? 'Active' : 'Closed')}
+                            tone={
+                              s.isActive || s.status === 'Active' ? 'success' : 'neutral'
+                            }
+                          />
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-secondary"
+                              onClick={() => {
+                                setEditingSessionId(s.id);
+                                setSessionDraft(draftFromSession(s));
                                 setSessionMessage(null);
-                                return sessions.refetch();
-                              })
-                              .catch((err: unknown) => {
-                                setSessionMessage(
-                                  err instanceof Error ? err.message : 'Delete failed',
+                                setSessionEditorOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-danger"
+                              disabled={deleteSessionMutation.isPending}
+                              onClick={() => {
+                                const ok = window.confirm(
+                                  `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
                                 );
-                              });
-                          }}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })
-              }
-            />
-          )}
+                                if (!ok) return;
+                                void deleteSessionMutation
+                                  .mutateAsync({ id: s.id, projectId: detail.id })
+                                  .then(() => {
+                                    setSessionMessage(null);
+                                    setSessionBrowseEpoch((value) => value + 1);
+                                  })
+                                  .catch((err: unknown) => {
+                                    setSessionMessage(
+                                      err instanceof Error ? err.message : 'Delete failed',
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            renderGrid={(rows) =>
+              rows.map((s) => {
+                const durationMs = sessionDurationMs(s);
+                return (
+                  <article key={s.id} className="analysis-browse-tile">
+                    <strong className="mono">{s.id.slice(0, 8)}</strong>
+                    <span>{s.editor ?? '—'}</span>
+                    <span>{formatDateTime(s.startedAtUtc)}</span>
+                    <span>
+                      {durationMs == null ? '—' : formatDurationMs(durationMs)}
+                    </span>
+                    <span>{s.branch ?? 'No branch'}</span>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-compact btn-secondary"
+                        onClick={() => {
+                          setEditingSessionId(s.id);
+                          setSessionDraft(draftFromSession(s));
+                          setSessionMessage(null);
+                          setSessionEditorOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-compact btn-danger"
+                        disabled={deleteSessionMutation.isPending}
+                        onClick={() => {
+                          const ok = window.confirm(
+                            `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
+                          );
+                          if (!ok) return;
+                          void deleteSessionMutation
+                            .mutateAsync({ id: s.id, projectId: detail.id })
+                            .then(() => {
+                              setSessionMessage(null);
+                              setSessionBrowseEpoch((value) => value + 1);
+                            })
+                            .catch((err: unknown) => {
+                              setSessionMessage(
+                                err instanceof Error ? err.message : 'Delete failed',
+                              );
+                            });
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            }
+          />
         </section>
       )}
 
