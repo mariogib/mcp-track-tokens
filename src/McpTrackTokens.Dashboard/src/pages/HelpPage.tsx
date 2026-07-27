@@ -85,7 +85,6 @@ function CodeBlock({ children, label = 'Copy' }: { children: string; label?: str
           type="button"
           className="btn btn-secondary btn-copy-inline"
           aria-label={copied ? 'Copied to clipboard' : label}
-          title={copied ? 'Copied' : label}
           onClick={async () => {
             const ok = await copyText(children);
             if (ok) setCopied(true);

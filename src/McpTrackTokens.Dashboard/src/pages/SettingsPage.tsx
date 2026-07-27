@@ -34,7 +34,7 @@ import { ErrorState, LoadingState } from '../components/States';
 import { Panel } from '../components/MetricCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { Page } from '../layout/AppLayout';
-import { PopupForm, TextLink } from '../shared/adminUi';
+import { PopupForm, TextLink, ThemeButton } from '../shared/adminUi';
 import {
   deleteLocalBackupFile,
   getStoredBackupFolder,
@@ -68,18 +68,18 @@ function resolveHelp(help: HelpContent): { summary: string; detail: string } {
 /** `?` control: short native hover (`title`) + richer CSS popup (`data-tooltip`). */
 function SettingHelp({
   help,
-  align = 'center',
+  align = 'start',
 }: {
   help: HelpContent;
   align?: 'center' | 'start' | 'end';
 }) {
   const { summary, detail } = resolveHelp(help);
   const alignClass =
-    align === 'start'
-      ? ' setting-help--align-start'
+    align === 'center'
+      ? ' setting-help--align-center'
       : align === 'end'
         ? ' setting-help--align-end'
-        : '';
+        : ' setting-help--align-start';
   return (
     <span
       className={`setting-help${alignClass}`}
@@ -277,6 +277,7 @@ const ALLOCATION_METHODS = [
 
 const SETTINGS_TABS = [
   'Connection',
+  'Display',
   'Tracking',
   'Cursor token costs',
   'API keys',
@@ -569,7 +570,7 @@ export function SettingsPage() {
             Clear local key
           </button>
         </div>
-        {message ? <p>{message}</p> : null}
+        {message && tab === 'Connection' ? <p>{message}</p> : null}
         {createdPlaintext ? (
           <div className="warning-banner" role="status">
             New key (copy now): <code className="mono">{createdPlaintext}</code>
@@ -579,34 +580,72 @@ export function SettingsPage() {
     </section>
   );
 
-  if (settings.isLoading && !settings.isError && !draft) {
-    return (
-      <Page>
-        {connectionPanel}
-        <LoadingState label="Loading settings…" />
-      </Page>
-    );
-  }
+  const displayPanel = (
+    <section className="page-section">
+      <div className="section-header">
+        <div>
+          <h2>Display</h2>
+          <p>Choose the look-and-feel and colour palette for this dashboard.</p>
+        </div>
+      </div>
 
-  if (settings.error && !draft) {
-    return (
-      <Page>
-        {connectionPanel}
-        <ErrorState
-          message={
-            settings.error instanceof Error ? settings.error.message : 'Failed to load settings'
-          }
-          error={settings.error}
-        />
-      </Page>
-    );
-  }
+      <Panel className="stack">
+        <div className="field">
+          <SettingLabel
+            help={{
+              summary: 'Theme and look-and-feel applied across the dashboard.',
+              detail:
+                'Pick a LunarQ or Microsoft Fluent preset. The choice is stored in this browser and applied on every visit. Fluent presets keep Fluent density and type; LunarQ presets keep the classic LunarQ chrome.',
+            }}
+          >
+            Theme
+          </SettingLabel>
+          <div className="settings-theme-picker">
+            <ThemeButton />
+          </div>
+        </div>
+      </Panel>
+    </section>
+  );
+
+  const settingsTabs = (
+    <div className="tabs" role="tablist" aria-label="Settings sections">
+      {SETTINGS_TABS.map((name) => (
+        <button
+          key={name}
+          type="button"
+          role="tab"
+          aria-selected={tab === name}
+          className={`tab${tab === name ? ' active' : ''}`}
+          onClick={() => {
+            setTab(name);
+            setMessage(null);
+          }}
+        >
+          {name}
+        </button>
+      ))}
+    </div>
+  );
 
   if (!draft) {
     return (
       <Page>
-        {connectionPanel}
-        <LoadingState label="Loading settings…" />
+        {settingsTabs}
+        {tab === 'Connection' && connectionPanel}
+        {tab === 'Display' && displayPanel}
+        {tab !== 'Connection' && tab !== 'Display' ? (
+          settings.isError ? (
+            <ErrorState
+              message={
+                settings.error instanceof Error ? settings.error.message : 'Failed to load settings'
+              }
+              error={settings.error}
+            />
+          ) : (
+            <LoadingState label="Loading settings…" />
+          )
+        ) : null}
       </Page>
     );
   }
@@ -615,23 +654,7 @@ export function SettingsPage() {
 
   return (
     <Page>
-      <div className="tabs" role="tablist" aria-label="Settings sections">
-        {SETTINGS_TABS.map((name) => (
-          <button
-            key={name}
-            type="button"
-            role="tab"
-            aria-selected={tab === name}
-            className={`tab${tab === name ? ' active' : ''}`}
-            onClick={() => {
-              setTab(name);
-              setMessage(null);
-            }}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
+      {settingsTabs}
 
       {message && tab !== 'Connection' ? (
         <p className="muted" style={{ marginTop: '0.75rem' }}>
@@ -640,6 +663,8 @@ export function SettingsPage() {
       ) : null}
 
       {tab === 'Connection' && connectionPanel}
+
+      {tab === 'Display' && displayPanel}
 
       {tab === 'Tracking' && (
         <section className="page-section">

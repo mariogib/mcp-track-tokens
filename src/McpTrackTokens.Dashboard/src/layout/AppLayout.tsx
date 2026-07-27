@@ -8,7 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
-import { AdminShell, TextLink, ThemeButton } from '../shared/adminUi';
+import { AdminShell, TextLink, applyStoredDashboardTheme } from '../shared/adminUi';
 
 const fluentIcons = createFluentNavIcons(React);
 
@@ -43,6 +43,8 @@ function useLookAndFeel(): ThemeLookAndFeel {
   const [lookAndFeel, setLookAndFeel] = useState<ThemeLookAndFeel>(readLookAndFeel);
 
   useEffect(() => {
+    applyStoredDashboardTheme();
+
     function sync() {
       setLookAndFeel(readLookAndFeel());
     }
@@ -141,7 +143,6 @@ export function AppLayout() {
               label={healthy ? 'Server healthy' : health.isError ? 'Server offline' : 'Checking…'}
               tone={healthy ? 'success' : health.isError ? 'danger' : 'warning'}
             />
-            <ThemeButton />
           </div>
         </div>
       }

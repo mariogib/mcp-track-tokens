@@ -12,9 +12,12 @@ import {
   type ChartCardProps,
 } from '@lunarq/frontend-shared/components';
 import {
+  applyThemePreset,
   applyThemeVariables,
   BUILTIN_THEME_PRESETS,
   createThemeButton,
+  readStoredThemeId,
+  resolveThemePreset,
   type ThemeResponseBase,
 } from '@lunarq/frontend-shared/theme';
 
@@ -147,13 +150,22 @@ function hexToRgba(cssColor: string, alpha: number): string {
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`;
 }
 
-/** Shared theme picker (LunarQ / LunarQ Light / Midnight). */
+const THEME_STORAGE_KEY = 'mcp-track-tokens-theme-id';
+
+/** Shared theme picker (LunarQ / Fluent presets). */
 export const ThemeButton = createThemeButton(React, {
   themes: BUILTIN_THEME_PRESETS,
   defaultThemeId: 'lunarq-light',
-  storageKey: 'mcp-track-tokens-theme-id',
+  storageKey: THEME_STORAGE_KEY,
   applyTheme: applyDashboardTheme,
 });
+
+/** Apply the persisted ThemeButton preset on app startup (selector lives on Settings → Display). */
+export function applyStoredDashboardTheme(): void {
+  const storedId = readStoredThemeId(THEME_STORAGE_KEY);
+  const preset = resolveThemePreset(storedId, BUILTIN_THEME_PRESETS, 'lunarq-light');
+  applyThemePreset(preset, applyDashboardTheme);
+}
 
 /** Shared card surface. */
 export const Card = createCard(React);

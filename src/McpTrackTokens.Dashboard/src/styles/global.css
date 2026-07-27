@@ -257,6 +257,10 @@ tr.is-selected {
 
 .panel {
   padding: 1rem 1.1rem;
+  /* Size help tips relative to the card so they stay inside the tab panel. */
+  container-type: inline-size;
+  container-name: settings-panel;
+  overflow: visible;
 }
 
 .panel-title {
@@ -396,11 +400,12 @@ tr.is-selected {
 .setting-help::after {
   content: attr(data-tooltip);
   position: absolute;
-  left: 50%;
-  /* Open below the icon so Panel / table-wrap overflow does not clip the tip. */
+  /* Grow into the card (rightward) so tips never slide under the left nav. */
+  left: 0;
+  right: auto;
   top: calc(100% + 0.45rem);
   bottom: auto;
-  transform: translateX(-50%);
+  transform: none;
   width: max-content;
   max-width: min(28rem, 78vw);
   padding: 0.55rem 0.7rem;
@@ -418,14 +423,24 @@ tr.is-selected {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.12s ease;
-  z-index: 50;
+  z-index: 20;
 }
 
-/* Inside scrollable tables, keep tips inside the wrap (centered tips clip at edges). */
+/* Prefer the panel width when the tip lives inside a settings card. */
+.panel .setting-help::after {
+  max-width: min(28rem, calc(100cqi - 1.25rem));
+}
+
 .setting-help--align-start::after {
   left: 0;
   right: auto;
   transform: none;
+}
+
+.setting-help--align-center::after {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
 .setting-help--align-end::after {
@@ -839,6 +854,35 @@ table.data.token-rates td:last-child {
   gap: 0.75rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Theme picker on Settings → Display: keep the menu inside the panel card. */
+.settings-theme-picker {
+  margin-top: 0.5rem;
+  width: min(100%, 28rem);
+}
+
+.settings-theme-picker .theme-button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.settings-theme-picker .theme-button-trigger {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.settings-theme-picker .theme-button-menu {
+  position: static;
+  left: auto;
+  right: auto;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(50vh, 22rem);
+  z-index: auto;
+  margin-top: 0.35rem;
 }
 
 .clickable-row {

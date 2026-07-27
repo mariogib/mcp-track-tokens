@@ -33,10 +33,8 @@ async function copyText(value: string): Promise<boolean> {
 
 function CopyTextButton({
   value,
-  label = 'Copy',
 }: {
   value: string;
-  label?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -51,7 +49,6 @@ function CopyTextButton({
       type="button"
       className="btn btn-secondary btn-copy-inline"
       aria-label={copied ? `${value} copied` : `Copy ${value}`}
-      title={copied ? 'Copied' : label}
       onClick={async () => {
         const ok = await copyText(value);
         if (ok) setCopied(true);
@@ -124,7 +121,7 @@ export function McpHelpPage() {
                           <td>
                             <div className="mcp-copy-row">
                               <code className="mono">{tool.name}</code>
-                              <CopyTextButton value={tool.name} label="Copy tool name" />
+                              <CopyTextButton value={tool.name} />
                             </div>
                           </td>
                           <td className="cell-wrap">{tool.description}</td>
@@ -160,7 +157,7 @@ export function McpHelpPage() {
                       <td>
                         <div className="mcp-copy-row">
                           <code className="mono">{resource.uri}</code>
-                          <CopyTextButton value={resource.uri} label="Copy resource URI" />
+                          <CopyTextButton value={resource.uri} />
                         </div>
                       </td>
                       <td className="cell-wrap">{resource.description}</td>
@@ -194,7 +191,7 @@ export function McpHelpPage() {
                       <td>
                         <div className="mcp-copy-row">
                           <code className="mono">{prompt.name}</code>
-                          <CopyTextButton value={prompt.name} label="Copy prompt name" />
+                          <CopyTextButton value={prompt.name} />
                         </div>
                       </td>
                       <td>
@@ -204,7 +201,7 @@ export function McpHelpPage() {
                       <td className="cell-wrap">
                         <div className="mcp-prompt-example">
                           <p className="mcp-prompt-example-text">{prompt.example}</p>
-                          <CopyTextButton value={prompt.example} label="Copy example" />
+                          <CopyTextButton value={prompt.example} />
                         </div>
                       </td>
                     </tr>
