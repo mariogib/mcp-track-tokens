@@ -1065,7 +1065,6 @@ export function SettingsPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                title="How Cursor calculates token cost"
                 onClick={() => setShowCursorCostHelp(true)}
               >
                 Help
@@ -1101,7 +1100,6 @@ export function SettingsPage() {
                   <tr>
                     <th
                       className="setting-label"
-                      title="Model name from Cursor usage exports (* = fallback)."
                     >
                       <span className="setting-label-text">
                         Model{' '}
@@ -1117,7 +1115,6 @@ export function SettingsPage() {
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1M input tokens."
                     >
                       <span className="setting-label-text">
                         Input / 1M{' '}
@@ -1133,7 +1130,6 @@ export function SettingsPage() {
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1M cache-write tokens."
                     >
                       <span className="setting-label-text">
                         Cache write / 1M{' '}
@@ -1148,7 +1144,6 @@ export function SettingsPage() {
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1M cache-read tokens."
                     >
                       <span className="setting-label-text">
                         Cache read / 1M{' '}
@@ -1163,7 +1158,6 @@ export function SettingsPage() {
                     </th>
                     <th
                       className="setting-label"
-                      title="Price per 1M output tokens."
                     >
                       <span className="setting-label-text">
                         Output / 1M{' '}
@@ -1178,7 +1172,6 @@ export function SettingsPage() {
                     </th>
                     <th
                       className="setting-label"
-                      title="Optional price per 1M reasoning tokens."
                     >
                       <span className="setting-label-text">
                         Reasoning / 1M{' '}
@@ -1806,7 +1799,6 @@ export function SettingsPage() {
               <div className="field">
                 <div
                   className="label setting-label"
-                  title="Live SQLite database file used by the tracking host."
                 >
                   Live database{' '}
                   <SettingHelp
@@ -1823,7 +1815,6 @@ export function SettingsPage() {
               <div className="field">
                 <div
                   className="label setting-label"
-                  title="Last folder selected for backups. Backup now opens a folder picker defaulting here."
                 >
                   Backup folder{' '}
                   <SettingHelp
@@ -2055,7 +2046,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Filesystem path of the tracking database on the server."
                 >
                   Database{' '}
                   <SettingHelp
@@ -2073,7 +2063,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Database engine in use (Sqlite or PostgreSQL)."
                 >
                   Provider{' '}
                   <SettingHelp
@@ -2091,7 +2080,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Whether the server can open and query the database successfully."
                 >
                   DB health{' '}
                   <SettingHelp
@@ -2113,7 +2101,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Detected via hooks on disk, or inferred from recent Cursor ingest."
                 >
                   Cursor hooks{' '}
                   <SettingHelp
@@ -2140,7 +2127,6 @@ export function SettingsPage() {
               <div>
                 <div
                   className="label setting-label"
-                  title="Whether MCP tooling for this server appears configured."
                 >
                   MCP{' '}
                   <SettingHelp
