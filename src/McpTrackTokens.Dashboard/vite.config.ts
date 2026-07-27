@@ -9,6 +9,7 @@ import react from '@vitejs/plugin-react';
 const dashboardRoot = path.dirname(fileURLToPath(import.meta.url));
 const sharedRoot = path.resolve(dashboardRoot, '../../../frontend-shared');
 const sharedDist = path.resolve(sharedRoot, 'dist').replace(/\\/g, '/');
+const sharedSrc = path.resolve(sharedRoot, 'src').replace(/\\/g, '/');
 
 export default defineConfig({
   plugins: [react()],
@@ -45,15 +46,20 @@ export default defineConfig({
     alias: [
       {
         find: /^@lunarq\/frontend-shared$/,
-        replacement: `${sharedDist}/index.js`,
+        replacement: `${sharedSrc}/index.ts`,
       },
       {
         find: /^@lunarq\/frontend-shared\/(admin|components|hooks|theme|auth|maintenance|utils)$/,
-        replacement: `${sharedDist}/$1/index.js`,
+        replacement: `${sharedSrc}/$1/index.ts`,
+      },
+      // CSS packages are emitted into dist by the shared build.
+      {
+        find: /^@lunarq\/frontend-shared\/(.*\.css)$/,
+        replacement: `${sharedDist}/$1`,
       },
       {
         find: /^@lunarq\/frontend-shared\/(.*)/,
-        replacement: `${sharedDist}/$1`,
+        replacement: `${sharedSrc}/$1`,
       },
     ],
   },

@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
   useCreateTimesheetEntryMutation,
@@ -14,6 +14,7 @@ import {
   useProjectQuery,
   useProjectUsageQuery,
   useTimesheetCategoriesQuery,
+  useTimesheetReportMonthsQuery,
   useUpdateProjectMutation,
   useUpdateSessionMutation,
   useUpdateTimesheetEntryMutation,
@@ -26,6 +27,7 @@ import {
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
+import { DateRangeFilters } from '../components/DateRangeFilters';
 import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
@@ -37,15 +39,25 @@ import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 import { Breadcrumb, PopupForm, TextLink } from '../shared/adminUi';
 import {
+  currentUtcYearMonth,
+  monthDateInputs,
+  parseMonthParam,
+  parseRangePreset,
+  parseYearParam,
+  resolveRange,
+  toDateInputValue,
+  type RangePreset,
+} from '../utils/dateRange';
+import {
   formatCurrency,
   formatDateTime,
   formatDay,
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
-  lastDaysRange,
   millisecondsToMinutesExact,
 } from '../utils/format';
+import { exportProjectDetailsWorkbook } from '../utils/projectDetailsExcelExport';
 
 const PROMPT_TIME_CUSTOM = '__custom__';
 
@@ -194,22 +206,37 @@ function draftFromTimesheet(entry: TimesheetEntryDto): TimesheetDraft {
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useTabSearchParam(TABS, 'Overview');
-  const range = useMemo(() => lastDaysRange(30), []);
+  const rangePreset = parseRangePreset(searchParams.get('range'));
+  const fromDate = searchParams.get('from') ?? '';
+  const toDate = searchParams.get('to') ?? '';
+  const selectedYear = parseYearParam(searchParams.get('year'));
+  const selectedMonth = parseMonthParam(searchParams.get('month'));
+  const range = useMemo(
+    () =>
+      resolveRange(
+        rangePreset === 'custom' || (fromDate && toDate) ? 'custom' : rangePreset,
+        fromDate,
+        toDate,
+        selectedYear,
+        selectedMonth,
+      ),
+    [rangePreset, fromDate, toDate, selectedYear, selectedMonth],
+  );
 
   const project = useProjectQuery(projectId);
   const activity = useProjectActivityQuery(projectId, range.fromUtc, range.toUtc);
   const usage = useProjectUsageQuery(projectId, range.fromUtc, range.toUtc);
   const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
   const tokenCost = useProjectTokenCostQuery(projectId, range.fromUtc, range.toUtc);
+  const monthsQuery = useTimesheetReportMonthsQuery(projectId);
   const promptFacets = useProjectPromptFacetsQuery(
     projectId,
     range.fromUtc,
     range.toUtc,
     tab === 'Prompts',
   );
-  // Omit toUtc so each page request resolves "now" on the server — a frozen
-  // page-load toUtc was hiding newly created/edited sessions from the table.
   const [sessionBrowseEpoch, setSessionBrowseEpoch] = useState(0);
   const timesheetCategories = useTimesheetCategoriesQuery(true);
   const [timesheetBrowseEpoch, setTimesheetBrowseEpoch] = useState(0);
@@ -245,6 +272,8 @@ export function ProjectDetailsPage() {
   const [promptDayFilter, setPromptDayFilter] = useState('');
   const [promptFromDate, setPromptFromDate] = useState('');
   const [promptToDate, setPromptToDate] = useState('');
+  const [overviewExporting, setOverviewExporting] = useState(false);
+  const [overviewExportMessage, setOverviewExportMessage] = useState<string | null>(null);
 
   const promptBrowseRange = useMemo(
     () =>
@@ -283,6 +312,67 @@ export function ProjectDetailsPage() {
     const oldest = promptFilterOptions.days[promptFilterOptions.days.length - 1]?.[0] ?? '';
     setPromptFromDate(oldest);
     setPromptToDate(newest);
+  };
+
+  const updateParams = (patch: Record<string, string | null>) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(patch)) {
+          if (value == null || value === '') next.delete(key);
+          else next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const onPresetChange = (next: RangePreset) => {
+    if (next === 'custom') {
+      const defaults = resolveRange('30d');
+      updateParams({
+        range: 'custom',
+        from: toDateInputValue(defaults.fromUtc),
+        to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
+      });
+      return;
+    }
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (year: number, month: number) => {
+    updateParams({
+      range: 'month',
+      year: String(year),
+      month: String(month),
+      from: null,
+      to: null,
+    });
+  };
+
+  const onMonthSelect = (year: number, month: number) => {
+    const bounds = monthDateInputs(year, month);
+    updateParams({
+      range: 'custom',
+      from: bounds.from,
+      to: bounds.to,
+      year: null,
+      month: null,
+    });
   };
 
   if (project.isLoading) return <LoadingState label="Loading project…" />;
@@ -350,6 +440,30 @@ export function ProjectDetailsPage() {
     prompts: b.promptCount,
   }));
 
+  const onExportProjectWorkbook = () => {
+    if (overviewExporting) return;
+    setOverviewExportMessage(null);
+    setOverviewExporting(true);
+    void exportProjectDetailsWorkbook({
+      project: detail,
+      fromUtc: range.fromUtc,
+      toUtc: range.toUtc,
+      activity: activity.data,
+      usage: usage.data,
+      cost: cost.data,
+      tokenCost: tokenCost.data,
+    })
+      .then(() => {
+        setOverviewExportMessage(null);
+      })
+      .catch((err: unknown) => {
+        setOverviewExportMessage(err instanceof Error ? err.message : 'Export failed');
+      })
+      .finally(() => {
+        setOverviewExporting(false);
+      });
+  };
+
   return (
     <Page>
       <section className="page-section">
@@ -398,10 +512,71 @@ export function ProjectDetailsPage() {
             </button>
           ))}
         </div>
+
+        <Panel>
+          <div className="field-row">
+            <div className="field">
+              <label className="label">Period</label>
+              <p className="hint">{range.label}</p>
+            </div>
+          </div>
+          <DateRangeFilters
+            preset={range.preset}
+            fromDate={fromDate || toDateInputValue(range.fromUtc)}
+            toDate={toDate || toDateInputValue(range.toUtc)}
+            onPresetChange={onPresetChange}
+            onFromDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: value,
+                to: toDate || toDateInputValue(range.toUtc),
+                year: null,
+                month: null,
+              })
+            }
+            onToDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: fromDate || toDateInputValue(range.fromUtc),
+                to: value,
+                year: null,
+                month: null,
+              })
+            }
+            year={selectedYear ?? currentUtcYearMonth().year}
+            month={selectedMonth ?? currentUtcYearMonth().month}
+            onYearMonthChange={onYearMonthChange}
+            monthsWithData={monthsQuery.data}
+            onMonthSelect={onMonthSelect}
+            idPrefix="project-details-range"
+          />
+        </Panel>
       </section>
 
       {tab === 'Overview' && (
         <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Overview</h2>
+              <p className="muted">
+                Activity, usage, and cost for {range.label}. Export builds an Excel workbook with a
+                sheet for each data tab.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn"
+              disabled={overviewExporting}
+              onClick={onExportProjectWorkbook}
+            >
+              {overviewExporting ? 'Exporting…' : 'Export to Excel'}
+            </button>
+          </div>
+          {overviewExportMessage ? (
+            <p className="form-message" role="alert">
+              {overviewExportMessage}
+            </p>
+          ) : null}
           <div className="metric-grid">
             <MetricCard label="Prompts" value={formatNumber(activity.data?.promptCount ?? detail.activity?.promptCount)} />
             <MetricCard
@@ -1029,12 +1204,13 @@ export function ProjectDetailsPage() {
             heading="Sessions"
             showHeading={false}
             searchPlaceholder="Search sessions..."
-            filterKey={[projectId, range.fromUtc, sessionBrowseEpoch].join('|')}
+            filterKey={[projectId, range.fromUtc, range.toUtc, sessionBrowseEpoch].join('|')}
             fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
               api.getProjectSessionsPaged(
                 projectId!,
                 {
                   fromUtc: range.fromUtc,
+                  toUtc: range.toUtc,
                   pageIndex,
                   pageSize,
                   search: search || undefined,
@@ -1410,12 +1586,13 @@ export function ProjectDetailsPage() {
             heading="Timesheet entries"
             showHeading={false}
             searchPlaceholder="Search timesheet entries..."
-            filterKey={[projectId, range.fromUtc, timesheetBrowseEpoch].join('|')}
+            filterKey={[projectId, range.fromUtc, range.toUtc, timesheetBrowseEpoch].join('|')}
             fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
               api.getProjectTimesheetEntriesPaged(
                 projectId!,
                 {
                   fromUtc: range.fromUtc,
+                  toUtc: range.toUtc,
                   pageIndex,
                   pageSize,
                   search: search || undefined,
