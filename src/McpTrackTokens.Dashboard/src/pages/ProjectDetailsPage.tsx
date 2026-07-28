@@ -178,6 +178,16 @@ function sessionDurationMs(session: SessionDto): number | null {
   return ended - started;
 }
 
+function timesheetDurationMs(entry: TimesheetEntryDto): number | null {
+  const start = new Date(entry.startedAtUtc).getTime();
+  if (Number.isNaN(start)) return null;
+  const end = entry.endedAtUtc
+    ? new Date(entry.endedAtUtc).getTime()
+    : Date.now();
+  if (Number.isNaN(end) || end < start) return null;
+  return end - start;
+}
+
 type TimesheetDraft = {
   categoryId: string;
   startedAtLocal: string;
@@ -1613,6 +1623,7 @@ export function ProjectDetailsPage() {
               { header: 'Category', key: 'categoryName' },
               { header: 'Started', key: 'startedAtUtc' },
               { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Duration (ms)', key: 'durationMilliseconds' },
               { header: 'Notes', key: 'notes' },
               { header: 'Status', key: 'status' },
             ]}
@@ -1620,6 +1631,7 @@ export function ProjectDetailsPage() {
               categoryName: entry.categoryName ?? '',
               startedAtUtc: formatDateTime(entry.startedAtUtc),
               endedAtUtc: formatDateTime(entry.endedAtUtc),
+              durationMilliseconds: timesheetDurationMs(entry) ?? '',
               notes: entry.notes ?? '',
               status: entry.isOpen ? 'Open' : 'Closed',
             })}
@@ -1631,75 +1643,91 @@ export function ProjectDetailsPage() {
                     <th>Category</th>
                     <th>Started</th>
                     <th>Ended</th>
+                    <th>Duration</th>
                     <th>Notes</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((entry) => (
-                    <tr key={entry.id}>
-                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                      <td>{formatDateTime(entry.startedAtUtc)}</td>
-                      <td>{formatDateTime(entry.endedAtUtc)}</td>
-                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                      <td>
-                        <StatusBadge
-                          label={entry.isOpen ? 'Open' : 'Closed'}
-                          tone={entry.isOpen ? 'success' : 'neutral'}
-                        />
-                      </td>
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-secondary"
-                            onClick={() => {
-                              setEditingTimesheetId(entry.id);
-                              setTimesheetDraft(draftFromTimesheet(entry));
-                              setTimesheetMessage(null);
-                              setTimesheetEditorOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-danger"
-                            disabled={deleteTimesheetMutation.isPending}
-                            onClick={() => {
-                              const ok = window.confirm('Delete this timesheet entry?');
-                              if (!ok) return;
-                              void deleteTimesheetMutation
-                                .mutateAsync({ id: entry.id, projectId: detail.id })
-                                .then(() => {
-                                  setTimesheetMessage(null);
-                                  setTimesheetBrowseEpoch((value) => value + 1);
-                                })
-                                .catch((err: unknown) => {
-                                  setTimesheetMessage(
-                                    err instanceof Error ? err.message : 'Delete failed',
-                                  );
-                                });
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((entry) => {
+                    const duration = timesheetDurationMs(entry);
+                    return (
+                      <tr key={entry.id}>
+                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                        <td>{formatDateTime(entry.startedAtUtc)}</td>
+                        <td>{formatDateTime(entry.endedAtUtc)}</td>
+                        <td>
+                          {duration == null
+                            ? '—'
+                            : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                        </td>
+                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                        <td>
+                          <StatusBadge
+                            label={entry.isOpen ? 'Open' : 'Closed'}
+                            tone={entry.isOpen ? 'success' : 'neutral'}
+                          />
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-secondary"
+                              onClick={() => {
+                                setEditingTimesheetId(entry.id);
+                                setTimesheetDraft(draftFromTimesheet(entry));
+                                setTimesheetMessage(null);
+                                setTimesheetEditorOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-danger"
+                              disabled={deleteTimesheetMutation.isPending}
+                              onClick={() => {
+                                const ok = window.confirm('Delete this timesheet entry?');
+                                if (!ok) return;
+                                void deleteTimesheetMutation
+                                  .mutateAsync({ id: entry.id, projectId: detail.id })
+                                  .then(() => {
+                                    setTimesheetMessage(null);
+                                    setTimesheetBrowseEpoch((value) => value + 1);
+                                  })
+                                  .catch((err: unknown) => {
+                                    setTimesheetMessage(
+                                      err instanceof Error ? err.message : 'Delete failed',
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
             renderGrid={(rows) =>
-              rows.map((entry) => (
+              rows.map((entry) => {
+                const duration = timesheetDurationMs(entry);
+                return (
                 <article key={entry.id} className="analysis-browse-tile">
                   <strong>
                     {entry.categoryName?.trim() ? entry.categoryName : 'Uncategorized'}
                   </strong>
                   <span>{formatDateTime(entry.startedAtUtc)}</span>
                   <span>{entry.isOpen ? 'Open' : formatDateTime(entry.endedAtUtc)}</span>
+                  <span>
+                    {duration == null
+                      ? '—'
+                      : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                  </span>
                   <span>{entry.notes?.trim() ? entry.notes : 'No notes'}</span>
                   <div className="row-actions">
                     <button
@@ -1738,7 +1766,8 @@ export function ProjectDetailsPage() {
                     </button>
                   </div>
                 </article>
-              ))
+                );
+              })
             }
           />
         </section>

@@ -197,9 +197,10 @@ public interface ITimesheetManagementService
     Task DeleteAsync(Guid entryId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// When a new editor session is created: if the project has no open timesheet,
-    /// closes every other open timesheet (notes append <c>autoclosed</c>) and creates
-    /// one for this project (notes = <c>autocreated</c>).
+    /// When a new editor session is created: if the project has no open timesheet for the
+    /// current local calendar day, closes every other open timesheet (notes append
+    /// <c>autoclosed</c> or <c>day-boundary</c>) and creates one for this project
+    /// (notes = <c>autocreated</c>).
     /// Does not call <see cref="IUnitOfWork.SaveChangesAsync"/>.
     /// </summary>
     Task EnsureAutocreatedOpenEntryAsync(

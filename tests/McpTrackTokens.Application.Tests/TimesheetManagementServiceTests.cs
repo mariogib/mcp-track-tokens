@@ -19,7 +19,7 @@ public sealed class TimesheetManagementServiceTests
     private readonly IActivityEventRepository _events = Substitute.For<IActivityEventRepository>();
     private readonly IUnitOfWork _unitOfWork = Substitute.For<IUnitOfWork>();
 
-    private TimesheetManagementService CreateSut()
+    private TimesheetManagementService CreateSut(TimeZoneInfo? calendarTimeZone = null)
     {
         _sessions.ListByProjectAsync(
                 Arg.Any<Guid>(),
@@ -39,7 +39,8 @@ public sealed class TimesheetManagementServiceTests
             Substitute.For<IValidator<CreateTimesheetEntryRequest>>(),
             Substitute.For<IValidator<UpdateTimesheetEntryRequest>>(),
             Substitute.For<IValidator<StartTimesheetRequest>>(),
-            Substitute.For<IValidator<EndTimesheetRequest>>());
+            Substitute.For<IValidator<EndTimesheetRequest>>(),
+            calendarTimeZone ?? TimeZoneInfo.Utc);
     }
     [Fact]
     public async Task EnsureAutocreated_same_day_open_does_not_create_another()
@@ -110,7 +111,7 @@ public sealed class TimesheetManagementServiceTests
     }
 
     [Fact]
-    public async Task EnsureAutocreated_cross_day_without_prompts_closes_at_start()
+    public async Task EnsureAutocreated_cross_day_without_prompts_deletes_zero_duration()
     {
         var projectId = Guid.NewGuid();
         var started = DateTimeOffset.Parse("2026-07-20T09:00:00Z");
@@ -137,8 +138,50 @@ public sealed class TimesheetManagementServiceTests
             projectId,
             DateTimeOffset.Parse("2026-07-21T08:00:00Z"));
 
-        open.EndedAtUtc.Should().Be(started);
-        open.Notes.Should().Contain("day-boundary");
+        await _timesheets.Received(1).DeleteAsync(open, Arg.Any<CancellationToken>());
+        await _timesheets.DidNotReceive().UpdateAsync(open, Arg.Any<CancellationToken>());
+        await _timesheets.Received(1).AddAsync(Arg.Any<TimesheetEntry>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task EnsureAutocreated_autoclose_deletes_other_project_zero_duration()
+    {
+        var projectId = Guid.NewGuid();
+        var otherProjectId = Guid.NewGuid();
+        var started = DateTimeOffset.Parse("2026-07-20T10:00:00Z");
+        var otherOpen = TimesheetEntry.Start(
+            otherProjectId,
+            TimesheetCategory.WorkId,
+            started,
+            "autocreated");
+
+        _timesheets.ListOpenByProjectAsync(projectId, Arg.Any<CancellationToken>())
+            .Returns([]);
+        _timesheets.ListOpenAsync(Arg.Any<CancellationToken>()).Returns([otherOpen]);
+        _categories.GetByIdAsync(TimesheetCategory.WorkId, Arg.Any<CancellationToken>())
+            .Returns(TimesheetCategory.Create("Work", sortOrder: 0, id: TimesheetCategory.WorkId));
+
+        // Last ended session on that day ended at the timesheet start → autoclose clamps to 0s.
+        var session = EditorSession.Start(
+            EditorType.Cursor,
+            DateTimeOffset.Parse("2026-07-20T09:00:00Z"),
+            projectId: otherProjectId);
+        session.TransitionTo(SessionStatus.Ended, started);
+
+        var sut = CreateSut();
+        _sessions.ListByProjectAsync(
+                otherProjectId,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([session]);
+
+        await sut.EnsureAutocreatedOpenEntryAsync(
+            projectId,
+            DateTimeOffset.Parse("2026-07-20T10:00:00Z"));
+
+        await _timesheets.Received(1).DeleteAsync(otherOpen, Arg.Any<CancellationToken>());
+        await _timesheets.DidNotReceive().UpdateAsync(otherOpen, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -261,5 +304,60 @@ public sealed class TimesheetManagementServiceTests
 
         open.EndedAtUtc.Should().Be(sessionEnded);
         open.Notes.Should().Contain("day-boundary");
+    }
+
+    [Fact]
+    public async Task EnsureAutocreated_local_midnight_crosses_even_when_utc_day_matches()
+    {
+        // Reproduces UTC+2: timesheet opened afternoon local Jul 27, session next local day ~01:12
+        // (still Jul 27 UTC) must roll the timesheet.
+        var tz = TimeZoneInfo.CreateCustomTimeZone(
+            "Test+02",
+            TimeSpan.FromHours(2),
+            "Test+02",
+            "Test+02");
+        var projectId = Guid.NewGuid();
+        var open = TimesheetEntry.Start(
+            projectId,
+            TimesheetCategory.WorkId,
+            DateTimeOffset.Parse("2026-07-27T15:41:08Z"),
+            "autocreated");
+        var sessionEnded = DateTimeOffset.Parse("2026-07-27T15:47:50Z");
+        var nextLocalDayActivity = DateTimeOffset.Parse("2026-07-27T23:12:18Z");
+
+        _timesheets.ListOpenByProjectAsync(projectId, Arg.Any<CancellationToken>())
+            .Returns([open]);
+        _timesheets.ListOpenAsync(Arg.Any<CancellationToken>()).Returns([]);
+        _categories.GetByIdAsync(TimesheetCategory.WorkId, Arg.Any<CancellationToken>())
+            .Returns(TimesheetCategory.Create("Work", sortOrder: 0, id: TimesheetCategory.WorkId));
+
+        var session = EditorSession.Start(
+            EditorType.Cursor,
+            DateTimeOffset.Parse("2026-07-27T15:41:08Z"),
+            projectId: projectId);
+        session.TransitionTo(SessionStatus.Ended, sessionEnded);
+
+        TimesheetEntry? added = null;
+        _timesheets.AddAsync(Arg.Any<TimesheetEntry>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                added = ci.Arg<TimesheetEntry>();
+                return Task.CompletedTask;
+            });
+
+        var sut = CreateSut(tz);
+        _sessions.ListByProjectAsync(
+                projectId,
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([session]);
+        await sut.EnsureAutocreatedOpenEntryAsync(projectId, nextLocalDayActivity);
+
+        open.EndedAtUtc.Should().Be(sessionEnded);
+        open.Notes.Should().Contain("day-boundary");
+        added.Should().NotBeNull();
+        added!.StartedAtUtc.Should().Be(nextLocalDayActivity);
+        added.Notes.Should().Be("autocreated");
     }
 }
