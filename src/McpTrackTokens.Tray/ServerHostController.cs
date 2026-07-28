@@ -85,7 +85,26 @@ internal sealed class ServerHostController : IAsyncDisposable
             await cts.CancelAsync().ConfigureAwait(false);
             if (runTask is not null)
             {
-                await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(8))).ConfigureAwait(false);
+                var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(5)))
+                    .ConfigureAwait(false);
+                if (completed != runTask)
+                {
+                    // Host did not stop in time (e.g. stuck MCP/SSE work). Abandon
+                    // the run task; callers that need a dead process should Exit.
+                    return;
+                }
+
+                // Surface host faults after a clean stop; ignore cancel-related exits.
+                try
+                {
+                    await runTask.ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (AggregateException ex) when (ex.InnerExceptions.All(static e => e is OperationCanceledException))
+                {
+                }
             }
         }
         finally

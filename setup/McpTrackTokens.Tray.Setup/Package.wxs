@@ -6,7 +6,7 @@
   <Package
       Name="MCP Track Tokens"
       Manufacturer="MCP Track Tokens"
-      Version="1.0.14.0"
+      Version="1.0.20.0"
       UpgradeCode="A7C4E2B1-6D8F-4A19-9E3C-2B5F8D1A4C70"
       Scope="perMachine"
       Compressed="yes">
@@ -78,9 +78,11 @@
       <!-- Always run: writes HTTP MCP example config; optionally installs Cursor hooks. -->
       <Custom Action="InstallIntegrations" After="InstallFiles"
               Condition="NOT REMOVE" />
-      <!-- Restart tray after install and upgrades (including silent /qn). -->
+      <!-- Upgrades + silent/basic UI: start tray once after files are in place.
+           Full-UI first install waits for the ExitDialog "Start now" checkbox instead,
+           otherwise the host would start twice (here and again on Finish). -->
       <Custom Action="LaunchApplication" After="InstallFinalize"
-              Condition="NOT REMOVE AND (NOT Installed OR WIX_UPGRADE_DETECTED)" />
+              Condition="NOT REMOVE AND (WIX_UPGRADE_DETECTED OR UILevel &lt; 5)" />
     </InstallExecuteSequence>
 
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
@@ -88,7 +90,7 @@
 
     <UI>
       <DialogRef Id="OptionsDlg" />
-      <!-- First-install ExitDialog only; upgrades start tray via InstallExecuteSequence. -->
+      <!-- Interactive first install: honor the ExitDialog checkbox only. -->
       <Publish Dialog="ExitDialog"
                Control="Finish"
                Event="DoAction"

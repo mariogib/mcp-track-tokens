@@ -13,6 +13,7 @@ import {
   useProjectPromptFacetsQuery,
   useProjectQuery,
   useProjectUsageQuery,
+  useRecalculateActivityWindowsMutation,
   useTimesheetCategoriesQuery,
   useTimesheetReportMonthsQuery,
   useUpdateProjectMutation,
@@ -284,6 +285,8 @@ export function ProjectDetailsPage() {
   const [promptToDate, setPromptToDate] = useState('');
   const [overviewExporting, setOverviewExporting] = useState(false);
   const [overviewExportMessage, setOverviewExportMessage] = useState<string | null>(null);
+  const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
+  const recalculateWindows = useRecalculateActivityWindowsMutation();
 
   const promptBrowseRange = useMemo(
     () =>
@@ -474,6 +477,33 @@ export function ProjectDetailsPage() {
       });
   };
 
+  const onRecalculateTime = () => {
+    if (recalculateWindows.isPending) return;
+    setRecalculateMessage(null);
+    recalculateWindows.mutate(
+      {
+        projectId: detail.id,
+        fromUtc: range.fromUtc,
+        toUtc: range.toUtc,
+        dryRun: false,
+      },
+      {
+        onSuccess: (result) => {
+          const hours = Math.floor(result.totalActiveSeconds / 3600);
+          const minutes = Math.floor((result.totalActiveSeconds % 3600) / 60);
+          setRecalculateMessage(
+            `Recalculated ${formatNumber(result.windowCount)} activity window${result.windowCount === 1 ? '' : 's'} · ${hours}h ${minutes}m active time.`,
+          );
+        },
+        onError: (err: unknown) => {
+          setRecalculateMessage(
+            err instanceof Error ? err.message : 'Failed to re-calculate time.',
+          );
+        },
+      },
+    );
+  };
+
   return (
     <Page>
       <section className="page-section">
@@ -569,19 +599,35 @@ export function ProjectDetailsPage() {
             <div>
               <h2>Overview</h2>
               <p className="muted">
-                Activity, usage, and cost for {range.label}. Export builds an Excel workbook with a
+                Activity, usage, and cost for {range.label}. Re-calculate Time rebuilds prompt and
+                session activity windows for this range. Export builds an Excel workbook with a
                 sheet for each data tab.
               </p>
             </div>
-            <button
-              type="button"
-              className="btn"
-              disabled={overviewExporting}
-              onClick={onExportProjectWorkbook}
-            >
-              {overviewExporting ? 'Exporting…' : 'Export to Excel'}
-            </button>
+            <div className="section-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={recalculateWindows.isPending || overviewExporting}
+                onClick={onRecalculateTime}
+              >
+                {recalculateWindows.isPending ? 'Re-calculating…' : 'Re-calculate Time'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={overviewExporting || recalculateWindows.isPending}
+                onClick={onExportProjectWorkbook}
+              >
+                {overviewExporting ? 'Exporting…' : 'Export to Excel'}
+              </button>
+            </div>
           </div>
+          {recalculateMessage ? (
+            <p className="form-message" role="status">
+              {recalculateMessage}
+            </p>
+          ) : null}
           {overviewExportMessage ? (
             <p className="form-message" role="alert">
               {overviewExportMessage}

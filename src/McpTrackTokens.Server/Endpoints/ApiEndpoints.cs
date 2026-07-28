@@ -70,6 +70,7 @@ public static class ApiEndpoints
         api.MapGet("/usage/imported", GetImportedUsageAsync);
         api.MapPost("/activity/assign", AssignActivityAsync);
         api.MapPost("/activity/delete", DeleteActivityAsync);
+        api.MapPost("/activity/windows/recalculate", RecalculateActivityWindowsAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
         api.MapGet("/reports/clients", ListReportClientsAsync);
         api.MapGet("/reports/clients/{clientName}/cost", GetClientCostAsync);
@@ -1360,6 +1361,37 @@ public static class ApiEndpoints
                 .ConfigureAwait(false);
             await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return Results.Ok(new DeleteActivityResultDto { Deleted = deleted });
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> RecalculateActivityWindowsAsync(
+        RecalculateWindowsRequestDto request,
+        IActivityWindowService windows,
+        CancellationToken cancellationToken)
+    {
+        var from = request.FromUtc.ToUniversalTime();
+        var to = request.ToUtc.ToUniversalTime();
+        if (from > to)
+        {
+            (from, to) = (to, from);
+        }
+
+        try
+        {
+            var result = await windows
+                .RecalculateAsync(
+                    request.ProjectId,
+                    from,
+                    to,
+                    request.InactivityThresholdMinutes,
+                    request.DryRun,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(result);
         }
         catch (Exception ex)
         {

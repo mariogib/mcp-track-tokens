@@ -330,6 +330,22 @@ export interface DeleteActivityResultDto {
   deleted: number;
 }
 
+export interface RecalculateWindowsRequestDto {
+  projectId?: string | null;
+  fromUtc: string;
+  toUtc: string;
+  inactivityThresholdMinutes?: number | null;
+  dryRun?: boolean;
+}
+
+export interface RecalculateWindowsResultDto {
+  dryRun: boolean;
+  projectId?: string | null;
+  windowCount: number;
+  totalActiveSeconds: number;
+  calculationVersion: string;
+}
+
 export interface MonthlySummaryReport {
   year: number;
   month: number;
@@ -839,6 +855,7 @@ export interface TimesheetDailyBreakdownRow {
   day: string;
   durationSeconds: number;
   entryCount: number;
+  sessionCount: number;
 }
 
 export interface TimesheetMonthAvailabilityDto {

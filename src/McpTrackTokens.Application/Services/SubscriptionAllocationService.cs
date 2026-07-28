@@ -67,9 +67,11 @@ public sealed class SubscriptionAllocationService : ISubscriptionAllocationServi
             var sessions = await _sessions
                 .ListAsync(project.Id, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
-            var activeSeconds = sessions
-                .Where(s => s.ProjectId is not null)
-                .Sum(s => IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, fromUtc, toUtc, now));
+            var activeSeconds = IntervalOverlap.UnionSeconds(
+                sessions.Where(s => s.ProjectId is not null).Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                fromUtc,
+                toUtc,
+                now);
 
             decimal? manual = null;
             if (manualPercentages is not null && manualPercentages.TryGetValue(project.Id, out var pct))

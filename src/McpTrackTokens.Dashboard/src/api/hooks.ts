@@ -12,6 +12,7 @@ import type {
   EndTimesheetRequest,
   ExportRequestDto,
   PromptBrowseQuery,
+  RecalculateWindowsRequestDto,
   ReconciliationRequestDto,
   StartTimesheetRequest,
   TimesheetBrowseQuery,
@@ -822,6 +823,27 @@ export function useReconciliationMutation() {
       void qc.invalidateQueries({ queryKey: queryKeys.status });
       void qc.invalidateQueries({ queryKey: ['projects'] });
       void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useRecalculateActivityWindowsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RecalculateWindowsRequestDto) => api.recalculateActivityWindows(body),
+    onSuccess: (data, variables) => {
+      if (data.dryRun) {
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      if (variables.projectId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.project(variables.projectId) });
+        void qc.invalidateQueries({
+          queryKey: ['projects', variables.projectId, 'activity'],
+        });
+      }
     },
   });
 }

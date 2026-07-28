@@ -112,6 +112,24 @@ public sealed class TimesheetManagementServiceTests
     }
 
     [Fact]
+    public void End_when_already_closed_does_not_overwrite_end_or_notes()
+    {
+        var entry = TimesheetEntry.Start(
+            Guid.NewGuid(),
+            TimesheetCategory.WorkId,
+            DateTimeOffset.Parse("2026-07-20T09:00:00Z"),
+            "autocreated");
+        var boundary = DateTimeOffset.Parse("2026-07-20T17:30:00Z");
+        entry.End(boundary, "day-boundary");
+
+        entry.End(DateTimeOffset.Parse("2026-07-20T09:00:00Z"), "autoclosed");
+
+        entry.EndedAtUtc.Should().Be(boundary);
+        entry.Notes.Should().Contain("day-boundary");
+        entry.Notes.Should().NotContain("autoclosed");
+    }
+
+    [Fact]
     public async Task EnsureAutocreated_cross_day_does_not_overwrite_boundary_close_with_autoclose()
     {
         var projectId = Guid.NewGuid();

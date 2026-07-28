@@ -25,6 +25,7 @@ public sealed class ReportService : IReportService
     private readonly IImportBatchRepository _imports;
     private readonly ISubscriptionAllocationService _subscription;
     private readonly TrackingOptions _options;
+    private readonly TimeZoneInfo _calendarTimeZone;
 
     public ReportService(
         IProjectRepository projects,
@@ -36,7 +37,8 @@ public sealed class ReportService : IReportService
         IUsageAttributionRepository attributions,
         IImportBatchRepository imports,
         ISubscriptionAllocationService subscription,
-        IOptions<TrackingOptions> options)
+        IOptions<TrackingOptions> options,
+        TimeZoneInfo? calendarTimeZone = null)
     {
         _projects = projects;
         _sessions = sessions;
@@ -48,6 +50,8 @@ public sealed class ReportService : IReportService
         _imports = imports;
         _subscription = subscription;
         _options = options.Value;
+        // Match timesheet / dashboard local calendar days (not UTC).
+        _calendarTimeZone = calendarTimeZone ?? TimeZoneInfo.Local;
     }
 
     /// <inheritdoc />
@@ -66,7 +70,7 @@ public sealed class ReportService : IReportService
         var now = DateTimeOffset.UtcNow;
 
         var dayKeys = events
-            .Select(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime))
+            .Select(e => ToCalendarDay(e.TimestampUtc))
             .Concat(tokensByDay.Keys)
             .Concat(sessions.SelectMany(SessionDayKeys))
             .Distinct()
@@ -76,9 +80,8 @@ public sealed class ReportService : IReportService
         var rows = dayKeys
             .Select(day =>
             {
-                var dayEvents = events.Where(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime) == day);
-                var dayStart = new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-                var dayEnd = new DateTimeOffset(day.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc));
+                var dayEvents = events.Where(e => ToCalendarDay(e.TimestampUtc) == day);
+                var (dayStart, dayEnd) = GetCalendarDayBoundsUtc(day);
                 return new DailyActivityRow
                 {
                     Day = day,
@@ -86,9 +89,16 @@ public sealed class ReportService : IReportService
                     PromptCount = dayEvents.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
                     AgentRuns = dayEvents.Count(e => e.EventType == ActivityEventType.AgentStarted),
                     AgentDurationMilliseconds = SumAgentDuration(dayEvents),
-                    ActiveProjectTimeSeconds = sessions.Sum(s =>
-                        IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, dayStart, dayEnd, now)),
-                    SessionCount = dayEvents.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
+                    ActiveProjectTimeSeconds = IntervalOverlap.UnionSeconds(
+                        sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                        dayStart,
+                        dayEnd,
+                        now),
+                    SessionCount = IntervalOverlap.CountOverlapping(
+                        sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                        dayStart,
+                        dayEnd,
+                        now),
                     TotalTokens = tokensByDay.GetValueOrDefault(day)
                 };
             })
@@ -990,7 +1000,7 @@ public sealed class ReportService : IReportService
                 continue;
             }
 
-            var day = DateOnly.FromDateTime(record.TimestampUtc.UtcDateTime);
+            var day = ToCalendarDay(record.TimestampUtc);
             result[day] = result.GetValueOrDefault(day) + tokens;
         }
 
@@ -1185,14 +1195,30 @@ public sealed class ReportService : IReportService
         return sessions.Where(s => s.ProjectId is not null).ToList();
     }
 
-    private static IEnumerable<DateOnly> SessionDayKeys(EditorSession session)
+    private IEnumerable<DateOnly> SessionDayKeys(EditorSession session)
     {
-        var start = DateOnly.FromDateTime(session.StartedAtUtc.UtcDateTime);
-        var end = DateOnly.FromDateTime((session.EndedAtUtc ?? DateTimeOffset.UtcNow).UtcDateTime);
+        var start = ToCalendarDay(session.StartedAtUtc);
+        var end = ToCalendarDay(session.EndedAtUtc ?? DateTimeOffset.UtcNow);
         for (var day = start; day <= end; day = day.AddDays(1))
         {
             yield return day;
         }
+    }
+
+    private DateOnly ToCalendarDay(DateTimeOffset instant)
+    {
+        var local = TimeZoneInfo.ConvertTime(instant.ToUniversalTime(), _calendarTimeZone);
+        return DateOnly.FromDateTime(local.DateTime);
+    }
+
+    private (DateTimeOffset DayStartUtc, DateTimeOffset DayEndUtc) GetCalendarDayBoundsUtc(DateOnly day)
+    {
+        var localMidnight = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var startUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight, _calendarTimeZone);
+        var endUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight.AddDays(1), _calendarTimeZone);
+        return (
+            new DateTimeOffset(startUtc, TimeSpan.Zero),
+            new DateTimeOffset(endUtc, TimeSpan.Zero).AddTicks(-1));
     }
 
     private static ActivitySummaryDto BuildActivitySummary(
@@ -1207,9 +1233,16 @@ public sealed class ReportService : IReportService
             PromptCount = events.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
             AgentRuns = events.Count(e => e.EventType == ActivityEventType.AgentStarted),
             AgentDurationMilliseconds = SumAgentDuration(events),
-            ActiveProjectTimeSeconds = sessions.Sum(s =>
-                IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, fromUtc, toUtc, now)),
-            SessionCount = events.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
+            ActiveProjectTimeSeconds = IntervalOverlap.UnionSeconds(
+                sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                fromUtc,
+                toUtc,
+                now),
+            SessionCount = IntervalOverlap.CountOverlapping(
+                sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                fromUtc,
+                toUtc,
+                now),
             FailureCount = events.Count(e => e.EventType == ActivityEventType.AgentFailed),
             CancellationCount = events.Count(e => e.EventType == ActivityEventType.AgentCancelled),
             FromUtc = fromUtc,

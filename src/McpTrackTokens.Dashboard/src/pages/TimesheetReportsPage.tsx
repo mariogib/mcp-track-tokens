@@ -89,19 +89,41 @@ function shiftLocalDayKey(dayKey: string, deltaDays: number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
+function sessionOverlapsLocalDay(session: SessionDto, day: string): boolean {
+  const bounds = dayBoundsLocal(day);
+  const start = new Date(session.startedAtUtc).getTime();
+  const end = session.endedAtUtc ? new Date(session.endedAtUtc).getTime() : Date.now();
+  const from = new Date(bounds.fromUtc).getTime();
+  const to = new Date(bounds.toUtc).getTime();
+  if (
+    Number.isNaN(start) ||
+    Number.isNaN(end) ||
+    Number.isNaN(from) ||
+    Number.isNaN(to) ||
+    end < start
+  ) {
+    return false;
+  }
+  return start <= to && end >= from;
+}
+
 /** Build by-day rows from entries using local start day — same rules as the entries popup. */
 function buildLocalDailyBreakdown(
   entries: TimesheetEntryDto[],
   fromUtc: string,
   toUtc: string,
+  sessions: SessionDto[] = [],
 ): TimesheetDailyBreakdownRow[] {
   const fromDay = toLocalDayKey(fromUtc);
   const toDay = toLocalDayKey(toUtc);
   if (!fromDay || !toDay) return [];
 
-  const buckets = new Map<string, { durationSeconds: number; entryIds: Set<string> }>();
+  const buckets = new Map<
+    string,
+    { durationSeconds: number; entryIds: Set<string>; sessionIds: Set<string> }
+  >();
   for (let day = fromDay; day <= toDay; day = shiftLocalDayKey(day, 1)) {
-    buckets.set(day, { durationSeconds: 0, entryIds: new Set() });
+    buckets.set(day, { durationSeconds: 0, entryIds: new Set(), sessionIds: new Set() });
     if (day === toDay) break;
   }
 
@@ -117,11 +139,22 @@ function buildLocalDailyBreakdown(
     }
   }
 
+  for (const session of sessions) {
+    for (let day = fromDay; day <= toDay; day = shiftLocalDayKey(day, 1)) {
+      const bucket = buckets.get(day);
+      if (bucket && sessionOverlapsLocalDay(session, day)) {
+        bucket.sessionIds.add(session.id);
+      }
+      if (day === toDay) break;
+    }
+  }
+
   return [...buckets.entries()]
     .map(([day, bucket]) => ({
       day,
       durationSeconds: bucket.durationSeconds,
       entryCount: bucket.entryIds.size,
+      sessionCount: bucket.sessionIds.size,
     }))
     .sort((a, b) => b.day.localeCompare(a.day));
 }
@@ -338,6 +371,7 @@ function DailyTable({
             <th>Day</th>
             <th>Duration</th>
             <th>Timesheet entries</th>
+            <th>Sessions</th>
           </tr>
         </thead>
         <tbody>
@@ -355,6 +389,12 @@ function DailyTable({
                 <EntryCountLink
                   count={row.entryCount}
                   onClick={onEntriesClick ? () => onEntriesClick(row.day) : undefined}
+                />
+              </td>
+              <td>
+                <EntryCountLink
+                  count={row.sessionCount}
+                  onClick={onDayClick ? () => onDayClick(row.day) : undefined}
                 />
               </td>
             </tr>
@@ -409,12 +449,15 @@ function OverallReportView({
 }) {
   const report = useTimesheetOverallReportQuery(fromUtc, toUtc);
   const entries = useTimesheetEntriesQuery({ fromUtc, toUtc });
+  const sessions = useSessionsQuery({ fromUtc, toUtc });
   const byDay = useMemo(
-    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc),
-    [entries.data, fromUtc, toUtc],
+    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc, sessions.data ?? []),
+    [entries.data, fromUtc, sessions.data, toUtc],
   );
 
-  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading overall report…" />;
+  if (report.isLoading || entries.isLoading || sessions.isLoading) {
+    return <LoadingState label="Loading overall report…" />;
+  }
   if (report.error) {
     return (
       <ErrorState
@@ -427,6 +470,15 @@ function OverallReportView({
       <ErrorState
         message={
           entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
+      />
+    );
+  }
+  if (sessions.error) {
+    return (
+      <ErrorState
+        message={
+          sessions.error instanceof Error ? sessions.error.message : 'Failed to load sessions'
         }
       />
     );
@@ -558,9 +610,13 @@ function ProjectReportView({
     { projectId: projectId || undefined, fromUtc, toUtc },
     Boolean(projectId),
   );
+  const sessions = useSessionsQuery(
+    { projectId: projectId || undefined, fromUtc, toUtc },
+    Boolean(projectId),
+  );
   const byDay = useMemo(
-    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc),
-    [entries.data, fromUtc, toUtc],
+    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc, sessions.data ?? []),
+    [entries.data, fromUtc, sessions.data, toUtc],
   );
 
   const categoryChart = (report.data?.byCategory ?? []).map((row) => ({
@@ -571,7 +627,9 @@ function ProjectReportView({
   if (!projectId) {
     return <EmptyState message="Select a project to view its timesheet report." />;
   }
-  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading project report…" />;
+  if (report.isLoading || entries.isLoading || sessions.isLoading) {
+    return <LoadingState label="Loading project report…" />;
+  }
   if (report.error) {
     return (
       <ErrorState
@@ -584,6 +642,15 @@ function ProjectReportView({
       <ErrorState
         message={
           entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
+      />
+    );
+  }
+  if (sessions.error) {
+    return (
+      <ErrorState
+        message={
+          sessions.error instanceof Error ? sessions.error.message : 'Failed to load sessions'
         }
       />
     );
@@ -672,6 +739,7 @@ function ClientReportView({
     Boolean(clientName),
   );
   const entries = useTimesheetEntriesQuery({ fromUtc, toUtc }, Boolean(clientName));
+  const sessions = useSessionsQuery({ fromUtc, toUtc }, Boolean(clientName));
   const clientProjectIds = useMemo(
     () => new Set((report.data?.byProject ?? []).map((row) => row.projectId)),
     [report.data?.byProject],
@@ -680,9 +748,16 @@ function ClientReportView({
     () => (entries.data ?? []).filter((entry) => clientProjectIds.has(entry.projectId)),
     [entries.data, clientProjectIds],
   );
+  const clientSessions = useMemo(
+    () =>
+      (sessions.data ?? []).filter(
+        (session) => session.projectId != null && clientProjectIds.has(session.projectId),
+      ),
+    [sessions.data, clientProjectIds],
+  );
   const byDay = useMemo(
-    () => buildLocalDailyBreakdown(clientEntries, fromUtc, toUtc),
-    [clientEntries, fromUtc, toUtc],
+    () => buildLocalDailyBreakdown(clientEntries, fromUtc, toUtc, clientSessions),
+    [clientEntries, clientSessions, fromUtc, toUtc],
   );
 
   const categoryChart = (report.data?.byCategory ?? []).map((row) => ({
@@ -697,7 +772,9 @@ function ClientReportView({
   if (!clientName) {
     return <EmptyState message="Select a client to view its timesheet report." />;
   }
-  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading client report…" />;
+  if (report.isLoading || entries.isLoading || sessions.isLoading) {
+    return <LoadingState label="Loading client report…" />;
+  }
   if (report.error) {
     return (
       <ErrorState
@@ -710,6 +787,15 @@ function ClientReportView({
       <ErrorState
         message={
           entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
+      />
+    );
+  }
+  if (sessions.error) {
+    return (
+      <ErrorState
+        message={
+          sessions.error instanceof Error ? sessions.error.message : 'Failed to load sessions'
         }
       />
     );
@@ -947,6 +1033,9 @@ function DaySessionsDialog({
   const allowedProjectIds = useMemo(() => new Set(projectIds ?? []), [projectIds]);
   const visibleSessions = useMemo(() => {
     return (sessions.data ?? []).filter((session) => {
+      if (!sessionOverlapsLocalDay(session, day)) {
+        return false;
+      }
       const matchesProject =
         allowedProjectIds.size === 0 ||
         (session.projectId ? allowedProjectIds.has(session.projectId) : false);
@@ -959,11 +1048,14 @@ function DaySessionsDialog({
       const status = session.status ?? (session.isActive ? 'Active' : '—');
       return status === statusFilter;
     });
-  }, [allowedProjectIds, sessions.data, statusFilter]);
+  }, [allowedProjectIds, day, sessions.data, statusFilter]);
 
   const sessionStatusOptions = useMemo(() => {
     const values = new Set<string>();
     for (const session of sessions.data ?? []) {
+      if (!sessionOverlapsLocalDay(session, day)) {
+        continue;
+      }
       if (
         allowedProjectIds.size > 0 &&
         !(session.projectId && allowedProjectIds.has(session.projectId))
@@ -973,7 +1065,7 @@ function DaySessionsDialog({
       values.add(session.status ?? (session.isActive ? 'Active' : '—'));
     }
     return [...values].sort((a, b) => a.localeCompare(b));
-  }, [allowedProjectIds, sessions.data]);
+  }, [allowedProjectIds, day, sessions.data]);
 
   return (
     <PopupForm
@@ -992,12 +1084,12 @@ function DaySessionsDialog({
         <ErrorState
           message={sessions.error instanceof Error ? sessions.error.message : 'Failed to load sessions'}
         />
-      ) : (sessions.data ?? []).length === 0 ||
-        (sessions.data ?? []).every(
+      ) : (sessions.data ?? []).filter(
           (session) =>
-            allowedProjectIds.size > 0 &&
-            !(session.projectId && allowedProjectIds.has(session.projectId)),
-        ) ? (
+            sessionOverlapsLocalDay(session, day) &&
+            (allowedProjectIds.size === 0 ||
+              (session.projectId != null && allowedProjectIds.has(session.projectId))),
+        ).length === 0 ? (
         <EmptyState message="No sessions were active on this day for this report." />
       ) : (
         <div className="stack">

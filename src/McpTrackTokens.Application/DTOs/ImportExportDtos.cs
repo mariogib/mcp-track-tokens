@@ -319,3 +319,19 @@ public sealed record RecalculateWindowsResultDto
 
     public string CalculationVersion { get; init; } = "1.0";
 }
+
+/// <summary>
+/// Request to recalculate activity windows (prompt/session active-time links).
+/// </summary>
+public sealed record RecalculateWindowsRequestDto
+{
+    public Guid? ProjectId { get; init; }
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public int? InactivityThresholdMinutes { get; init; }
+
+    public bool DryRun { get; init; }
+}

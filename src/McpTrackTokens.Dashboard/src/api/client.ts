@@ -52,6 +52,8 @@ import type {
   CreateProjectRequest,
   DeleteActivityRequestDto,
   DeleteActivityResultDto,
+  RecalculateWindowsRequestDto,
+  RecalculateWindowsResultDto,
   UnallocatedBundle,
   UnallocatedItemDto,
   UnallocatedUsageReport,
@@ -614,6 +616,13 @@ export const api = {
 
   deleteActivity: (body: DeleteActivityRequestDto, signal?: AbortSignal) =>
     apiRequest<DeleteActivityResultDto>('/api/v1/activity/delete', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  recalculateActivityWindows: (body: RecalculateWindowsRequestDto, signal?: AbortSignal) =>
+    apiRequest<RecalculateWindowsResultDto>('/api/v1/activity/windows/recalculate', {
       method: 'POST',
       body,
       signal,

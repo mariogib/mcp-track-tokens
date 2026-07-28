@@ -15,6 +15,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
+        var versionItem = new ToolStripMenuItem($"MCP Track Tokens v{GetAppVersion()}")
+        {
+            Enabled = false
+        };
         _statusItem = new ToolStripMenuItem("Status: Starting…") { Enabled = false };
         _startItem = new ToolStripMenuItem("Start server", null, OnStartClicked);
         _stopItem = new ToolStripMenuItem("Stop server", null, OnStopClicked);
@@ -22,6 +26,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var exitItem = new ToolStripMenuItem("Exit", null, OnExitClicked);
 
         var menu = new ThemedContextMenuStrip();
+        menu.Items.Add(versionItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(openItem);
@@ -167,13 +173,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             await _host.StopAsync().ConfigureAwait(true);
         }
+        catch
+        {
+            // Best-effort shutdown; process exit below is authoritative.
+        }
         finally
         {
-            _tray.Visible = false;
-            _tray.Dispose();
-            _statusTimer.Dispose();
-            await _host.DisposeAsync().ConfigureAwait(true);
-            ExitThread();
+            try
+            {
+                _tray.Visible = false;
+                _tray.Dispose();
+                _statusTimer.Dispose();
+                await _host.DisposeAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Ignore cleanup failures during exit.
+            }
+
+            // ExitThread() only ends the WinForms message loop. The in-process
+            // Kestrel/MCP host can leave non-background work running, so the
+            // process stays visible in Task Manager. Force a full process exit.
+            Environment.Exit(0);
         }
     }
 
@@ -187,5 +208,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         base.Dispose(disposing);
+    }
+
+    private static string GetAppVersion()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        var informational = assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            // Strip optional SemVer build metadata (e.g. "+abc123").
+            var plus = informational.IndexOf('+', StringComparison.Ordinal);
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
+        return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 }
