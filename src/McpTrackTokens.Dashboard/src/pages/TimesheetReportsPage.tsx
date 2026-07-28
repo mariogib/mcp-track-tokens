@@ -6,6 +6,7 @@ import {
   useSessionPromptsQuery,
   useSessionsQuery,
   useTimesheetClientReportQuery,
+  useTimesheetEntriesQuery,
   useTimesheetOverallReportQuery,
   useTimesheetProjectReportQuery,
   useTimesheetReportMonthsQuery,
@@ -16,6 +17,7 @@ import type {
   TimesheetCategoryBreakdownRow,
   TimesheetClientBreakdownRow,
   TimesheetDailyBreakdownRow,
+  TimesheetEntryDto,
   TimesheetProjectBreakdownRow,
   TimesheetReportTotals,
 } from '../api/types';
@@ -23,6 +25,7 @@ import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../comp
 import { DateRangeFilters } from '../components/DateRangeFilters';
 import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
+import { StatusBadge } from '../components/StatusBadge';
 import { PopupForm, TextLink } from '../shared/adminUi';
 import {
   currentUtcYearMonth,
@@ -43,6 +46,17 @@ import {
 
 type ReportScope = 'all' | 'project' | 'client';
 
+type TimesheetEntriesDrilldown = {
+  title: string;
+  fromUtc: string;
+  toUtc: string;
+  projectIds?: string[];
+  categoryId?: string;
+  openOnly?: boolean;
+  /** When set, only entries that started on this local calendar day are shown. */
+  day?: string;
+};
+
 function parseReportScope(value: string | null): ReportScope {
   if (value === 'project' || value === 'client') return value;
   return 'all';
@@ -52,11 +66,64 @@ function hoursFromSeconds(seconds: number): number {
   return Math.round((seconds / 3600) * 100) / 100;
 }
 
-function dayBoundsUtc(day: string): { fromUtc: string; toUtc: string } {
-  return {
-    fromUtc: `${day}T00:00:00.000Z`,
-    toUtc: `${day}T23:59:59.999Z`,
-  };
+/** Local-calendar day bounds as UTC instants (matches project timesheet day grouping). */
+function dayBoundsLocal(day: string): { fromUtc: string; toUtc: string } {
+  const [year, month, dayOfMonth] = day.split('-').map(Number);
+  const from = new Date(year, month - 1, dayOfMonth, 0, 0, 0, 0);
+  const to = new Date(year, month - 1, dayOfMonth, 23, 59, 59, 999);
+  return { fromUtc: from.toISOString(), toUtc: to.toISOString() };
+}
+
+function toLocalDayKey(iso: string): string | null {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function shiftLocalDayKey(dayKey: string, deltaDays: number): string {
+  const [year, month, day] = dayKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + deltaDays);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Build by-day rows from entries using local start day — same rules as the entries popup. */
+function buildLocalDailyBreakdown(
+  entries: TimesheetEntryDto[],
+  fromUtc: string,
+  toUtc: string,
+): TimesheetDailyBreakdownRow[] {
+  const fromDay = toLocalDayKey(fromUtc);
+  const toDay = toLocalDayKey(toUtc);
+  if (!fromDay || !toDay) return [];
+
+  const buckets = new Map<string, { durationSeconds: number; entryIds: Set<string> }>();
+  for (let day = fromDay; day <= toDay; day = shiftLocalDayKey(day, 1)) {
+    buckets.set(day, { durationSeconds: 0, entryIds: new Set() });
+    if (day === toDay) break;
+  }
+
+  for (const entry of entries) {
+    const day = toLocalDayKey(entry.startedAtUtc);
+    if (!day || day < fromDay || day > toDay) continue;
+    const bucket = buckets.get(day);
+    if (!bucket) continue;
+    bucket.entryIds.add(entry.id);
+    const durationMs = entryDurationMs(entry);
+    if (durationMs != null && durationMs > 0) {
+      bucket.durationSeconds += Math.floor(durationMs / 1000);
+    }
+  }
+
+  return [...buckets.entries()]
+    .map(([day, bucket]) => ({
+      day,
+      durationSeconds: bucket.durationSeconds,
+      entryCount: bucket.entryIds.size,
+    }))
+    .sort((a, b) => b.day.localeCompare(a.day));
 }
 
 function sessionDurationMs(session: SessionDto): number | null {
@@ -69,20 +136,64 @@ function sessionDurationMs(session: SessionDto): number | null {
   return ended - started;
 }
 
-function TotalsCards({ totals }: { totals: TimesheetReportTotals }) {
+function entryDurationMs(entry: TimesheetEntryDto): number | null {
+  const start = new Date(entry.startedAtUtc).getTime();
+  if (Number.isNaN(start)) return null;
+  const end = entry.endedAtUtc ? new Date(entry.endedAtUtc).getTime() : Date.now();
+  if (Number.isNaN(end) || end < start) return null;
+  return end - start;
+}
+
+function EntryCountLink({
+  count,
+  onClick,
+}: {
+  count: number;
+  onClick?: () => void;
+}) {
+  const label = formatNumber(count);
+  if (!onClick || count <= 0) {
+    return <>{label}</>;
+  }
+  return <TextLink onClick={onClick}>{label}</TextLink>;
+}
+
+function TotalsCards({
+  totals,
+  onEntriesClick,
+  onOpenEntriesClick,
+}: {
+  totals: TimesheetReportTotals;
+  onEntriesClick?: () => void;
+  onOpenEntriesClick?: () => void;
+}) {
   return (
     <div className="metric-grid">
       <MetricCard
         label="Total time"
         value={formatDurationSeconds(totals.totalDurationSeconds)}
       />
-      <MetricCard label="Entries" value={formatNumber(totals.entryCount)} />
-      <MetricCard label="Open entries" value={formatNumber(totals.openEntryCount)} />
+      <MetricCard
+        label="Timesheet entries"
+        value={formatNumber(totals.entryCount)}
+        onClick={totals.entryCount > 0 ? onEntriesClick : undefined}
+      />
+      <MetricCard
+        label="Open timesheet entries"
+        value={formatNumber(totals.openEntryCount)}
+        onClick={totals.openEntryCount > 0 ? onOpenEntriesClick : undefined}
+      />
     </div>
   );
 }
 
-function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
+function CategoryTable({
+  rows,
+  onEntriesClick,
+}: {
+  rows: TimesheetCategoryBreakdownRow[];
+  onEntriesClick?: (row: TimesheetCategoryBreakdownRow) => void;
+}) {
   if (rows.length === 0) {
     return <EmptyState message="No category breakdown for this range." />;
   }
@@ -93,7 +204,7 @@ function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
           <tr>
             <th>Category</th>
             <th>Duration</th>
-            <th>Entries</th>
+            <th>Timesheet entries</th>
           </tr>
         </thead>
         <tbody>
@@ -101,7 +212,12 @@ function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
             <tr key={row.categoryId}>
               <td>{row.categoryName}</td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
-              <td>{formatNumber(row.entryCount)}</td>
+              <td>
+                <EntryCountLink
+                  count={row.entryCount}
+                  onClick={onEntriesClick ? () => onEntriesClick(row) : undefined}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -110,7 +226,13 @@ function CategoryTable({ rows }: { rows: TimesheetCategoryBreakdownRow[] }) {
   );
 }
 
-function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
+function ProjectTable({
+  rows,
+  onEntriesClick,
+}: {
+  rows: TimesheetProjectBreakdownRow[];
+  onEntriesClick?: (row: TimesheetProjectBreakdownRow) => void;
+}) {
   if (rows.length === 0) {
     return <EmptyState message="No project breakdown for this range." />;
   }
@@ -122,7 +244,7 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
             <th>Project</th>
             <th>Client</th>
             <th>Duration</th>
-            <th>Entries</th>
+            <th>Timesheet entries</th>
           </tr>
         </thead>
         <tbody>
@@ -133,7 +255,12 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
               </td>
               <td>{row.clientName?.trim() ? row.clientName : '—'}</td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
-              <td>{formatNumber(row.entryCount)}</td>
+              <td>
+                <EntryCountLink
+                  count={row.entryCount}
+                  onClick={onEntriesClick ? () => onEntriesClick(row) : undefined}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -145,9 +272,11 @@ function ProjectTable({ rows }: { rows: TimesheetProjectBreakdownRow[] }) {
 function ClientTable({
   rows,
   onClientClick,
+  onEntriesClick,
 }: {
   rows: TimesheetClientBreakdownRow[];
   onClientClick?: (clientName: string) => void;
+  onEntriesClick?: (row: TimesheetClientBreakdownRow) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyState message="No client breakdown for this range." />;
@@ -160,7 +289,7 @@ function ClientTable({
             <th>Client</th>
             <th>Projects</th>
             <th>Duration</th>
-            <th>Entries</th>
+            <th>Timesheet entries</th>
           </tr>
         </thead>
         <tbody>
@@ -175,7 +304,12 @@ function ClientTable({
               </td>
               <td>{formatNumber(row.projectCount)}</td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
-              <td>{formatNumber(row.entryCount)}</td>
+              <td>
+                <EntryCountLink
+                  count={row.entryCount}
+                  onClick={onEntriesClick ? () => onEntriesClick(row) : undefined}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -187,9 +321,11 @@ function ClientTable({
 function DailyTable({
   rows,
   onDayClick,
+  onEntriesClick,
 }: {
   rows: TimesheetDailyBreakdownRow[];
   onDayClick?: (day: string) => void;
+  onEntriesClick?: (day: string) => void;
 }) {
   if (rows.length === 0) {
     return <EmptyState message="No daily activity for this range." />;
@@ -199,9 +335,9 @@ function DailyTable({
       <table className="data">
         <thead>
           <tr>
-            <th>Day (UTC)</th>
+            <th>Day</th>
             <th>Duration</th>
-            <th>Entries</th>
+            <th>Timesheet entries</th>
           </tr>
         </thead>
         <tbody>
@@ -215,7 +351,12 @@ function DailyTable({
                 )}
               </td>
               <td>{formatDurationSeconds(row.durationSeconds)}</td>
-              <td>{formatNumber(row.entryCount)}</td>
+              <td>
+                <EntryCountLink
+                  count={row.entryCount}
+                  onClick={onEntriesClick ? () => onEntriesClick(row.day) : undefined}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -258,18 +399,35 @@ function OverallReportView({
   toUtc,
   onDayClick,
   onClientClick,
+  onEntriesClick,
 }: {
   fromUtc: string;
   toUtc: string;
   onDayClick: (day: string) => void;
   onClientClick: (clientName: string) => void;
+  onEntriesClick: (drilldown: TimesheetEntriesDrilldown) => void;
 }) {
   const report = useTimesheetOverallReportQuery(fromUtc, toUtc);
-  if (report.isLoading) return <LoadingState label="Loading overall report…" />;
+  const entries = useTimesheetEntriesQuery({ fromUtc, toUtc });
+  const byDay = useMemo(
+    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc),
+    [entries.data, fromUtc, toUtc],
+  );
+
+  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading overall report…" />;
   if (report.error) {
     return (
       <ErrorState
         message={report.error instanceof Error ? report.error.message : 'Failed to load report'}
+      />
+    );
+  }
+  if (entries.error) {
+    return (
+      <ErrorState
+        message={
+          entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
       />
     );
   }
@@ -293,9 +451,18 @@ function OverallReportView({
       hours: hoursFromSeconds(row.durationSeconds),
     }));
 
+  const openRange = (patch: Partial<TimesheetEntriesDrilldown> & Pick<TimesheetEntriesDrilldown, 'title'>) =>
+    onEntriesClick({ fromUtc, toUtc, ...patch });
+
   return (
     <div className="stack">
-      <TotalsCards totals={report.data.totals} />
+      <TotalsCards
+        totals={report.data.totals}
+        onEntriesClick={() => openRange({ title: 'Timesheet entries' })}
+        onOpenEntriesClick={() =>
+          openRange({ title: 'Open timesheet entries', openOnly: true })
+        }
+      />
       <div className="chart-grid">
         {categoryChart.length > 0 ? (
           <ChartCard title="By category (hours)">
@@ -312,23 +479,62 @@ function OverallReportView({
             <NamedBarChart data={clientChart} valueKey="hours" valueLabel="Hours" />
           </ChartCard>
         ) : null}
-        <DailyChart rows={report.data.byDay} onDayClick={onDayClick} />
+        <DailyChart rows={byDay} onDayClick={onDayClick} />
       </div>
       <section className="page-section">
         <h3>By category</h3>
-        <CategoryTable rows={report.data.byCategory} />
+        <CategoryTable
+          rows={report.data.byCategory}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.categoryName}`,
+              categoryId: row.categoryId,
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By project</h3>
-        <ProjectTable rows={report.data.byProject} />
+        <ProjectTable
+          rows={report.data.byProject}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.projectName}`,
+              projectIds: [row.projectId],
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By client</h3>
-        <ClientTable rows={report.data.byClient} onClientClick={onClientClick} />
+        <ClientTable
+          rows={report.data.byClient}
+          onClientClick={onClientClick}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.clientName}`,
+              projectIds: report.data.byProject
+                .filter((project) => (project.clientName?.trim() || '') === row.clientName)
+                .map((project) => project.projectId),
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By day</h3>
-        <DailyTable rows={report.data.byDay} onDayClick={onDayClick} />
+        <DailyTable
+          rows={byDay}
+          onDayClick={onDayClick}
+          onEntriesClick={(day) => {
+            const bounds = dayBoundsLocal(day);
+            openRange({
+              title: `Timesheet entries on ${day}`,
+              fromUtc: bounds.fromUtc,
+              toUtc: bounds.toUtc,
+              day,
+            });
+          }}
+        />
       </section>
     </div>
   );
@@ -339,13 +545,23 @@ function ProjectReportView({
   toUtc,
   projectId,
   onDayClick,
+  onEntriesClick,
 }: {
   fromUtc: string;
   toUtc: string;
   projectId: string;
   onDayClick: (day: string, projectIds?: string[]) => void;
+  onEntriesClick: (drilldown: TimesheetEntriesDrilldown) => void;
 }) {
   const report = useTimesheetProjectReportQuery(projectId || undefined, fromUtc, toUtc, Boolean(projectId));
+  const entries = useTimesheetEntriesQuery(
+    { projectId: projectId || undefined, fromUtc, toUtc },
+    Boolean(projectId),
+  );
+  const byDay = useMemo(
+    () => buildLocalDailyBreakdown(entries.data ?? [], fromUtc, toUtc),
+    [entries.data, fromUtc, toUtc],
+  );
 
   const categoryChart = (report.data?.byCategory ?? []).map((row) => ({
     name: row.categoryName,
@@ -355,7 +571,7 @@ function ProjectReportView({
   if (!projectId) {
     return <EmptyState message="Select a project to view its timesheet report." />;
   }
-  if (report.isLoading) return <LoadingState label="Loading project report…" />;
+  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading project report…" />;
   if (report.error) {
     return (
       <ErrorState
@@ -363,7 +579,20 @@ function ProjectReportView({
       />
     );
   }
+  if (entries.error) {
+    return (
+      <ErrorState
+        message={
+          entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
+      />
+    );
+  }
   if (!report.data) return null;
+
+  const projectIds = [projectId];
+  const openRange = (patch: Partial<TimesheetEntriesDrilldown> & Pick<TimesheetEntriesDrilldown, 'title'>) =>
+    onEntriesClick({ fromUtc, toUtc, projectIds, ...patch });
 
   return (
     <div className="stack">
@@ -371,22 +600,53 @@ function ProjectReportView({
         {report.data.projectName}
         {report.data.clientName?.trim() ? ` · ${report.data.clientName}` : ''}
       </p>
-      <TotalsCards totals={report.data.totals} />
+      <TotalsCards
+        totals={report.data.totals}
+        onEntriesClick={() =>
+          openRange({ title: `Timesheet entries · ${report.data.projectName}` })
+        }
+        onOpenEntriesClick={() =>
+          openRange({
+            title: `Open timesheet entries · ${report.data.projectName}`,
+            openOnly: true,
+          })
+        }
+      />
       <div className="chart-grid">
         {categoryChart.length > 0 ? (
           <ChartCard title="By category (hours)">
             <NamedPieChart data={categoryChart} nameKey="name" valueKey="hours" />
           </ChartCard>
         ) : null}
-        <DailyChart rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
+        <DailyChart rows={byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
       </div>
       <section className="page-section">
         <h3>By category</h3>
-        <CategoryTable rows={report.data.byCategory} />
+        <CategoryTable
+          rows={report.data.byCategory}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.categoryName}`,
+              categoryId: row.categoryId,
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By day</h3>
-        <DailyTable rows={report.data.byDay} onDayClick={(day) => onDayClick(day, [projectId])} />
+        <DailyTable
+          rows={byDay}
+          onDayClick={(day) => onDayClick(day, [projectId])}
+          onEntriesClick={(day) => {
+            const bounds = dayBoundsLocal(day);
+            openRange({
+              title: `Timesheet entries on ${day}`,
+              fromUtc: bounds.fromUtc,
+              toUtc: bounds.toUtc,
+              day,
+            });
+          }}
+        />
       </section>
     </div>
   );
@@ -397,17 +657,32 @@ function ClientReportView({
   toUtc,
   clientName,
   onDayClick,
+  onEntriesClick,
 }: {
   fromUtc: string;
   toUtc: string;
   clientName: string;
   onDayClick: (day: string, projectIds?: string[]) => void;
+  onEntriesClick: (drilldown: TimesheetEntriesDrilldown) => void;
 }) {
   const report = useTimesheetClientReportQuery(
     clientName || undefined,
     fromUtc,
     toUtc,
     Boolean(clientName),
+  );
+  const entries = useTimesheetEntriesQuery({ fromUtc, toUtc }, Boolean(clientName));
+  const clientProjectIds = useMemo(
+    () => new Set((report.data?.byProject ?? []).map((row) => row.projectId)),
+    [report.data?.byProject],
+  );
+  const clientEntries = useMemo(
+    () => (entries.data ?? []).filter((entry) => clientProjectIds.has(entry.projectId)),
+    [entries.data, clientProjectIds],
+  );
+  const byDay = useMemo(
+    () => buildLocalDailyBreakdown(clientEntries, fromUtc, toUtc),
+    [clientEntries, fromUtc, toUtc],
   );
 
   const categoryChart = (report.data?.byCategory ?? []).map((row) => ({
@@ -422,7 +697,7 @@ function ClientReportView({
   if (!clientName) {
     return <EmptyState message="Select a client to view its timesheet report." />;
   }
-  if (report.isLoading) return <LoadingState label="Loading client report…" />;
+  if (report.isLoading || entries.isLoading) return <LoadingState label="Loading client report…" />;
   if (report.error) {
     return (
       <ErrorState
@@ -430,12 +705,36 @@ function ClientReportView({
       />
     );
   }
+  if (entries.error) {
+    return (
+      <ErrorState
+        message={
+          entries.error instanceof Error ? entries.error.message : 'Failed to load timesheet entries'
+        }
+      />
+    );
+  }
   if (!report.data) return null;
+
+  const projectIds = report.data.byProject.map((row) => row.projectId);
+  const openRange = (patch: Partial<TimesheetEntriesDrilldown> & Pick<TimesheetEntriesDrilldown, 'title'>) =>
+    onEntriesClick({ fromUtc, toUtc, projectIds, ...patch });
 
   return (
     <div className="stack">
       <p className="muted">{report.data.clientName}</p>
-      <TotalsCards totals={report.data.totals} />
+      <TotalsCards
+        totals={report.data.totals}
+        onEntriesClick={() =>
+          openRange({ title: `Timesheet entries · ${report.data.clientName}` })
+        }
+        onOpenEntriesClick={() =>
+          openRange({
+            title: `Open timesheet entries · ${report.data.clientName}`,
+            openOnly: true,
+          })
+        }
+      />
       <div className="chart-grid">
         {projectChart.length > 0 ? (
           <ChartCard title="By project (hours)">
@@ -448,26 +747,179 @@ function ClientReportView({
           </ChartCard>
         ) : null}
         <DailyChart
-          rows={report.data.byDay}
+          rows={byDay}
           onDayClick={(day) => onDayClick(day, report.data?.byProject.map((row) => row.projectId))}
         />
       </div>
       <section className="page-section">
         <h3>By project</h3>
-        <ProjectTable rows={report.data.byProject} />
+        <ProjectTable
+          rows={report.data.byProject}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.projectName}`,
+              projectIds: [row.projectId],
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By category</h3>
-        <CategoryTable rows={report.data.byCategory} />
+        <CategoryTable
+          rows={report.data.byCategory}
+          onEntriesClick={(row) =>
+            openRange({
+              title: `Timesheet entries · ${row.categoryName}`,
+              categoryId: row.categoryId,
+            })
+          }
+        />
       </section>
       <section className="page-section">
         <h3>By day</h3>
         <DailyTable
-          rows={report.data.byDay}
+          rows={byDay}
           onDayClick={(day) => onDayClick(day, report.data?.byProject.map((row) => row.projectId))}
+          onEntriesClick={(day) => {
+            const bounds = dayBoundsLocal(day);
+            openRange({
+              title: `Timesheet entries on ${day}`,
+              fromUtc: bounds.fromUtc,
+              toUtc: bounds.toUtc,
+              day,
+            });
+          }}
         />
       </section>
     </div>
+  );
+}
+
+function TimesheetEntriesDialog({
+  drilldown,
+  projectNameById,
+  onClose,
+}: {
+  drilldown: TimesheetEntriesDrilldown;
+  projectNameById: Map<string, string>;
+  onClose: () => void;
+}) {
+  const singleProjectId =
+    drilldown.projectIds?.length === 1 ? drilldown.projectIds[0] : undefined;
+  const entries = useTimesheetEntriesQuery(
+    {
+      projectId: singleProjectId,
+      fromUtc: drilldown.fromUtc,
+      toUtc: drilldown.toUtc,
+    },
+    true,
+  );
+  const allowedProjectIds = useMemo(
+    () => new Set(drilldown.projectIds ?? []),
+    [drilldown.projectIds],
+  );
+
+  const visibleEntries = useMemo(() => {
+    return (entries.data ?? [])
+      .filter((entry) => {
+        if (
+          allowedProjectIds.size > 0 &&
+          !allowedProjectIds.has(entry.projectId)
+        ) {
+          return false;
+        }
+        if (drilldown.categoryId && entry.categoryId !== drilldown.categoryId) {
+          return false;
+        }
+        if (drilldown.openOnly && !entry.isOpen) {
+          return false;
+        }
+        if (drilldown.day && toLocalDayKey(entry.startedAtUtc) !== drilldown.day) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.startedAtUtc.localeCompare(a.startedAtUtc));
+  }, [
+    allowedProjectIds,
+    drilldown.categoryId,
+    drilldown.day,
+    drilldown.openOnly,
+    entries.data,
+  ]);
+
+  return (
+    <PopupForm
+      title={drilldown.title}
+      subtitle={`${formatNumber(visibleEntries.length)} entr${visibleEntries.length === 1 ? 'y' : 'ies'}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {entries.isLoading ? (
+        <LoadingState label="Loading timesheet entries…" />
+      ) : entries.error ? (
+        <ErrorState
+          message={
+            entries.error instanceof Error
+              ? entries.error.message
+              : 'Failed to load timesheet entries'
+          }
+        />
+      ) : visibleEntries.length === 0 ? (
+        <EmptyState message="No timesheet entries match this selection." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Project</th>
+                <th>Category</th>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Duration</th>
+                <th>Status</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleEntries.map((entry) => {
+                const duration = entryDurationMs(entry);
+                return (
+                  <tr key={entry.id}>
+                    <td>
+                      <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
+                        {entry.projectName?.trim() ||
+                          projectNameById.get(entry.projectId) ||
+                          entry.projectId}
+                      </TextLink>
+                    </td>
+                    <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                    <td>{formatDateTime(entry.startedAtUtc)}</td>
+                    <td>{formatDateTime(entry.endedAtUtc)}</td>
+                    <td>
+                      {duration == null
+                        ? '—'
+                        : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                    </td>
+                    <td>
+                      <StatusBadge
+                        label={entry.isOpen ? 'Open' : 'Closed'}
+                        tone={entry.isOpen ? 'success' : 'neutral'}
+                      />
+                    </td>
+                    <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </PopupForm>
   );
 }
 
@@ -484,7 +936,7 @@ function DaySessionsDialog({
   onClose: () => void;
   onSessionClick: (session: SessionDto) => void;
 }) {
-  const bounds = useMemo(() => dayBoundsUtc(day), [day]);
+  const bounds = useMemo(() => dayBoundsLocal(day), [day]);
   const singleProjectId = projectIds?.length === 1 ? projectIds[0] : undefined;
   const sessions = useSessionsQuery({
     projectId: singleProjectId,
@@ -751,6 +1203,9 @@ export function TimesheetReportsPage() {
     projectIds?: string[];
   } | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionDto | null>(null);
+  const [selectedEntries, setSelectedEntries] = useState<TimesheetEntriesDrilldown | null>(
+    null,
+  );
 
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -831,7 +1286,14 @@ export function TimesheetReportsPage() {
 
   const openDay = (day: string, projectIds?: string[]) => {
     setSelectedSession(null);
+    setSelectedEntries(null);
     setSelectedDay({ day, projectIds: projectIds?.filter(Boolean) });
+  };
+
+  const openEntries = (drilldown: TimesheetEntriesDrilldown) => {
+    setSelectedDay(null);
+    setSelectedSession(null);
+    setSelectedEntries(drilldown);
   };
 
   const focusClient = (name: string) => {
@@ -849,7 +1311,7 @@ export function TimesheetReportsPage() {
           <div>
             <h2>Reports</h2>
             <p className="muted">
-              Billable time by range, optionally filtered to one project or client. Open entries
+              Billable time by range, optionally filtered to one project or client. Open timesheet entries
               count through now within the selected range.
             </p>
           </div>
@@ -947,6 +1409,7 @@ export function TimesheetReportsPage() {
             toUtc={range.toUtc}
             onDayClick={openDay}
             onClientClick={focusClient}
+            onEntriesClick={openEntries}
           />
         ) : scope === 'project' ? (
           <ProjectReportView
@@ -954,6 +1417,7 @@ export function TimesheetReportsPage() {
             toUtc={range.toUtc}
             projectId={projectId}
             onDayClick={openDay}
+            onEntriesClick={openEntries}
           />
         ) : (
           <ClientReportView
@@ -961,9 +1425,17 @@ export function TimesheetReportsPage() {
             toUtc={range.toUtc}
             clientName={clientName}
             onDayClick={openDay}
+            onEntriesClick={openEntries}
           />
         )}
       </section>
+      {selectedEntries ? (
+        <TimesheetEntriesDialog
+          drilldown={selectedEntries}
+          projectNameById={projectNameById}
+          onClose={() => setSelectedEntries(null)}
+        />
+      ) : null}
       {selectedDay ? (
         <DaySessionsDialog
           day={selectedDay.day}

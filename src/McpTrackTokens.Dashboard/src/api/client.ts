@@ -508,9 +508,14 @@ export const api = {
       signal,
     }),
 
-  getTimesheetOverallReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+  getTimesheetOverallReport: (
+    fromUtc: string,
+    toUtc: string,
+    timeZoneOffsetMinutes?: number,
+    signal?: AbortSignal,
+  ) =>
     apiRequest<TimesheetOverallReport>('/api/v1/timesheet/reports/overall', {
-      query: { fromUtc, toUtc },
+      query: { fromUtc, toUtc, timeZoneOffsetMinutes },
       signal,
     }),
 
@@ -530,10 +535,11 @@ export const api = {
     projectId: string,
     fromUtc: string,
     toUtc: string,
+    timeZoneOffsetMinutes?: number,
     signal?: AbortSignal,
   ) =>
     apiRequest<TimesheetProjectReport>(`/api/v1/timesheet/reports/projects/${projectId}`, {
-      query: { fromUtc, toUtc },
+      query: { fromUtc, toUtc, timeZoneOffsetMinutes },
       signal,
     }),
 
@@ -541,12 +547,13 @@ export const api = {
     clientName: string,
     fromUtc: string,
     toUtc: string,
+    timeZoneOffsetMinutes?: number,
     signal?: AbortSignal,
   ) =>
     apiRequest<TimesheetClientReport>(
       `/api/v1/timesheet/reports/clients/${encodeURIComponent(clientName)}`,
       {
-        query: { fromUtc, toUtc },
+        query: { fromUtc, toUtc, timeZoneOffsetMinutes },
         signal,
       },
     ),

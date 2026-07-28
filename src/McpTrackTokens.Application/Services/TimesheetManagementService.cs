@@ -271,39 +271,50 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         var openForProject = await _timesheets.ListOpenByProjectAsync(projectId, cancellationToken)
             .ConfigureAwait(false);
 
-            if (openForProject.Count > 0)
+        var handledEntryIds = new HashSet<Guid>();
+        var crossedDay = false;
+        if (openForProject.Count > 0)
+        {
+            foreach (var open in openForProject.OrderBy(e => e.StartedAtUtc))
             {
-                var crossedDay = false;
-                foreach (var open in openForProject.OrderBy(e => e.StartedAtUtc))
+                var startDay = ToCalendarDay(open.StartedAtUtc);
+                if (startDay >= activityDay)
                 {
-                    var startDay = ToCalendarDay(open.StartedAtUtc);
-                    if (startDay >= activityDay)
-                    {
-                        continue;
-                    }
-
-                    var closeAt = await ResolveDayBoundaryCloseAsync(projectId, open, startDay, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (closeAt <= open.StartedAtUtc)
-                    {
-                        await _timesheets.DeleteAsync(open, cancellationToken).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        open.End(closeAt, DayBoundaryNotes);
-                        await _timesheets.UpdateAsync(open, cancellationToken).ConfigureAwait(false);
-                    }
-
-                    crossedDay = true;
+                    continue;
                 }
 
-                if (!crossedDay)
+                var closeAt = await ResolveDayBoundaryCloseAsync(projectId, open, startDay, cancellationToken)
+                    .ConfigureAwait(false);
+                if (closeAt <= open.StartedAtUtc)
                 {
-                    return;
+                    await _timesheets.DeleteAsync(open, cancellationToken).ConfigureAwait(false);
                 }
+                else
+                {
+                    open.End(closeAt, DayBoundaryNotes);
+                    await _timesheets.UpdateAsync(open, cancellationToken).ConfigureAwait(false);
+                }
+
+                handledEntryIds.Add(open.Id);
+                crossedDay = true;
             }
 
-        await CloseAllOpenEntriesAsync(activityAt, AutoclosedNotes, exceptEntryId: null, cancellationToken)
+            if (!crossedDay)
+            {
+                return;
+            }
+
+            // Persist day-boundary closes before autoclose scans opens, otherwise the same
+            // entries are re-closed and their end time can be overwritten to a zero-duration.
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await CloseAllOpenEntriesAsync(
+                activityAt,
+                AutoclosedNotes,
+                exceptEntryId: null,
+                excludeEntryIds: handledEntryIds,
+                cancellationToken)
             .ConfigureAwait(false);
 
         var category = await ResolveCategoryAsync(
@@ -312,7 +323,19 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             requireActive: false,
             cancellationToken).ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(projectId, category.Id, activityAt, AutocreatedNotes);
+        var newStart = activityAt;
+        if (crossedDay)
+        {
+            // Keep coverage continuous when work continues past midnight: start the new day
+            // entry at local calendar midnight rather than the first post-midnight prompt.
+            var (dayStart, _) = GetCalendarDayBoundsUtc(activityDay);
+            if (dayStart < activityAt)
+            {
+                newStart = dayStart;
+            }
+        }
+
+        var entry = TimesheetEntry.Start(projectId, category.Id, newStart, AutocreatedNotes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
@@ -463,11 +486,36 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         string? appendNotes,
         Guid? exceptEntryId,
         CancellationToken cancellationToken)
+        => await CloseAllOpenEntriesAsync(
+                endedAtUtc,
+                appendNotes,
+                exceptEntryId,
+                excludeEntryIds: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private async Task CloseAllOpenEntriesAsync(
+        DateTimeOffset endedAtUtc,
+        string? appendNotes,
+        Guid? exceptEntryId,
+        IReadOnlySet<Guid>? excludeEntryIds,
+        CancellationToken cancellationToken)
     {
         var open = await _timesheets.ListOpenAsync(cancellationToken).ConfigureAwait(false);
         foreach (var entry in open)
         {
             if (exceptEntryId is Guid keep && entry.Id == keep)
+            {
+                continue;
+            }
+
+            if (excludeEntryIds is not null && excludeEntryIds.Contains(entry.Id))
+            {
+                continue;
+            }
+
+            // Already closed in this unit of work (e.g. day-boundary) — do not overwrite.
+            if (entry.EndedAtUtc is not null)
             {
                 continue;
             }

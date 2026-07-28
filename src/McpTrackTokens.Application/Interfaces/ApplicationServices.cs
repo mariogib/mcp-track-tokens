@@ -217,18 +217,21 @@ public interface ITimesheetReportService
     Task<TimesheetOverallReport> GetOverallReportAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<TimesheetProjectReport> GetProjectReportAsync(
         Guid projectId,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<TimesheetClientReport> GetClientReportAsync(
         string clientName,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

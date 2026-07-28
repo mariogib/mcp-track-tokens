@@ -846,12 +846,15 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetOverallReportAsync(from, to, cancellationToken).ConfigureAwait(false);
+            var report = await reports
+                .GetOverallReportAsync(from, to, timeZoneOffsetMinutes, cancellationToken)
+                .ConfigureAwait(false);
             return Results.Ok(report);
         }
         catch (Exception ex)
@@ -884,12 +887,14 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetProjectReportAsync(id, from, to, cancellationToken)
+            var report = await reports
+                .GetProjectReportAsync(id, from, to, timeZoneOffsetMinutes, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
         }
@@ -904,13 +909,15 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var decoded = Uri.UnescapeDataString(clientName);
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetClientReportAsync(decoded, from, to, cancellationToken)
+            var report = await reports
+                .GetClientReportAsync(decoded, from, to, timeZoneOffsetMinutes, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
         }

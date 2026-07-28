@@ -105,9 +105,46 @@ public sealed class TimesheetManagementServiceTests
 
         added.Should().NotBeNull();
         added!.ProjectId.Should().Be(projectId);
-        added.StartedAtUtc.Should().Be(nextDayActivity);
+        // New day entry starts at calendar midnight so coverage stays continuous.
+        added.StartedAtUtc.Should().Be(DateTimeOffset.Parse("2026-07-21T00:00:00Z"));
         added.EndedAtUtc.Should().BeNull();
         added.Notes.Should().Be("autocreated");
+    }
+
+    [Fact]
+    public async Task EnsureAutocreated_cross_day_does_not_overwrite_boundary_close_with_autoclose()
+    {
+        var projectId = Guid.NewGuid();
+        var open = TimesheetEntry.Start(
+            projectId,
+            TimesheetCategory.WorkId,
+            DateTimeOffset.Parse("2026-07-20T09:00:00Z"),
+            "autocreated");
+        var lastPrompt = DateTimeOffset.Parse("2026-07-20T17:30:00Z");
+        var nextDayActivity = DateTimeOffset.Parse("2026-07-21T08:15:00Z");
+
+        _timesheets.ListOpenByProjectAsync(projectId, Arg.Any<CancellationToken>())
+            .Returns([open]);
+        // Simulate stale open list still returning the day-boundary entry before SaveChanges.
+        _timesheets.ListOpenAsync(Arg.Any<CancellationToken>()).Returns([open]);
+        _events.GetLatestPromptTimestampForProjectAsync(
+                projectId,
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(lastPrompt);
+        _categories.GetByIdAsync(TimesheetCategory.WorkId, Arg.Any<CancellationToken>())
+            .Returns(TimesheetCategory.Create("Work", sortOrder: 0, id: TimesheetCategory.WorkId));
+        _timesheets.AddAsync(Arg.Any<TimesheetEntry>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var sut = CreateSut();
+        await sut.EnsureAutocreatedOpenEntryAsync(projectId, nextDayActivity);
+
+        open.EndedAtUtc.Should().Be(lastPrompt);
+        open.Notes.Should().Contain("day-boundary");
+        open.Notes.Should().NotContain("autoclosed");
+        await _unitOfWork.Received().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -357,7 +394,8 @@ public sealed class TimesheetManagementServiceTests
         open.EndedAtUtc.Should().Be(sessionEnded);
         open.Notes.Should().Contain("day-boundary");
         added.Should().NotBeNull();
-        added!.StartedAtUtc.Should().Be(nextLocalDayActivity);
+        // Local Jul 28 midnight in UTC+2 is 2026-07-27T22:00:00Z.
+        added!.StartedAtUtc.Should().Be(DateTimeOffset.Parse("2026-07-27T22:00:00Z"));
         added.Notes.Should().Be("autocreated");
     }
 }

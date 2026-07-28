@@ -125,12 +125,20 @@ export const queryKeys = {
       search,
       openClosed,
     ] as const,
-  timesheetOverallReport: (from: string, to: string) =>
-    ['timesheet-reports', 'overall', from, to] as const,
-  timesheetProjectReport: (projectId: string, from: string, to: string) =>
-    ['timesheet-reports', 'project', projectId, from, to] as const,
-  timesheetClientReport: (clientName: string, from: string, to: string) =>
-    ['timesheet-reports', 'client', clientName, from, to] as const,
+  timesheetOverallReport: (from: string, to: string, timeZoneOffsetMinutes: number) =>
+    ['timesheet-reports', 'overall', from, to, timeZoneOffsetMinutes] as const,
+  timesheetProjectReport: (
+    projectId: string,
+    from: string,
+    to: string,
+    timeZoneOffsetMinutes: number,
+  ) => ['timesheet-reports', 'project', projectId, from, to, timeZoneOffsetMinutes] as const,
+  timesheetClientReport: (
+    clientName: string,
+    from: string,
+    to: string,
+    timeZoneOffsetMinutes: number,
+  ) => ['timesheet-reports', 'client', clientName, from, to, timeZoneOffsetMinutes] as const,
   timesheetReportMonths: (projectId?: string, clientName?: string) =>
     ['timesheet-reports', 'months', projectId ?? '', clientName ?? ''] as const,
   activeSession: ['sessions', 'active'] as const,
@@ -553,9 +561,11 @@ export function useDeleteTimesheetEntryMutation() {
 }
 
 export function useTimesheetOverallReportQuery(fromUtc: string, toUtc: string, enabled = true) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetOverallReport(fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc, timeZoneOffsetMinutes),
+    queryFn: ({ signal }) =>
+      api.getTimesheetOverallReport(fromUtc, toUtc, timeZoneOffsetMinutes, signal),
     enabled,
   });
 }
@@ -581,9 +591,16 @@ export function useTimesheetProjectReportQuery(
   toUtc: string,
   enabled = true,
 ) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetProjectReport(projectId ?? '', fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetProjectReport(projectId!, fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetProjectReport(
+      projectId ?? '',
+      fromUtc,
+      toUtc,
+      timeZoneOffsetMinutes,
+    ),
+    queryFn: ({ signal }) =>
+      api.getTimesheetProjectReport(projectId!, fromUtc, toUtc, timeZoneOffsetMinutes, signal),
     enabled: enabled && Boolean(projectId),
   });
 }
@@ -594,9 +611,16 @@ export function useTimesheetClientReportQuery(
   toUtc: string,
   enabled = true,
 ) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetClientReport(clientName ?? '', fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetClientReport(clientName!, fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetClientReport(
+      clientName ?? '',
+      fromUtc,
+      toUtc,
+      timeZoneOffsetMinutes,
+    ),
+    queryFn: ({ signal }) =>
+      api.getTimesheetClientReport(clientName!, fromUtc, toUtc, timeZoneOffsetMinutes, signal),
     enabled: enabled && Boolean(clientName),
   });
 }
