@@ -4,12 +4,15 @@
     <OutputType>Package</OutputType>
     <OutputName>MCP-Track-Tokens-Setup</OutputName>
     <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+    <!-- Keep MSI ProductVersion in lockstep with Directory.Build.props Version (MajorUpgrade needs a bump). -->
+    <MsiProductVersion Condition="'$(MsiProductVersion)' == ''">$(Version)</MsiProductVersion>
+    <MsiProductVersion Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MsiProductVersion)', '^\d+\.\d+\.\d+$'))">$(MsiProductVersion).0</MsiProductVersion>
     <!-- Published payloads harvested into the MSI -->
     <PublishDir>$(MSBuildThisFileDirectory)..\..\artifacts\tray-publish\</PublishDir>
     <DesktopPublishDir>$(MSBuildThisFileDirectory)..\..\artifacts\desktop-publish\</DesktopPublishDir>
     <IntegrationsContentDir>$(MSBuildThisFileDirectory)..\..\artifacts\integrations-content\</IntegrationsContentDir>
     <IntegrationsHelperDir>$(MSBuildThisFileDirectory)..\..\artifacts\integrations-helper\</IntegrationsHelperDir>
-    <DefineConstants>PublishDir=$(PublishDir);DesktopPublishDir=$(DesktopPublishDir);IntegrationsContentDir=$(IntegrationsContentDir);IntegrationsHelperDir=$(IntegrationsHelperDir)</DefineConstants>
+    <DefineConstants>MsiProductVersion=$(MsiProductVersion);PublishDir=$(PublishDir);DesktopPublishDir=$(DesktopPublishDir);IntegrationsContentDir=$(IntegrationsContentDir);IntegrationsHelperDir=$(IntegrationsHelperDir)</DefineConstants>
     <InstallerPlatform>x64</InstallerPlatform>
     <!-- Dashboard JS assets are versionless; ICE60 is noisy for web UI payloads. -->
     <SuppressIces>ICE60</SuppressIces>

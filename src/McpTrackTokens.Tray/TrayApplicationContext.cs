@@ -15,7 +15,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
-        var versionItem = new ToolStripMenuItem($"MCP Track Tokens v{GetAppVersion()}")
+        var appVersion = GetAppVersion();
+        var versionItem = new ToolStripMenuItem($"MCP Track Tokens v{appVersion}")
         {
             Enabled = false
         };
@@ -41,7 +42,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             Icon = AppIconLoader.Load(),
             Visible = true,
-            Text = "MCP Track Tokens",
+            Text = $"MCP Track Tokens v{appVersion}",
             ContextMenuStrip = menu
         };
         _tray.DoubleClick += (_, _) => OpenDashboard();
@@ -57,7 +58,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnStopClicked(object? sender, EventArgs e) => await StopServerAsync();
 
-    private async void OnExitClicked(object? sender, EventArgs e) => await ExitAsync();
+    private async void OnExitClicked(object? sender, EventArgs e)
+    {
+        var result = MessageBox.Show(
+            "Stop the MCP Track Tokens host and exit?",
+            "MCP Track Tokens",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await ExitAsync();
+    }
 
     private async void OnStatusTick(object? sender, EventArgs e) => await RefreshStatusAsync();
 
@@ -114,25 +129,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        var version = GetAppVersion();
         var healthy = _host.IsRunning && await _host.CheckHealthyAsync().ConfigureAwait(true);
         if (healthy)
         {
             _statusItem.Text = $"Status: Running ({_host.ServerUrl})";
-            _tray.Text = "MCP Track Tokens — Running";
+            _tray.Text = $"MCP Track Tokens v{version} — Running";
             _startItem.Enabled = false;
             _stopItem.Enabled = true;
         }
         else if (_host.IsRunning)
         {
             _statusItem.Text = "Status: Starting / unhealthy";
-            _tray.Text = "MCP Track Tokens — Unhealthy";
+            _tray.Text = $"MCP Track Tokens v{version} — Unhealthy";
             _startItem.Enabled = false;
             _stopItem.Enabled = true;
         }
         else
         {
             _statusItem.Text = "Status: Stopped";
-            _tray.Text = "MCP Track Tokens — Stopped";
+            _tray.Text = $"MCP Track Tokens v{version} — Stopped";
             _startItem.Enabled = true;
             _stopItem.Enabled = false;
         }
