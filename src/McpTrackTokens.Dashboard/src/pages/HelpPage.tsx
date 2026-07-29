@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Panel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { TextLink } from '../shared/adminUi';
+import { copyText } from '../utils/clipboard';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
 
@@ -42,32 +43,6 @@ const MCP_SERVER_JSON = `{
 
 const ENV_VARS = `MCP_TRACK_TOKENS_API_KEY=OverTheMoon
 MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`;
-
-async function copyText(value: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return true;
-    }
-  } catch {
-    // fall through
-  }
-
-  try {
-    const input = document.createElement('textarea');
-    input.value = value;
-    input.setAttribute('readonly', '');
-    input.style.position = 'fixed';
-    input.style.left = '-9999px';
-    document.body.appendChild(input);
-    input.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(input);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function CodeBlock({ children, label = 'Copy' }: { children: string; label?: string }) {
   const [copied, setCopied] = useState(false);

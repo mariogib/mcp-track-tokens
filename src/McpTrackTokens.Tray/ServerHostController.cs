@@ -7,6 +7,8 @@ namespace McpTrackTokens.Tray;
 /// </summary>
 internal sealed class ServerHostController : IAsyncDisposable
 {
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(5);
+
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _runTask;
@@ -60,7 +62,17 @@ internal sealed class ServerHostController : IAsyncDisposable
             _runTask = runTask;
         }
 
-        await WaitForHealthyAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await WaitForHealthyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Health wait failed or was cancelled — tear down this attempt so a retry
+            // cannot orphan the CTS or overlap another TrackingHost.
+            await ShutdownOwnedAsync(cts, runTask, throwOnTimeout: false).ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task StopAsync()
@@ -71,46 +83,15 @@ internal sealed class ServerHostController : IAsyncDisposable
         {
             cts = _cts;
             runTask = _runTask;
-            _cts = null;
-            _runTask = null;
         }
 
-        if (cts is null)
+        if (cts is null && runTask is null)
         {
             return;
         }
 
-        try
-        {
-            await cts.CancelAsync().ConfigureAwait(false);
-            if (runTask is not null)
-            {
-                var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(5)))
-                    .ConfigureAwait(false);
-                if (completed != runTask)
-                {
-                    // Host did not stop in time (e.g. stuck MCP/SSE work). Abandon
-                    // the run task; callers that need a dead process should Exit.
-                    return;
-                }
-
-                // Surface host faults after a clean stop; ignore cancel-related exits.
-                try
-                {
-                    await runTask.ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                }
-                catch (AggregateException ex) when (ex.InnerExceptions.All(static e => e is OperationCanceledException))
-                {
-                }
-            }
-        }
-        finally
-        {
-            cts.Dispose();
-        }
+        // Keep tracking incomplete run tasks so StartAsync cannot overlap a stuck host.
+        await ShutdownOwnedAsync(cts, runTask, throwOnTimeout: true).ConfigureAwait(false);
     }
 
     public async Task<bool> CheckHealthyAsync(CancellationToken cancellationToken = default)
@@ -145,9 +126,111 @@ internal sealed class ServerHostController : IAsyncDisposable
         throw new TimeoutException($"Server did not become healthy at {ServerUrl}/health within 30 seconds.");
     }
 
+    /// <summary>
+    /// Cancels and awaits <paramref name="runTask"/>, disposing <paramref name="cts"/> when safe.
+    /// Incomplete tasks remain assigned so <see cref="IsRunning"/> stays true and Start will not overlap.
+    /// </summary>
+    private async Task ShutdownOwnedAsync(
+        CancellationTokenSource? cts,
+        Task? runTask,
+        bool throwOnTimeout)
+    {
+        try
+        {
+            if (cts is not null)
+            {
+                try
+                {
+                    await cts.CancelAsync().ConfigureAwait(false);
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Already disposed by a concurrent shutdown of the same attempt.
+                }
+            }
+
+            if (runTask is null)
+            {
+                return;
+            }
+
+            if (!runTask.IsCompleted)
+            {
+                var completed = await Task.WhenAny(runTask, Task.Delay(StopTimeout))
+                    .ConfigureAwait(false);
+                if (completed != runTask)
+                {
+                    if (throwOnTimeout)
+                    {
+                        throw new TimeoutException(
+                            "Host did not stop within 5 seconds. It is still tracked so Start will not overlap; Exit the tray to force process shutdown.");
+                    }
+
+                    return;
+                }
+            }
+
+            // Surface host faults after a clean stop; ignore cancel-related exits.
+            try
+            {
+                await runTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(static e => e is OperationCanceledException))
+            {
+            }
+        }
+        finally
+        {
+            ClearIfCurrent(cts, runTask);
+        }
+    }
+
+    private void ClearIfCurrent(CancellationTokenSource? cts, Task? runTask)
+    {
+        lock (_gate)
+        {
+            // Never drop an incomplete run task — that is what allowed overlapping hosts.
+            if (runTask is not null && ReferenceEquals(_runTask, runTask) && runTask.IsCompleted)
+            {
+                _runTask = null;
+            }
+
+            if (cts is null)
+            {
+                return;
+            }
+
+            if (ReferenceEquals(_cts, cts))
+            {
+                _cts = null;
+            }
+
+            try
+            {
+                cts.Dispose();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
-        await StopAsync().ConfigureAwait(false);
-        _http.Dispose();
+        try
+        {
+            await StopAsync().ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Host may still be running until process exit; HttpClient must still be released.
+        }
+        finally
+        {
+            _http.Dispose();
+        }
     }
 }

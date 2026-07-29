@@ -240,7 +240,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports.GetProjectActivityAsync(projectId, from, to, cancellationToken).ConfigureAwait(false));
     }
 
@@ -255,7 +255,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var summary = await reports.GetActivitySummaryAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
         return Serialize(new { summary.PromptCount, fromUtc = from, toUtc = to, projectId });
     }
@@ -271,7 +271,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var summary = await reports.GetActivitySummaryAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
         return Serialize(new
         {
@@ -295,7 +295,7 @@ public static class TrackingTools
         [Description("Include subscription allocation")] bool includeSubscriptionAllocation = true,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports
             .GetProjectCostAsync(projectId, from, to, includeSubscriptionAllocation, cancellationToken)
             .ConfigureAwait(false));
@@ -312,7 +312,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports.GetUsageAttributionAsync(from, to, projectId, cancellationToken).ConfigureAwait(false));
     }
 
@@ -327,7 +327,7 @@ public static class TrackingTools
         [Description("Optional limit")] int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports.GetUnallocatedActivityAsync(from, to, limit, cancellationToken).ConfigureAwait(false));
     }
 
@@ -363,7 +363,7 @@ public static class TrackingTools
         [Description("Optional limit")] int? limit = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports.GetUnallocatedUsageAsync(from, to, limit, cancellationToken).ConfigureAwait(false));
     }
 
@@ -409,7 +409,7 @@ public static class TrackingTools
         [Description("Include low-confidence attributions")] bool includeLowConfidence = false,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reconciliation.RunAsync(
             new ReconciliationRequestDto
             {
@@ -457,7 +457,7 @@ public static class TrackingTools
         [Description("Optional output directory")] string? outputDirectory = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await export.ExportAsync(
             new ExportRequestDto
             {
@@ -482,7 +482,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await reports.GetClientCostAsync(clientName, from, to, cancellationToken).ConfigureAwait(false));
     }
 
@@ -497,7 +497,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(
             await reports.GetClientTokenCostEstimateAsync(clientName, from, to, cancellationToken)
                 .ConfigureAwait(false));
@@ -513,7 +513,7 @@ public static class TrackingTools
         [Description("Range end UTC")] DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         var editors = await reports.GetEditorComparisonAsync(from, to, cancellationToken).ConfigureAwait(false);
         var models = await reports.GetModelCostAsync(from, to, cancellationToken).ConfigureAwait(false);
         return Serialize(new { editors, models });
@@ -532,7 +532,7 @@ public static class TrackingTools
         [Description("Dry run without persisting")] bool dryRun = false,
         CancellationToken cancellationToken = default)
     {
-        var (from, to) = ResolveRange(fromUtc, toUtc);
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
         return Serialize(await windows.RecalculateAsync(
             projectId,
             from,
@@ -540,13 +540,6 @@ public static class TrackingTools
             inactivityThresholdMinutes,
             dryRun,
             cancellationToken).ConfigureAwait(false));
-    }
-
-    private static (DateTimeOffset From, DateTimeOffset To) ResolveRange(DateTimeOffset? fromUtc, DateTimeOffset? toUtc)
-    {
-        var to = toUtc?.ToUniversalTime() ?? DateTimeOffset.UtcNow;
-        var from = fromUtc?.ToUniversalTime() ?? to.AddDays(-30);
-        return from <= to ? (from, to) : (to, from);
     }
 
     private static string Serialize(object? value)

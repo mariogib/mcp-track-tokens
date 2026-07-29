@@ -55,8 +55,6 @@ import type {
   RecalculateWindowsRequestDto,
   RecalculateWindowsResultDto,
   UnallocatedBundle,
-  UnallocatedItemDto,
-  UnallocatedUsageReport,
   DeleteUnallocatedUsageResultDto,
   CursorDocsPricingFetchResultDto,
   CursorHooksCompatibilityReportDto,
@@ -582,12 +580,6 @@ export const api = {
       signal,
     }),
 
-  unallocatedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
-    apiRequest<UnallocatedUsageReport>('/api/v1/unallocated/usage', {
-      query: { fromUtc, toUtc },
-      signal,
-    }),
-
   deleteUnallocatedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<DeleteUnallocatedUsageResultDto>('/api/v1/unallocated/usage', {
       method: 'DELETE',
@@ -597,12 +589,6 @@ export const api = {
 
   importedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<ImportedUsageReport>('/api/v1/usage/imported', {
-      query: { fromUtc, toUtc },
-      signal,
-    }),
-
-  unallocatedActivity: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
-    apiRequest<UnallocatedItemDto[]>('/api/v1/unallocated/activity', {
       query: { fromUtc, toUtc },
       signal,
     }),

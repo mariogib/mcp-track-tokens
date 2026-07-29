@@ -1,13 +1,7 @@
 import { ApiError } from '../api/client';
-import { TextLink } from '../shared/adminUi';
+import { EmptyState, LoadingState, TextLink } from '../shared/adminUi';
 
-export function LoadingState({ label = 'Loading…' }: { label?: string }) {
-  return (
-    <div className="loading-box" role="status" aria-live="polite">
-      {label}
-    </div>
-  );
-}
+export { EmptyState, LoadingState };
 
 export function ErrorState({ message, error }: { message: string; error?: unknown }) {
   const unauthorized =
@@ -27,8 +21,4 @@ export function ErrorState({ message, error }: { message: string; error?: unknow
       ) : null}
     </div>
   );
-}
-
-export function EmptyState({ message }: { message: string }) {
-  return <div className="empty">{message}</div>;
 }

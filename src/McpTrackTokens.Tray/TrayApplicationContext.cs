@@ -1,3 +1,5 @@
+using McpTrackTokens.Shared;
+
 namespace McpTrackTokens.Tray;
 
 /// <summary>

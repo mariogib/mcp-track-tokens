@@ -1,9 +1,9 @@
 using System.Reflection;
 
-namespace McpTrackTokens.Tray;
+namespace McpTrackTokens.Shared;
 
 /// <summary>
-/// Loads the LunarQ branding icon for the tray host.
+/// Loads the LunarQ branding icon for Windows Forms hosts (Desktop / Tray).
 /// </summary>
 internal static class AppIconLoader
 {
@@ -25,11 +25,17 @@ internal static class AppIconLoader
             }
         }
 
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(
-            "McpTrackTokens.Tray.Assets.app.ico");
-        if (stream is not null)
+        var assembly = Assembly.GetExecutingAssembly();
+        var resourceName = Array.Find(
+            assembly.GetManifestResourceNames(),
+            static name => name.EndsWith(".Assets.app.ico", StringComparison.OrdinalIgnoreCase));
+        if (resourceName is not null)
         {
-            return new Icon(stream);
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream is not null)
+            {
+                return new Icon(stream);
+            }
         }
 
         return SystemIcons.Application;

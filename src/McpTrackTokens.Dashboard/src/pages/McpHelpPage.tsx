@@ -2,34 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Panel } from '../components/MetricCard';
 import { MCP_PROMPTS, MCP_RESOURCES, MCP_TOOLS } from '../data/mcpCatalog';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
+import { copyText } from '../utils/clipboard';
 
 const TABS = ['Tools', 'Resources', 'Prompts'] as const;
-
-async function copyText(value: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return true;
-    }
-  } catch {
-    // fall through
-  }
-
-  try {
-    const input = document.createElement('textarea');
-    input.value = value;
-    input.setAttribute('readonly', '');
-    input.style.position = 'fixed';
-    input.style.left = '-9999px';
-    document.body.appendChild(input);
-    input.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(input);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function CopyTextButton({
   value,

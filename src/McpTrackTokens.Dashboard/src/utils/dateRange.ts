@@ -1,6 +1,12 @@
+import type { RangePreset } from '@lunarq/frontend-shared/utils';
+import {
+  currentUtcYearMonth,
+  parseRangePreset,
+} from '@lunarq/frontend-shared/utils';
 import { lastDaysRange, monthBoundsUtc } from './format';
 
-export type RangePreset = '7d' | '30d' | '90d' | 'month' | 'custom';
+export type { RangePreset };
+export { currentUtcYearMonth, parseRangePreset };
 
 export type ResolvedRange = {
   fromUtc: string;
@@ -27,11 +33,6 @@ export function toDateInputValue(isoUtc: string): string {
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
-}
-
-export function currentUtcYearMonth(): { year: number; month: number } {
-  const now = new Date();
-  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 }
 
 export function parseYearParam(value: string | null | undefined): number | null {
@@ -91,13 +92,6 @@ export function resolveRange(
     label: `Last ${days} days`,
     preset: preset === '7d' || preset === '90d' ? preset : '30d',
   };
-}
-
-export function parseRangePreset(value: string | null | undefined): RangePreset {
-  if (value === '7d' || value === '30d' || value === '90d' || value === 'month' || value === 'custom') {
-    return value;
-  }
-  return '30d';
 }
 
 /** Inclusive UTC calendar-month bounds as YYYY-MM-DD inputs for custom range. */

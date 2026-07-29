@@ -2,14 +2,26 @@ import React from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { createAdminShell } from '@lunarq/frontend-shared/admin';
 import {
+  createAnalysisDetailBrowse,
   createBreadcrumb,
   createBrowseListControls,
   createBrowseScrollSentinel,
   createCard,
   createChartCard,
+  createDateRangeFilters,
+  createEmptyState,
+  createLoadingState,
+  createMetricSurfaces,
   createPopupForm,
+  createRemoteAnalysisDetailBrowse,
+  createSplitDateTimeField,
+  createStatusBadge,
   createTextLink,
+  DailyLineChart,
+  NamedBarChart,
+  NamedPieChart,
   type ChartCardProps,
+  type MetricCardProps,
 } from '@lunarq/frontend-shared/components';
 import {
   applyThemePreset,
@@ -20,6 +32,7 @@ import {
   resolveThemePreset,
   type ThemeResponseBase,
 } from '@lunarq/frontend-shared/theme';
+import { formatNumber } from '../utils/format';
 
 /** Shared admin shell bound to this app's React + React Router. */
 export const AdminShell = createAdminShell(React, NavLink);
@@ -183,3 +196,36 @@ export function ChartCard(props: Omit<ChartCardProps, 'onNavigate'>) {
     onNavigate: props.to ? (to: string) => void navigate(to) : undefined,
   });
 }
+
+const metricSurfaces = createMetricSurfaces(React, Card);
+const SharedMetricCard = metricSurfaces.MetricCard;
+export const Panel = metricSurfaces.Panel;
+export const TablePanel = metricSurfaces.TablePanel;
+
+/** Metric KPI card with React Router navigation. */
+export function MetricCard(props: Omit<MetricCardProps, 'onNavigate'>) {
+  const navigate = useNavigate();
+  return React.createElement(SharedMetricCard, {
+    ...props,
+    onNavigate: props.to ? (to: string) => void navigate(to) : undefined,
+  });
+}
+
+export const StatusBadge = createStatusBadge(React);
+export const EmptyState = createEmptyState(React);
+export const LoadingState = createLoadingState(React);
+export const DateRangeFilters = createDateRangeFilters(React);
+export const DateTimeField = createSplitDateTimeField(React);
+
+export { DailyLineChart, NamedBarChart, NamedPieChart };
+
+const browseDeps = {
+  BrowseListControls,
+  BrowseScrollSentinel,
+  TablePanel,
+  EmptyState: EmptyState as (props: { message: string }) => React.ReactNode,
+  formatNumber: (value: number) => formatNumber(value),
+};
+
+export const AnalysisDetailBrowse = createAnalysisDetailBrowse(browseDeps);
+export const RemoteAnalysisDetailBrowse = createRemoteAnalysisDetailBrowse(browseDeps);
