@@ -17,6 +17,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\WindowsForms\AppIconLoader.cs" Link="AppIconLoader.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\McpTrackTokens.Server\McpTrackTokens.Server.csproj" />
   </ItemGroup>
 

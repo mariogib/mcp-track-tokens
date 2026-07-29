@@ -1,53 +1,63 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { ThemeToggle } from '../components/ThemeToggle';
+import React, { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Outlet, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
+import { createFluentNavIcons } from '@lunarq/frontend-shared/admin';
+import type { ThemeLookAndFeel } from '@lunarq/frontend-shared/theme';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
+import { AdminShell, TextLink, applyStoredDashboardTheme } from '../shared/adminUi';
 
-type NavLeaf = { to: string; label: string; end?: boolean };
-type NavGroup = { label: string; children: NavLeaf[] };
-type NavEntry = NavLeaf | NavGroup;
+const fluentIcons = createFluentNavIcons(React);
 
-function isNavGroup(item: NavEntry): item is NavGroup {
-  return 'children' in item;
-}
-
-const navItems: NavEntry[] = [
-  { to: '/', label: 'Overview', end: true },
-  { to: '/projects', label: 'Projects' },
-  {
-    label: 'Timesheet',
-    children: [
-      { to: '/timesheet', label: 'Entries', end: true },
-      { to: '/timesheet/reports', label: 'Reports', end: true },
-    ],
-  },
-  { to: '/reports', label: 'Reports' },
-  { to: '/imported-usage', label: 'Imported usage' },
-  { to: '/settings', label: 'Settings' },
-  {
-    label: 'Help',
-    children: [
-      { to: '/help', label: 'Windows setup', end: true },
-      { to: '/help/mcp', label: 'MCP Help' },
-    ],
-  },
+const lunarqNavItems: AdminNavItem[] = [
+  { to: '/', label: 'Overview', icon: '⌂', end: true },
+  { to: '/projects', label: 'Projects', icon: '◫' },
+  { to: '/timesheet', label: 'Timesheet', icon: '◷' },
+  { to: '/reports', label: 'Reports', icon: '▣' },
+  { to: '/imported-usage', label: 'Imported usage', icon: '⇩' },
+  { to: '/settings', label: 'Settings', icon: '⚙' },
+  { to: '/help', label: 'Help', icon: '?' },
 ];
 
-function pathMatchesLeaf(pathname: string, leaf: NavLeaf): boolean {
-  if (leaf.end) {
-    return pathname === leaf.to;
+const fluentNavItems: AdminNavItem[] = [
+  { to: '/', label: 'Overview', icon: fluentIcons.overview, end: true },
+  { to: '/projects', label: 'Projects', icon: fluentIcons.projects },
+  { to: '/timesheet', label: 'Timesheet', icon: fluentIcons.timesheet },
+  { to: '/reports', label: 'Reports', icon: fluentIcons.reports },
+  { to: '/imported-usage', label: 'Imported usage', icon: fluentIcons.import },
+  { to: '/settings', label: 'Settings', icon: fluentIcons.settings },
+  { to: '/help', label: 'Help', icon: fluentIcons.help },
+];
+
+function readLookAndFeel(): ThemeLookAndFeel {
+  if (typeof document === 'undefined') {
+    return 'lunarq';
   }
-  return pathname === leaf.to || pathname.startsWith(`${leaf.to}/`);
+  return document.documentElement.dataset.lookAndFeel === 'fluent' ? 'fluent' : 'lunarq';
 }
 
-function groupHasActiveChild(pathname: string, group: NavGroup): boolean {
-  return group.children.some((child) => pathMatchesLeaf(pathname, child));
+function useLookAndFeel(): ThemeLookAndFeel {
+  const [lookAndFeel, setLookAndFeel] = useState<ThemeLookAndFeel>(readLookAndFeel);
+
+  useEffect(() => {
+    applyStoredDashboardTheme();
+
+    function sync() {
+      setLookAndFeel(readLookAndFeel());
+    }
+
+    sync();
+    document.addEventListener('lunarq:themechange', sync);
+    return () => document.removeEventListener('lunarq:themechange', sync);
+  }, []);
+
+  return lookAndFeel;
 }
 
-function titleForPath(pathname: string): { title: string; subtitle: string } {
+function titleForPath(pathname: string, search: string): { title: string; subtitle: string } {
   if (pathname.startsWith('/projects/')) {
     return { title: 'Project details', subtitle: 'Activity, usage, cost, and configuration' };
   }
@@ -57,196 +67,96 @@ function titleForPath(pathname: string): { title: string; subtitle: string } {
     case '/timesheet':
       return {
         title: 'Timesheet',
-        subtitle: 'Start, end, and edit billable time across projects',
-      };
-    case '/timesheet/reports':
-      return {
-        title: 'Timesheet reports',
-        subtitle: 'Billable time by range, with optional project or client filter',
+        subtitle: 'Billable entries and time reports',
       };
     case '/reports':
       return { title: 'Reports', subtitle: 'Client and project cost, activity, and billing reports' };
-    case '/imported-usage':
+    case '/imported-usage': {
+      const tab = new URLSearchParams(search).get('tab');
+      if (tab === 'unallocated' || tab === 'unallocated-prompts') {
+        return {
+          title: 'Imported usage',
+          subtitle: 'Assign or delete unallocated prompts',
+        };
+      }
       return {
         title: 'Imported usage',
-        subtitle: 'Upload Cursor exports, map columns, and review imported rows',
+        subtitle: 'Upload Cursor exports and review imported rows',
       };
-    case '/unallocated':
-      return { title: 'Unallocated activity', subtitle: 'Assign prompt and agent events to projects' };
+    }
     case '/settings':
       return { title: 'Settings', subtitle: 'Tracking preferences, privacy, and API keys' };
-    case '/help/mcp':
-      return { title: 'MCP Help', subtitle: 'Tools, resources, and prompts on the MCP server' };
     case '/help':
-      return { title: 'Help', subtitle: 'Windows install and Cursor setup' };
+      return {
+        title: 'Help',
+        subtitle: 'Windows setup and MCP tool reference',
+      };
     default:
       return { title: 'Overview', subtitle: 'Live tracking health and today’s activity' };
   }
 }
 
-function NavGroupItem({
-  group,
-  pathname,
-  onNavigate,
-}: {
-  group: NavGroup;
-  pathname: string;
-  onNavigate: () => void;
-}) {
-  const childActive = groupHasActiveChild(pathname, group);
-  const [expanded, setExpanded] = useState(childActive);
-
-  useEffect(() => {
-    if (childActive) {
-      setExpanded(true);
-    }
-  }, [childActive]);
-
-  const panelId = `nav-group-${group.label.toLowerCase().replace(/\s+/g, '-')}`;
-
-  return (
-    <li className={`nav-group${expanded ? ' nav-group--open' : ''}${childActive ? ' nav-group--active' : ''}`}>
-      <button
-        type="button"
-        className="nav-group-toggle"
-        aria-expanded={expanded}
-        aria-controls={panelId}
-        onClick={() => setExpanded((v) => !v)}
-      >
-        <span>{group.label}</span>
-        <span className="nav-group-chevron" aria-hidden="true">
-          {expanded ? '▾' : '▸'}
-        </span>
-      </button>
-      {expanded ? (
-        <ul id={panelId} className="nav-sublist">
-          {group.children.map((child) => (
-            <li key={child.to}>
-              <NavLink
-                to={child.to}
-                end={child.end}
-                className={({ isActive }) => `nav-link nav-sublink${isActive ? ' active' : ''}`}
-                onClick={onNavigate}
-              >
-                {child.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </li>
-  );
-}
-
 export function AppLayout() {
   const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const lookAndFeel = useLookAndFeel();
   useHistoryKeyboardNavigation();
   const health = useHealthQuery();
   const status = useStatusQuery();
-  const page = titleForPath(location.pathname);
+  const page = titleForPath(location.pathname, location.search);
   const healthy =
     health.data?.healthy === true ||
     health.data?.status === 'Healthy' ||
     (health.isSuccess && !health.isError);
   const hasApiKey = Boolean(getStoredApiKey());
+  const activeProject = status.data?.currentProject?.name;
+  const navItems = useMemo(
+    () => (lookAndFeel === 'fluent' ? fluentNavItems : lunarqNavItems),
+    [lookAndFeel],
+  );
 
   return (
-    <div className="app-shell">
-      {menuOpen ? (
-        <button
-          type="button"
-          className="backdrop"
-          aria-label="Close navigation"
-          onClick={() => setMenuOpen(false)}
-        />
-      ) : null}
-
-      <aside className={`sidebar ${menuOpen ? 'open' : ''}`} aria-label="Primary">
-        <div className="brand">
-          <img
-            className="brand-logo"
-            src="/brand-icon.png"
-            alt=""
-            width={40}
-            height={40}
-          />
-          <div className="brand-text">
-            <span className="brand-mark">MCP Track Tokens</span>
-            <span className="brand-sub">Local AI activity & cost</span>
+    <AdminShell
+      navItems={navItems}
+      logo={
+        <div className="logo">
+          <img className="logo-image" src="/brand-icon.png" alt="" width={72} height={72} />
+          <div className="logo-text">
+            <span className="logo-title">MCP Track Tokens</span>
+            <span className="logo-subtitle">Local AI activity &amp; cost</span>
           </div>
         </div>
-        <nav id="primary-nav">
-          <ul className="nav-list">
-            {navItems.map((item) =>
-              isNavGroup(item) ? (
-                <NavGroupItem
-                  key={item.label}
-                  group={item}
-                  pathname={location.pathname}
-                  onNavigate={() => setMenuOpen(false)}
-                />
-              ) : (
-                <li key={item.to}>
-                  <NavLink
-                    to={item.to}
-                    end={item.end}
-                    className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-                    onClick={() => setMenuOpen(false)}
-                  >
-                    {item.label}
-                  </NavLink>
-                </li>
-              ),
-            )}
-          </ul>
-        </nav>
-        <div className="sidebar-footer">
-          {status.data?.currentProject?.name
-            ? `Active: ${status.data.currentProject.name}`
-            : 'No active project'}
-        </div>
-      </aside>
-
-      <div className="main">
-        <header className="topbar">
-          <div className="row">
-            <button
-              type="button"
-              className="btn btn-secondary menu-toggle"
-              aria-expanded={menuOpen}
-              aria-controls="primary-nav"
-              onClick={() => setMenuOpen((v) => !v)}
-            >
-              Menu
-            </button>
-            <div className="topbar-title">
-              <h1>{page.title}</h1>
-              <p>{page.subtitle}</p>
-            </div>
+      }
+      userName="Local"
+      userEmail={activeProject ? `Active: ${activeProject}` : 'No active project'}
+      onContentRefresh={() => {
+        void queryClient.invalidateQueries();
+      }}
+      topBarContent={
+        <div className="dashboard-topbar">
+          <div className="dashboard-topbar-title">
+            <h1>{page.title}</h1>
+            <p>{page.subtitle}</p>
           </div>
-          <div className="topbar-actions">
+          <div className="dashboard-topbar-actions">
             <StatusBadge
               label={healthy ? 'Server healthy' : health.isError ? 'Server offline' : 'Checking…'}
               tone={healthy ? 'success' : health.isError ? 'danger' : 'warning'}
             />
-            <ThemeToggle />
           </div>
-        </header>
-        <main className="content">
-          {!hasApiKey &&
-          location.pathname !== '/settings' &&
-          location.pathname !== '/help' &&
-          location.pathname !== '/help/mcp' ? (
-            <div className="warning-banner" role="status">
-              No API key saved yet. Open <Link to="/settings">Settings</Link> and save your tracking
-              Bearer key (default for the Windows install is <code>OverTheMoon</code>).
-            </div>
-          ) : null}
-          <Outlet />
-        </main>
-      </div>
-    </div>
+        </div>
+      }
+    >
+      {!hasApiKey &&
+      location.pathname !== '/settings' &&
+      location.pathname !== '/help' ? (
+        <div className="warning-banner" role="status">
+          No API key saved yet. Open <TextLink to="/settings">Settings</TextLink> and save your
+          tracking Bearer key (default for the Windows install is <code>OverTheMoon</code>).
+        </div>
+      ) : null}
+      <Outlet />
+    </AdminShell>
   );
 }
 

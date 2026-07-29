@@ -3,24 +3,19 @@
   Build and install MCP Track Tokens on Windows.
 
 .DESCRIPTION
-  Checks for .NET 8 and Node.js, builds backend/dashboard/hooks/extension,
+  Checks for .NET 8 and Node.js, builds backend/dashboard/hooks,
   publishes the CLI to ~/.mcp-track-tokens/bin, migrates the database,
   creates an API key, and writes a local config file.
 
   Never silently modifies Cursor or VS Code settings. Optional switches only
-  install hooks scaffold / print VSIX install commands when requested.
+  install hooks scaffold when requested.
 
 .PARAMETER InstallHooks
   Run `mcp-track-tokens install-cursor-hooks --yes` after build.
-
-.PARAMETER InstallExtension
-  Package the VSIX and attempt `code`/`cursor --install-extension` when available.
-  Does not rewrite settings.json.
 #>
 [CmdletBinding()]
 param(
     [switch]$InstallHooks,
-    [switch]$InstallExtension,
     [switch]$SkipTests
 )
 
@@ -91,10 +86,6 @@ try {
     Write-Step "Building Cursor hooks"
     npm --prefix integrations/cursor-hooks ci
     npm --prefix integrations/cursor-hooks run build
-
-    Write-Step "Building VS Code extension"
-    npm --prefix extensions/mcp-track-tokens-vscode ci
-    npm --prefix extensions/mcp-track-tokens-vscode run build
 }
 finally {
     Pop-Location
@@ -155,35 +146,6 @@ if ($InstallHooks) {
         & dotnet $cli install-cursor-hooks --yes
     }
     Write-Host "Merge ~/.cursor/mcp-track-tokens-hooks.example.json into your Cursor hooks config manually."
-}
-
-$vsix = Join-Path $RepoRoot "extensions/mcp-track-tokens-vscode/mcp-track-tokens-0.1.0.vsix"
-if ($InstallExtension) {
-    Write-Step "Packaging and installing VS Code extension"
-    Push-Location (Join-Path $RepoRoot "extensions/mcp-track-tokens-vscode")
-    try {
-        npm run package
-    }
-    finally {
-        Pop-Location
-    }
-    if (-not (Test-Path $vsix)) {
-        $vsix = Get-ChildItem (Join-Path $RepoRoot "extensions/mcp-track-tokens-vscode") -Filter "*.vsix" | Select-Object -First 1 -ExpandProperty FullName
-    }
-    $installed = $false
-    foreach ($editor in @("cursor", "code")) {
-        if (Get-Command $editor -ErrorAction SilentlyContinue) {
-            & $editor --install-extension $vsix
-            $installed = $true
-            Write-Host "Installed VSIX via $editor"
-            break
-        }
-    }
-    if (-not $installed) {
-        Write-Host "VSIX built at: $vsix"
-        Write-Host "Install manually: code --install-extension `"$vsix`""
-    }
-    Write-Host "Extension settings were NOT modified. Set mcpTrackTokens.serverUrl if needed."
 }
 
 Write-Step "MCP configuration (copy into Cursor MCP settings)"

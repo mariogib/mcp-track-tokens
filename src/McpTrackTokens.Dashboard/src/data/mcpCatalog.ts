@@ -53,7 +53,7 @@ export const MCP_TOOLS: McpToolHelp[] = [
   {
     name: 'end_timesheet',
     description:
-      'Ends the open timesheet entry for the current Cursor project. Defaults end time to now and can append a note.',
+      'Ends the open timesheet entry for the current Cursor project. When end time is omitted, uses the last ended editor session for that project on the timesheet start day; otherwise defaults to now. Can append a note.',
     group: 'Timesheet',
   },
   {

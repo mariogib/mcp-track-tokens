@@ -274,12 +274,8 @@ export function adaptCursorPayload(
       workspacePath: workspaceRoots[0] ?? cwd,
       promptText,
       metadata,
-      responseCompletedAtUtc:
-        eventType === 'AgentCompleted' ||
-        eventType === 'AgentFailed' ||
-        eventType === 'AgentCancelled'
-          ? new Date().toISOString()
-          : undefined,
+      // Completion time is stamped once in run-hook together with timestampUtc.
+      responseCompletedAtUtc: undefined,
     },
   };
 }

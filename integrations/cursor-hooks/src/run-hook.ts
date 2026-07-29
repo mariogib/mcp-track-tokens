@@ -58,11 +58,17 @@ export async function runHook(eventType: ActivityEventType): Promise<void> {
         adapted.event.externalEventId,
     );
 
+    const nowUtc = new Date().toISOString();
+    const isTerminal =
+      eventType === 'AgentCompleted' ||
+      eventType === 'AgentFailed' ||
+      eventType === 'AgentCancelled';
+
     const event: TrackingEvent = {
       schemaVersion: '1.0',
       externalEventId: adapted.event.externalEventId,
       eventType: adapted.event.eventType,
-      timestampUtc: new Date().toISOString(),
+      timestampUtc: nowUtc,
       editor: 'Cursor',
       editorVersion: adapted.event.editorVersion,
       machineName: os.hostname(),
@@ -83,7 +89,9 @@ export async function runHook(eventType: ActivityEventType): Promise<void> {
       promptContent: privacy.promptContent,
       status: adapted.event.status,
       durationMilliseconds: adapted.event.durationMilliseconds,
-      responseCompletedAtUtc: adapted.event.responseCompletedAtUtc,
+      responseCompletedAtUtc: isTerminal
+        ? (adapted.event.responseCompletedAtUtc ?? nowUtc)
+        : adapted.event.responseCompletedAtUtc,
       metadata: adapted.event.metadata,
     };
 

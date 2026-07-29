@@ -340,6 +340,21 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             warnings.Add("No timestamp/date column was detected.");
         }
 
+        var looksAggregated =
+            mappings.ContainsKey("TimestampUtc") &&
+            mappings.ContainsKey("ReportedCost") &&
+            mappings.ContainsKey("RequestCount") &&
+            !mappings.ContainsKey("TotalTokens") &&
+            !mappings.ContainsKey("Model") &&
+            !mappings.ContainsKey("InputTokens") &&
+            !mappings.ContainsKey("OutputTokens");
+        if (looksAggregated)
+        {
+            warnings.Add(
+                "Aggregated daily export detected (Day/Requests/Usage Cost). " +
+                "Rows without Total Tokens are skipped; attribution precision is low compared with per-request exports.");
+        }
+
         warnings.Add("Only rows with Total Tokens > 0 are imported; each dated row imports at most once.");
 
         return new ParsedUsageFile(fileName, hash, source, headers, mappings, records, invalid, errors, warnings);
@@ -489,12 +504,22 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         var timestamp = ParseTimestamp(timestampRaw, timeZone);
 
         // Cursor exports split input across cache-write / non-cache-write columns.
-        var inputWithCacheWrite = FindLongByNormalizedHeader(row, "inputwcachewrite", "inputwithcachewrite");
+        var cacheWriteTokens = ParseLongSoft(GetMapped("CacheWriteTokens"))
+            ?? FindLongByNormalizedHeader(row, "inputwcachewrite", "inputwithcachewrite", "cachewritetokens", "cachewrite");
         var inputWithoutCacheWrite = FindLongByNormalizedHeader(row, "inputwocachewrite", "inputwithoutcachewrite");
         var inputTokens = ParseLongSoft(GetMapped("InputTokens"));
-        if (inputWithCacheWrite is not null || inputWithoutCacheWrite is not null)
+        if (inputWithoutCacheWrite is not null || cacheWriteTokens is not null)
         {
-            inputTokens = (inputWithCacheWrite ?? 0) + (inputWithoutCacheWrite ?? 0);
+            // Prefer the split columns when present so cache-write is not folded into Input.
+            if (inputWithoutCacheWrite is not null)
+            {
+                inputTokens = inputWithoutCacheWrite;
+            }
+            else if (inputTokens is not null && cacheWriteTokens is not null && inputTokens >= cacheWriteTokens)
+            {
+                // Mapped InputTokens was the combined total; peel off cache-write.
+                inputTokens -= cacheWriteTokens;
+            }
         }
 
         var outputTokens = ParseLongSoft(GetMapped("OutputTokens"))
@@ -505,43 +530,33 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         var totalTokens = ParseLongSoft(GetMapped("TotalTokens"))
             ?? FindLongByNormalizedHeader(row, "totaltokens", "tokens", "tokencount");
 
-        if (totalTokens is null)
+        var derivedTotalTokens = UsageTokenTotals.DeriveTotalIfMissing(
+            totalTokens,
+            inputTokens,
+            outputTokens,
+            cachedInputTokens,
+            cacheWriteTokens,
+            reasoningTokens);
+        if (totalTokens is null && derivedTotalTokens > 0)
         {
-            var derived = (inputTokens ?? 0) + (outputTokens ?? 0) + (cachedInputTokens ?? 0) + (reasoningTokens ?? 0);
-            if (derived > 0)
-            {
-                totalTokens = derived;
-            }
+            totalTokens = derivedTotalTokens;
         }
 
         // When the file exposes Total Tokens, keep every row that carries a value so project
         // token allocation can use them. Rows without any token signal remain cost-only imports.
         var hasTotalTokensColumn = mappings.ContainsKey("TotalTokens")
-            || allColumns.Any(c =>
-            {
-                var n = CursorUsageColumnMapper.NormalizeHeader(c);
-                return n is "totaltokens" or "tokens" or "tokencount";
-            });
+            || CursorUsageColumnMapper.AnyColumnMatchesCanonical(allColumns, "TotalTokens");
         if (hasTotalTokensColumn &&
             totalTokens is null &&
             inputTokens is null &&
             outputTokens is null &&
-            cachedInputTokens is null)
+            cachedInputTokens is null &&
+            cacheWriteTokens is null)
         {
             throw new InvalidOperationException("Row has no Total Tokens (or component token) value.");
         }
 
-        var knownColumns = new HashSet<string>(mappings.Values, StringComparer.OrdinalIgnoreCase);
-        // Cursor-specific columns resolved above should not be dumped into metadata.
-        foreach (var column in allColumns)
-        {
-            var n = CursorUsageColumnMapper.NormalizeHeader(column);
-            if (n is "inputwcachewrite" or "inputwithcachewrite" or "inputwocachewrite"
-                or "inputwithoutcachewrite" or "cacheread" or "totaltokens")
-            {
-                knownColumns.Add(column);
-            }
-        }
+        var knownColumns = CursorUsageColumnMapper.GetKnownColumns(mappings, allColumns);
 
         var unknown = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         foreach (var column in allColumns)
@@ -582,6 +597,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
             CachedInputTokens = cachedInputTokens,
+            CacheWriteTokens = cacheWriteTokens,
             ReasoningTokens = reasoningTokens,
             TotalTokens = totalTokens,
             // Non-numeric Cursor costs (Included, Free, -) become 0 so reconciliation can
@@ -774,6 +790,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             record.InputTokens,
             record.OutputTokens,
             record.CachedInputTokens,
+            record.CacheWriteTokens,
             record.RequestCount,
             record.UserIdentifier);
     }
@@ -799,6 +816,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             entity.InputTokens,
             entity.OutputTokens,
             entity.CachedInputTokens,
+            entity.CacheWriteTokens,
             entity.RequestCount,
             entity.UserIdentifier);
     }
@@ -813,6 +831,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
         long? inputTokens,
         long? outputTokens,
         long? cachedInputTokens,
+        long? cacheWriteTokens,
         int? requestCount,
         string? userIdentifier)
     {
@@ -839,6 +858,7 @@ public sealed class CursorUsageImporter : ICursorUsageImporter
             (inputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
             (outputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
             (cachedInputTokens ?? 0).ToString(CultureInfo.InvariantCulture),
+            (cacheWriteTokens ?? 0).ToString(CultureInfo.InvariantCulture),
             (requestCount ?? 0).ToString(CultureInfo.InvariantCulture),
             userIdentifier?.Trim() ?? string.Empty);
 

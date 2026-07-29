@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
@@ -76,11 +79,24 @@ public sealed class SessionRepository : ISessionRepository
         CancellationToken cancellationToken = default)
     {
         var at = timestampUtc.ToUniversalTime();
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            _db.EditorSessions.AsNoTracking(),
-            s => s.StartedAtUtc <= at && (s.EndedAtUtc == null || s.EndedAtUtc >= at),
-            items => items.OrderByDescending(s => s.LastActivityAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            return await _db.EditorSessions.AsNoTracking()
+                .Where(s => s.StartedAtUtc <= at && (s.EndedAtUtc == null || s.EndedAtUtc >= at))
+                .OrderByDescending(s => s.LastActivityAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+        var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+        var atSec = SqliteDateTimePaging.ToUnixSeconds(at);
+        var sql =
+            $"SELECT * FROM EditorSessions WHERE {started} <= {{0}} AND (EndedAtUtc IS NULL OR {ended} >= {{0}}) ORDER BY LastActivityAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.EditorSessions, sql, [atSec], cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -100,18 +116,161 @@ public sealed class SessionRepository : ISessionRepository
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
-        var query = _db.EditorSessions.AsNoTracking();
-        if (projectId is Guid pid)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(s => s.ProjectId == pid);
+            var query = _db.EditorSessions.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(s => s.ProjectId == pid);
+            }
+
+            if (from is DateTimeOffset fromValue)
+            {
+                query = query.Where(s =>
+                    s.StartedAtUtc >= fromValue || (s.EndedAtUtc != null && s.EndedAtUtc >= fromValue));
+            }
+
+            if (to is DateTimeOffset toValue)
+            {
+                query = query.Where(s => s.StartedAtUtc <= toValue);
+            }
+
+            return await query
+                .OrderByDescending(s => s.StartedAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            s => (from is null || s.StartedAtUtc >= from || (s.EndedAtUtc != null && s.EndedAtUtc >= from)) &&
-                 (to is null || s.StartedAtUtc <= to),
-            items => items.OrderByDescending(s => s.StartedAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
+        }
+
+        if (from is DateTimeOffset fromBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+        }
+
+        if (to is DateTimeOffset toBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+        }
+
+        var sql = "SELECT * FROM EditorSessions " + where + " ORDER BY StartedAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.EditorSessions, sql, args, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountAsync(
+        SessionPageFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = "SELECT COUNT(*) AS \"Value\" FROM EditorSessions " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<EditorSession>> ListPagedAsync(
+        SessionPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = new StringBuilder()
+            .Append("SELECT * FROM EditorSessions ")
+            .Append(where)
+            .Append(CultureInfo.InvariantCulture,
+                $" ORDER BY StartedAtUtc DESC, Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+        args.Add(take);
+        args.Add(skip);
+
+        return await _db.EditorSessions
+            .FromSqlRaw(sql.ToString(), args.ToArray())
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static (string WhereSql, List<object> Args) BuildBrowseWhere(SessionPageFilter filter)
+    {
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (filter.ProjectId is Guid projectId)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(projectId);
+        }
+
+        if (filter.FromUtc is DateTimeOffset fromBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+        }
+
+        if (filter.ToUtc is DateTimeOffset toBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+        }
+
+        var status = filter.Status?.Trim();
+        if (!string.IsNullOrEmpty(status))
+        {
+            if (string.Equals(status, "Closed", StringComparison.OrdinalIgnoreCase))
+            {
+                where.Append(" AND Status IN ('Ended', 'Abandoned')");
+            }
+            else
+            {
+                where.Append(CultureInfo.InvariantCulture, $" AND Status = {{{args.Count}}}");
+                args.Add(status);
+            }
+        }
+
+        var search = filter.Search?.Trim();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = "%" + SqliteDateTimePaging.EscapeLike(search) + "%";
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (CAST(Id AS TEXT) LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(Editor,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(Branch,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(WorkspacePath,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(RepositoryPath,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(RemoteUrl,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(ExternalSessionId,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(MachineName,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(UserName,'') LIKE {{{args.Count}}} ESCAPE '\\'" +
+                $" OR IFNULL(Status,'') LIKE {{{args.Count}}} ESCAPE '\\')");
+            args.Add(pattern);
+        }
+
+        return (where.ToString(), args);
     }
 
     /// <inheritdoc />

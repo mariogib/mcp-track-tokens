@@ -1,10 +1,9 @@
 <#
 .SYNOPSIS
-  Build all MCP Track Tokens components (backend, dashboard, hooks, extension).
+  Build all MCP Track Tokens components (backend, dashboard, hooks).
 #>
 [CmdletBinding()]
 param(
-    [switch]$PackExtension,
     [switch]$SkipTests,
     [string]$Configuration = "Release"
 )
@@ -45,12 +44,5 @@ Write-Host "Copied dashboard → $wwwroot"
 Write-Host "==> Cursor hooks"
 Invoke-Native { npm --prefix integrations/cursor-hooks ci } "hooks npm ci"
 Invoke-Native { npm --prefix integrations/cursor-hooks run build } "hooks build"
-
-Write-Host "==> VS Code extension"
-Invoke-Native { npm --prefix extensions/mcp-track-tokens-vscode ci } "extension npm ci"
-Invoke-Native { npm --prefix extensions/mcp-track-tokens-vscode run build } "extension build"
-if ($PackExtension) {
-    Invoke-Native { npm --prefix extensions/mcp-track-tokens-vscode run package } "extension package"
-}
 
 Write-Host "Build-all complete." -ForegroundColor Green

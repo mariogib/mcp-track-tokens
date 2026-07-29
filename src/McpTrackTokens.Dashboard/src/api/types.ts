@@ -33,6 +33,17 @@ export interface UpdateProjectRequest {
   isActive?: boolean | null;
 }
 
+export interface CreateProjectRequest {
+  name: string;
+  slug?: string | null;
+  clientName?: string | null;
+  billingCode?: string | null;
+  currency?: string | null;
+  repositoryPath?: string | null;
+  remoteUrl?: string | null;
+  aliases?: string[] | null;
+}
+
 export interface ProjectRepositoryDto {
   id: string;
   projectId: string;
@@ -64,17 +75,33 @@ export interface ActivitySummaryDto {
   toUtc?: string | null;
 }
 
+export interface ProjectUsageEntryDto {
+  usageRecordId: string;
+  timestampUtc: string;
+  model?: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens?: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  calculatedTokenCost: number;
+}
+
 export interface UsageSummaryDto {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   requestCount: number;
   reportedCost: number;
+  calculatedTokenCost?: number;
   currency: string;
   fromUtc?: string | null;
   toUtc?: string | null;
+  items?: ProjectUsageEntryDto[];
 }
 
 export interface CostSummaryDto {
@@ -177,6 +204,7 @@ export interface TokenCostModelRow {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;
@@ -184,6 +212,7 @@ export interface TokenCostModelRow {
   inputPerMillion: number;
   outputPerMillion: number;
   cacheReadPerMillion: number;
+  cacheWritePerMillion?: number;
   reasoningPerMillion?: number | null;
 }
 
@@ -196,6 +225,7 @@ export interface ProjectTokenCostEstimate {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;
@@ -272,6 +302,7 @@ export interface ImportedUsageItemDto {
   inputTokens?: number | null;
   outputTokens?: number | null;
   cachedInputTokens?: number | null;
+  cacheWriteTokens?: number | null;
   totalTokens: number;
   reportedCost: number;
   calculatedTokenCost?: number;
@@ -309,6 +340,30 @@ export interface AssignActivityRequestDto {
 export interface AssignActivityResultDto {
   projectId: string;
   assigned: number;
+}
+
+export interface DeleteActivityRequestDto {
+  eventIds: string[];
+}
+
+export interface DeleteActivityResultDto {
+  deleted: number;
+}
+
+export interface RecalculateWindowsRequestDto {
+  projectId?: string | null;
+  fromUtc: string;
+  toUtc: string;
+  inactivityThresholdMinutes?: number | null;
+  dryRun?: boolean;
+}
+
+export interface RecalculateWindowsResultDto {
+  dryRun: boolean;
+  projectId?: string | null;
+  windowCount: number;
+  totalActiveSeconds: number;
+  calculationVersion: string;
 }
 
 export interface MonthlySummaryReport {
@@ -356,6 +411,7 @@ export interface ClientTokenCostEstimate {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;
@@ -577,6 +633,7 @@ export interface UpdateSettingsRequest {
   enablePromptHashing?: boolean;
   exportPath?: string;
   dataRetentionDays?: number | null;
+  clearDataRetentionDays?: boolean;
   autoCreateProjects?: boolean;
   estimateCostFromTokenRates?: boolean;
   cursorTokenRates?: CursorModelTokenRateDto[];
@@ -625,6 +682,51 @@ export interface PromptEventDto {
   /** Number of imported usage rows linked to this prompt (many-to-one). */
   linkedUsageCount?: number;
   hasLinkedUsage?: boolean;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+}
+
+export interface PromptFacetsDto {
+  models: string[];
+  branches: string[];
+  eventTypes: string[];
+  days: string[];
+}
+
+export interface PromptBrowseQuery {
+  fromUtc: string;
+  toUtc: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+  eventType?: string;
+  model?: string;
+  branch?: string;
+}
+
+export interface TimesheetBrowseQuery {
+  projectId?: string;
+  fromUtc?: string;
+  toUtc?: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  openClosed?: string;
+}
+
+export interface SessionBrowseQuery {
+  fromUtc?: string;
+  toUtc?: string;
+  pageIndex: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
 }
 
 export interface SessionDto {
@@ -774,6 +876,13 @@ export interface TimesheetDailyBreakdownRow {
   day: string;
   durationSeconds: number;
   entryCount: number;
+  sessionCount: number;
+}
+
+export interface TimesheetMonthAvailabilityDto {
+  year: number;
+  month: number;
+  entryCount: number;
 }
 
 export interface TimesheetOverallReport {
@@ -816,10 +925,42 @@ export interface IntegrationStatusDto {
   cursorHooksConfigured: boolean;
   cursorHooksOnDisk?: boolean;
   cursorHooksInferredFromActivity?: boolean;
-  vscodeExtensionDetected: boolean;
   mcpConfigured: boolean;
   lastIngestAtUtc?: string | null;
   notes?: string[];
+}
+
+export interface CursorHooksCompatibilityCheckDto {
+  id: string;
+  status: string;
+  message: string;
+}
+
+export interface CursorHooksCompatibilityReportDto {
+  status: string;
+  summary: string;
+  cursorVersion?: string | null;
+  cursorVersionSource?: string | null;
+  cursorUserDirectory: string;
+  hooksInstallDirectory?: string | null;
+  hooksConfigPath?: string | null;
+  hooksConfigSchemaVersion?: number | null;
+  checks: CursorHooksCompatibilityCheckDto[];
+  wiredEvents: string[];
+  legacyEvents: string[];
+  recommendations: string[];
+  lastCursorEventAtUtc?: string | null;
+  lastCursorEventEditorVersion?: string | null;
+  probeEventId?: string | null;
+  probeIngestedAtUtc?: string | null;
+}
+
+export interface OfflineQueueReplayResultDto {
+  attempted: number;
+  flushed: number;
+  remaining: number;
+  failed: number;
+  errors: string[];
 }
 
 export interface DatabaseBackupFileDto {

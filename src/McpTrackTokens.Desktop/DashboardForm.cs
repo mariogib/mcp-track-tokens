@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 using Microsoft.Win32;
+using McpTrackTokens.Shared;
 
 namespace McpTrackTokens.Desktop;
 

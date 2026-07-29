@@ -175,6 +175,15 @@ public interface ITimesheetManagementService
         DateTimeOffset? toUtc = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Paged timesheet list for dashboard browse (SQL OFFSET/LIMIT).
+    /// </summary>
+    Task<PagedResultDto<TimesheetEntryDto>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default);
+
     Task<TimesheetEntryDto> CreateForProjectAsync(
         Guid projectId,
         CreateTimesheetEntryRequest request,
@@ -188,9 +197,10 @@ public interface ITimesheetManagementService
     Task DeleteAsync(Guid entryId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// When a new editor session is created: if the project has no open timesheet,
-    /// closes every other open timesheet (notes append <c>autoclosed</c>) and creates
-    /// one for this project (notes = <c>autocreated</c>).
+    /// When a new editor session is created: if the project has no open timesheet for the
+    /// current local calendar day, closes every other open timesheet (notes append
+    /// <c>autoclosed</c> or <c>day-boundary</c>) and creates one for this project
+    /// (notes = <c>autocreated</c>).
     /// Does not call <see cref="IUnitOfWork.SaveChangesAsync"/>.
     /// </summary>
     Task EnsureAutocreatedOpenEntryAsync(
@@ -207,18 +217,29 @@ public interface ITimesheetReportService
     Task<TimesheetOverallReport> GetOverallReportAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<TimesheetProjectReport> GetProjectReportAsync(
         Guid projectId,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default);
 
     Task<TimesheetClientReport> GetClientReportAsync(
         string clientName,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Lists UTC months that contain timesheet entries, optionally scoped.
+    /// </summary>
+    Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
         CancellationToken cancellationToken = default);
 }
 
@@ -401,4 +422,12 @@ public interface ICursorHooksCompatibilityService
     Task<CursorHooksCompatibilityReportDto> CheckAsync(
         string? cursorUserDirectory = null,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Replays offline queued hook events from disk into the ingest pipeline.
+/// </summary>
+public interface IOfflineQueueReplayService
+{
+    Task<OfflineQueueReplayResultDto> ReplayAsync(CancellationToken cancellationToken = default);
 }

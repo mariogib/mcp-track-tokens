@@ -3,14 +3,19 @@ import { api } from './client';
 import type {
   AllocationRequestDto,
   AssignActivityRequestDto,
+  DeleteActivityRequestDto,
   CreateApiKeyRequestDto,
+  CreateProjectRequest,
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
   EndTimesheetRequest,
   ExportRequestDto,
+  PromptBrowseQuery,
+  RecalculateWindowsRequestDto,
   ReconciliationRequestDto,
   StartTimesheetRequest,
+  TimesheetBrowseQuery,
   UpdateSettingsRequest,
   UpdateProjectRequest,
   UpdateSessionRequest,
@@ -42,6 +47,35 @@ export const queryKeys = {
     ['projects', id, 'token-cost', from, to] as const,
   projectPrompts: (id: string, from: string, to: string) =>
     ['projects', id, 'prompts', from, to] as const,
+  projectPromptsPaged: (
+    id: string,
+    from: string,
+    to: string,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    status: string,
+    eventType: string,
+    model: string,
+    branch: string,
+  ) =>
+    [
+      'projects',
+      id,
+      'prompts',
+      'paged',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      status,
+      eventType,
+      model,
+      branch,
+    ] as const,
+  projectPromptFacets: (id: string, from: string, to: string) =>
+    ['projects', id, 'prompts', 'facets', from, to] as const,
   projectSessions: (id: string, from?: string, to?: string) =>
     ['projects', id, 'sessions', from, to] as const,
   sessions: (projectId?: string, from?: string, to?: string) =>
@@ -49,14 +83,65 @@ export const queryKeys = {
   sessionPrompts: (id: string) => ['sessions', id, 'prompts'] as const,
   projectTimesheet: (id: string, from?: string, to?: string) =>
     ['projects', id, 'timesheet', from, to] as const,
+  projectTimesheetPaged: (
+    id: string,
+    from: string | undefined,
+    to: string | undefined,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    openClosed: string,
+  ) =>
+    [
+      'projects',
+      id,
+      'timesheet',
+      'paged',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      openClosed,
+    ] as const,
   timesheetEntries: (projectId?: string, from?: string, to?: string) =>
     ['timesheet-entries', projectId ?? 'all', from, to] as const,
-  timesheetOverallReport: (from: string, to: string) =>
-    ['timesheet-reports', 'overall', from, to] as const,
-  timesheetProjectReport: (projectId: string, from: string, to: string) =>
-    ['timesheet-reports', 'project', projectId, from, to] as const,
-  timesheetClientReport: (clientName: string, from: string, to: string) =>
-    ['timesheet-reports', 'client', clientName, from, to] as const,
+  timesheetEntriesPaged: (
+    projectId: string | undefined,
+    from: string | undefined,
+    to: string | undefined,
+    pageIndex: number,
+    pageSize: number,
+    search: string,
+    openClosed: string,
+  ) =>
+    [
+      'timesheet-entries',
+      'paged',
+      projectId ?? 'all',
+      from,
+      to,
+      pageIndex,
+      pageSize,
+      search,
+      openClosed,
+    ] as const,
+  timesheetOverallReport: (from: string, to: string, timeZoneOffsetMinutes: number) =>
+    ['timesheet-reports', 'overall', from, to, timeZoneOffsetMinutes] as const,
+  timesheetProjectReport: (
+    projectId: string,
+    from: string,
+    to: string,
+    timeZoneOffsetMinutes: number,
+  ) => ['timesheet-reports', 'project', projectId, from, to, timeZoneOffsetMinutes] as const,
+  timesheetClientReport: (
+    clientName: string,
+    from: string,
+    to: string,
+    timeZoneOffsetMinutes: number,
+  ) => ['timesheet-reports', 'client', clientName, from, to, timeZoneOffsetMinutes] as const,
+  timesheetReportMonths: (projectId?: string, clientName?: string) =>
+    ['timesheet-reports', 'months', projectId ?? '', clientName ?? ''] as const,
   activeSession: ['sessions', 'active'] as const,
   unallocated: (from?: string, to?: string) => ['unallocated', from, to] as const,
   importedUsage: (from?: string, to?: string) => ['imported-usage', from, to] as const,
@@ -162,6 +247,18 @@ export function useUpdateProjectMutation() {
   });
 }
 
+export function useCreateProjectMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateProjectRequest) => api.createProject(body),
+    onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: queryKeys.project(data.id) });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
 export function useDeleteProjectMutation() {
   const qc = useQueryClient();
   return useMutation({
@@ -219,6 +316,42 @@ export function useProjectPromptsQuery(id: string | undefined, fromUtc: string, 
     queryKey: queryKeys.projectPrompts(id ?? '', fromUtc, toUtc),
     queryFn: ({ signal }) => api.getProjectPrompts(id!, fromUtc, toUtc, signal),
     enabled: Boolean(id),
+  });
+}
+
+export function useProjectPromptFacetsQuery(
+  id: string | undefined,
+  fromUtc: string,
+  toUtc: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectPromptFacets(id ?? '', fromUtc, toUtc),
+    queryFn: ({ signal }) => api.getProjectPromptFacets(id!, fromUtc, toUtc, signal),
+    enabled: enabled && Boolean(id),
+  });
+}
+
+export function useProjectPromptsPagedQuery(
+  id: string | undefined,
+  query: PromptBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectPromptsPaged(
+      id ?? '',
+      query?.fromUtc ?? '',
+      query?.toUtc ?? '',
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.status ?? '',
+      query?.eventType ?? '',
+      query?.model ?? '',
+      query?.branch ?? '',
+    ),
+    queryFn: ({ signal }) => api.getProjectPromptsPaged(id!, query!, signal),
+    enabled: enabled && Boolean(id) && Boolean(query),
   });
 }
 
@@ -308,6 +441,26 @@ export function useProjectTimesheetQuery(id: string | undefined, fromUtc?: strin
   });
 }
 
+export function useProjectTimesheetPagedQuery(
+  id: string | undefined,
+  query: TimesheetBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.projectTimesheetPaged(
+      id ?? '',
+      query?.fromUtc,
+      query?.toUtc,
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.openClosed ?? '',
+    ),
+    queryFn: ({ signal }) => api.getProjectTimesheetEntriesPaged(id!, query!, signal),
+    enabled: enabled && Boolean(id) && Boolean(query),
+  });
+}
+
 export function useTimesheetEntriesQuery(
   params?: { projectId?: string; fromUtc?: string; toUtc?: string },
   enabled = true,
@@ -316,6 +469,25 @@ export function useTimesheetEntriesQuery(
     queryKey: queryKeys.timesheetEntries(params?.projectId, params?.fromUtc, params?.toUtc),
     queryFn: ({ signal }) => api.getTimesheetEntries(params, signal),
     enabled,
+  });
+}
+
+export function useTimesheetEntriesPagedQuery(
+  query: TimesheetBrowseQuery | null,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: queryKeys.timesheetEntriesPaged(
+      query?.projectId,
+      query?.fromUtc,
+      query?.toUtc,
+      query?.pageIndex ?? 0,
+      query?.pageSize ?? 25,
+      query?.search ?? '',
+      query?.openClosed ?? '',
+    ),
+    queryFn: ({ signal }) => api.getTimesheetEntriesPaged(query!, signal),
+    enabled: enabled && Boolean(query),
   });
 }
 
@@ -390,9 +562,26 @@ export function useDeleteTimesheetEntryMutation() {
 }
 
 export function useTimesheetOverallReportQuery(fromUtc: string, toUtc: string, enabled = true) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetOverallReport(fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetOverallReport(fromUtc, toUtc, timeZoneOffsetMinutes),
+    queryFn: ({ signal }) =>
+      api.getTimesheetOverallReport(fromUtc, toUtc, timeZoneOffsetMinutes, signal),
+    enabled,
+  });
+}
+
+export function useTimesheetReportMonthsQuery(
+  projectId?: string | null,
+  clientName?: string | null,
+  enabled = true,
+) {
+  const pid = projectId?.trim() || undefined;
+  const client = clientName?.trim() || undefined;
+  return useQuery({
+    queryKey: queryKeys.timesheetReportMonths(pid, client),
+    queryFn: ({ signal }) =>
+      api.getTimesheetReportMonths({ projectId: pid, clientName: client }, signal),
     enabled,
   });
 }
@@ -403,9 +592,16 @@ export function useTimesheetProjectReportQuery(
   toUtc: string,
   enabled = true,
 ) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetProjectReport(projectId ?? '', fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetProjectReport(projectId!, fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetProjectReport(
+      projectId ?? '',
+      fromUtc,
+      toUtc,
+      timeZoneOffsetMinutes,
+    ),
+    queryFn: ({ signal }) =>
+      api.getTimesheetProjectReport(projectId!, fromUtc, toUtc, timeZoneOffsetMinutes, signal),
     enabled: enabled && Boolean(projectId),
   });
 }
@@ -416,9 +612,16 @@ export function useTimesheetClientReportQuery(
   toUtc: string,
   enabled = true,
 ) {
+  const timeZoneOffsetMinutes = -new Date().getTimezoneOffset();
   return useQuery({
-    queryKey: queryKeys.timesheetClientReport(clientName ?? '', fromUtc, toUtc),
-    queryFn: ({ signal }) => api.getTimesheetClientReport(clientName!, fromUtc, toUtc, signal),
+    queryKey: queryKeys.timesheetClientReport(
+      clientName ?? '',
+      fromUtc,
+      toUtc,
+      timeZoneOffsetMinutes,
+    ),
+    queryFn: ({ signal }) =>
+      api.getTimesheetClientReport(clientName!, fromUtc, toUtc, timeZoneOffsetMinutes, signal),
     enabled: enabled && Boolean(clientName),
   });
 }
@@ -463,6 +666,31 @@ export function useIntegrationsQuery() {
   return useQuery({
     queryKey: queryKeys.integrations,
     queryFn: ({ signal }) => api.integrationStatus(signal),
+  });
+}
+
+export function useCheckCursorHooksMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.checkCursorHooks(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.integrations });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+    },
+  });
+}
+
+export function useReplayOfflineQueueMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.replayOfflineQueue(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.integrations });
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
   });
 }
 
@@ -586,12 +814,36 @@ export function useReconciliationMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: ReconciliationRequestDto) => api.runReconciliation(body),
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.dryRun) {
+        return;
+      }
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
       void qc.invalidateQueries({ queryKey: ['projects'] });
       void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useRecalculateActivityWindowsMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: RecalculateWindowsRequestDto) => api.recalculateActivityWindows(body),
+    onSuccess: (data, variables) => {
+      if (data.dryRun) {
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      if (variables.projectId) {
+        void qc.invalidateQueries({ queryKey: queryKeys.project(variables.projectId) });
+        void qc.invalidateQueries({
+          queryKey: ['projects', variables.projectId, 'activity'],
+        });
+      }
     },
   });
 }
@@ -617,7 +869,10 @@ export function useAllocateUsageMutation() {
     mutationFn: (body: AllocationRequestDto) => api.allocateUsage(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: ['imported-usage'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
     },
   });
 }
@@ -640,6 +895,20 @@ export function useAssignActivityMutation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: AssignActivityRequestDto) => api.assignActivity(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['unallocated'] });
+      void qc.invalidateQueries({ queryKey: queryKeys.status });
+      void qc.invalidateQueries({ queryKey: queryKeys.projects });
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+  });
+}
+
+export function useDeleteActivityMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: DeleteActivityRequestDto) => api.deleteActivity(body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['unallocated'] });
       void qc.invalidateQueries({ queryKey: queryKeys.status });

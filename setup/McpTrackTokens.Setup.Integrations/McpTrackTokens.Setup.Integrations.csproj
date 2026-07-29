@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>McpTrackTokens.Setup.Integrations</RootNamespace>
     <AssemblyName>mcp-track-tokens-setup-integrations</AssemblyName>
-    <Description>MSI post-install helper for Cursor hooks and VS Code/Cursor extension.</Description>
+    <Description>MSI post-install helper for Cursor hooks and HTTP MCP sample config.</Description>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 

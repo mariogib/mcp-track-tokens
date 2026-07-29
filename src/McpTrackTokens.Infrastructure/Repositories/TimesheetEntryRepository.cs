@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Infrastructure.Persistence;
@@ -38,18 +41,234 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
-        var query = _db.TimesheetEntries.AsNoTracking();
-        if (projectId is Guid pid)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(e => e.ProjectId == pid);
+            var query = _db.TimesheetEntries.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(e => e.ProjectId == pid);
+            }
+
+            if (from is DateTimeOffset fromValue)
+            {
+                query = query.Where(e =>
+                    e.StartedAtUtc >= fromValue || (e.EndedAtUtc != null && e.EndedAtUtc >= fromValue));
+            }
+
+            if (to is DateTimeOffset toValue)
+            {
+                query = query.Where(e => e.StartedAtUtc <= toValue);
+            }
+
+            return await query
+                .OrderByDescending(e => e.StartedAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            e => (from is null || e.StartedAtUtc >= from || (e.EndedAtUtc != null && e.EndedAtUtc >= from)) &&
-                 (to is null || e.StartedAtUtc <= to),
-            items => items.OrderByDescending(e => e.StartedAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
+        }
+
+        if (from is DateTimeOffset fromBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+        }
+
+        if (to is DateTimeOffset toBound)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+        }
+
+        var sql = "SELECT * FROM TimesheetEntries " + where + " ORDER BY StartedAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.TimesheetEntries, sql, args, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountAsync(
+        TimesheetEntryPageFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (fromSql, where, args) = BuildBrowseSql(filter, forCount: true);
+        var sql = "SELECT COUNT(*) AS \"Value\" " + fromSql + " " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetEntry>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
+        var (fromSql, where, args) = BuildBrowseSql(filter, forCount: false);
+        var sql = new StringBuilder()
+            .Append("SELECT e.* ")
+            .Append(fromSql)
+            .Append(' ')
+            .Append(where)
+            .Append(CultureInfo.InvariantCulture,
+                $" ORDER BY e.StartedAtUtc DESC, e.Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+        args.Add(take);
+        args.Add(skip);
+
+        return await _db.TimesheetEntries
+            .FromSqlRaw(sql.ToString(), args.ToArray())
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedClient = clientName?.Trim();
+        var needsJoin = !string.IsNullOrEmpty(normalizedClient);
+        var fromSql = needsJoin
+            ? "FROM TimesheetEntries AS e INNER JOIN Projects AS p ON p.Id = e.ProjectId"
+            : "FROM TimesheetEntries AS e";
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (projectId is Guid pid)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND e.ProjectId = {{{args.Count}}}");
+            args.Add(pid);
+        }
+
+        if (!string.IsNullOrEmpty(normalizedClient))
+        {
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND lower(IFNULL(p.ClientName,'')) = lower({{{args.Count}}})");
+            args.Add(normalizedClient);
+        }
+
+        // StartedAtUtc is stored as DateTimeOffset TEXT; first 7 chars are YYYY-MM.
+        var sql =
+            "SELECT substr(e.StartedAtUtc, 1, 7) AS \"MonthKey\", COUNT(*) AS \"EntryCount\" " +
+            fromSql + " " + where +
+            " GROUP BY substr(e.StartedAtUtc, 1, 7) ORDER BY MonthKey DESC";
+
+        var rows = await _db.Database
+            .SqlQueryRaw<MonthCountRow>(sql, args.ToArray())
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows
+            .Select(ParseMonthRow)
+            .Where(static m => m is not null)
+            .Select(static m => m!)
+            .ToList();
+    }
+
+    private static TimesheetMonthAvailabilityDto? ParseMonthRow(MonthCountRow row)
+    {
+        if (string.IsNullOrWhiteSpace(row.MonthKey) || row.MonthKey.Length < 7)
+        {
+            return null;
+        }
+
+        if (!int.TryParse(row.MonthKey.AsSpan(0, 4), NumberStyles.None, CultureInfo.InvariantCulture, out var year) ||
+            !int.TryParse(row.MonthKey.AsSpan(5, 2), NumberStyles.None, CultureInfo.InvariantCulture, out var month) ||
+            month is < 1 or > 12)
+        {
+            return null;
+        }
+
+        return new TimesheetMonthAvailabilityDto
+        {
+            Year = year,
+            Month = month,
+            EntryCount = row.EntryCount
+        };
+    }
+
+    private sealed class MonthCountRow
+    {
+        public string MonthKey { get; set; } = string.Empty;
+
+        public int EntryCount { get; set; }
+    }
+
+    private static (string FromSql, string WhereSql, List<object> Args) BuildBrowseSql(
+        TimesheetEntryPageFilter filter,
+        bool forCount)
+    {
+        var search = filter.Search?.Trim();
+        var needsJoin = !string.IsNullOrEmpty(search);
+        var fromSql = needsJoin
+            ? "FROM TimesheetEntries AS e LEFT JOIN Projects AS p ON p.Id = e.ProjectId LEFT JOIN TimesheetCategories AS c ON c.Id = e.CategoryId"
+            : "FROM TimesheetEntries AS e";
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (filter.ProjectId is Guid projectId)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND e.ProjectId = {{{args.Count}}}");
+            args.Add(projectId);
+        }
+
+        // Match ListAsync range semantics using unixepoch on TEXT DateTimeOffset columns.
+        if (filter.FromUtc is DateTimeOffset from)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
+            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc", "e");
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND ({started} >= {{{args.Count}}} OR (e.EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(from));
+        }
+
+        if (filter.ToUtc is DateTimeOffset to)
+        {
+            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
+            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
+            args.Add(SqliteDateTimePaging.ToUnixSeconds(to));
+        }
+
+        var openClosed = filter.OpenClosed?.Trim().ToLowerInvariant();
+        if (openClosed == "open")
+        {
+            where.Append(" AND e.EndedAtUtc IS NULL");
+        }
+        else if (openClosed == "closed")
+        {
+            where.Append(" AND e.EndedAtUtc IS NOT NULL");
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = "%" + SqliteDateTimePaging.EscapeLike(search) + "%";
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (IFNULL(e.Notes,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(p.Name,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(c.Name,'') LIKE {{{args.Count}}} ESCAPE '\\')");
+            args.Add(pattern);
+        }
+
+        _ = forCount;
+        return (fromSql, where.ToString(), args);
     }
 
     /// <inheritdoc />

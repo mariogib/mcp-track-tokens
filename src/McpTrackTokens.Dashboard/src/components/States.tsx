@@ -1,13 +1,7 @@
-import { Link } from 'react-router-dom';
 import { ApiError } from '../api/client';
+import { EmptyState, LoadingState, TextLink } from '../shared/adminUi';
 
-export function LoadingState({ label = 'Loading…' }: { label?: string }) {
-  return (
-    <div className="loading-box" role="status" aria-live="polite">
-      {label}
-    </div>
-  );
-}
+export { EmptyState, LoadingState };
 
 export function ErrorState({ message, error }: { message: string; error?: unknown }) {
   const unauthorized =
@@ -21,14 +15,10 @@ export function ErrorState({ message, error }: { message: string; error?: unknow
       {unauthorized ? (
         <p>
           API routes require <code>Authorization: Bearer …</code>. Open{' '}
-          <Link to="/settings">Settings → API key management</Link>, paste your tracking key, and
-          click <strong>Save local key</strong>.
+          <TextLink to="/settings">Settings → API key management</TextLink>, paste your tracking
+          key, and click <strong>Save local key</strong>.
         </p>
       ) : null}
     </div>
   );
-}
-
-export function EmptyState({ message }: { message: string }) {
-  return <div className="empty">{message}</div>;
 }

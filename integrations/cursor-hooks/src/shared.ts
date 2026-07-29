@@ -19,6 +19,8 @@ export interface HookConfig {
   enablePromptHashing: boolean;
   storePromptContent: boolean;
   queuePath: string;
+  /** Cap for offline JSONL queue size (oldest dropped when exceeded). */
+  maxQueuedEvents: number;
 }
 
 export interface TrackingEvent {
@@ -97,6 +99,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): HookConfig {
     enablePromptHashing: parseBool(env.MCP_TRACK_TOKENS_ENABLE_PROMPT_HASHING, false),
     storePromptContent: parseBool(env.MCP_TRACK_TOKENS_STORE_PROMPT_CONTENT, false),
     queuePath: env.MCP_TRACK_TOKENS_QUEUE_PATH || getDefaultQueuePath(),
+    maxQueuedEvents: Math.max(
+      1,
+      Number(env.MCP_TRACK_TOKENS_MAX_QUEUED_EVENTS || 10_000) || 10_000,
+    ),
   };
 }
 

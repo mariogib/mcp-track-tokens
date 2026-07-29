@@ -210,6 +210,9 @@ namespace McpTrackTokens.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<long?>("CacheWriteTokens")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("CachedInputTokens")
                         .HasColumnType("INTEGER");
 
@@ -365,6 +368,27 @@ namespace McpTrackTokens.Infrastructure.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("ImportBatches", (string)null);
+                });
+
+            modelBuilder.Entity("McpTrackTokens.Domain.Entities.PersistedAppSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("AppSettings", (string)null);
                 });
 
             modelBuilder.Entity("McpTrackTokens.Domain.Entities.Project", b =>

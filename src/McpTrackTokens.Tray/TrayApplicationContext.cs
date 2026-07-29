@@ -1,3 +1,5 @@
+using McpTrackTokens.Shared;
+
 namespace McpTrackTokens.Tray;
 
 /// <summary>
@@ -15,6 +17,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
+        var appVersion = GetAppVersion();
+        var versionItem = new ToolStripMenuItem($"MCP Track Tokens v{appVersion}")
+        {
+            Enabled = false
+        };
         _statusItem = new ToolStripMenuItem("Status: Starting…") { Enabled = false };
         _startItem = new ToolStripMenuItem("Start server", null, OnStartClicked);
         _stopItem = new ToolStripMenuItem("Stop server", null, OnStopClicked);
@@ -22,6 +29,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         var exitItem = new ToolStripMenuItem("Exit", null, OnExitClicked);
 
         var menu = new ThemedContextMenuStrip();
+        menu.Items.Add(versionItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_statusItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(openItem);
@@ -35,7 +44,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             Icon = AppIconLoader.Load(),
             Visible = true,
-            Text = "MCP Track Tokens",
+            Text = $"MCP Track Tokens v{appVersion}",
             ContextMenuStrip = menu
         };
         _tray.DoubleClick += (_, _) => OpenDashboard();
@@ -51,7 +60,21 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnStopClicked(object? sender, EventArgs e) => await StopServerAsync();
 
-    private async void OnExitClicked(object? sender, EventArgs e) => await ExitAsync();
+    private async void OnExitClicked(object? sender, EventArgs e)
+    {
+        var result = MessageBox.Show(
+            "Stop the MCP Track Tokens host and exit?",
+            "MCP Track Tokens",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        await ExitAsync();
+    }
 
     private async void OnStatusTick(object? sender, EventArgs e) => await RefreshStatusAsync();
 
@@ -108,25 +131,26 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        var version = GetAppVersion();
         var healthy = _host.IsRunning && await _host.CheckHealthyAsync().ConfigureAwait(true);
         if (healthy)
         {
             _statusItem.Text = $"Status: Running ({_host.ServerUrl})";
-            _tray.Text = "MCP Track Tokens — Running";
+            _tray.Text = $"MCP Track Tokens v{version} — Running";
             _startItem.Enabled = false;
             _stopItem.Enabled = true;
         }
         else if (_host.IsRunning)
         {
             _statusItem.Text = "Status: Starting / unhealthy";
-            _tray.Text = "MCP Track Tokens — Unhealthy";
+            _tray.Text = $"MCP Track Tokens v{version} — Unhealthy";
             _startItem.Enabled = false;
             _stopItem.Enabled = true;
         }
         else
         {
             _statusItem.Text = "Status: Stopped";
-            _tray.Text = "MCP Track Tokens — Stopped";
+            _tray.Text = $"MCP Track Tokens v{version} — Stopped";
             _startItem.Enabled = true;
             _stopItem.Enabled = false;
         }
@@ -167,13 +191,28 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             await _host.StopAsync().ConfigureAwait(true);
         }
+        catch
+        {
+            // Best-effort shutdown; process exit below is authoritative.
+        }
         finally
         {
-            _tray.Visible = false;
-            _tray.Dispose();
-            _statusTimer.Dispose();
-            await _host.DisposeAsync().ConfigureAwait(true);
-            ExitThread();
+            try
+            {
+                _tray.Visible = false;
+                _tray.Dispose();
+                _statusTimer.Dispose();
+                await _host.DisposeAsync().ConfigureAwait(true);
+            }
+            catch
+            {
+                // Ignore cleanup failures during exit.
+            }
+
+            // ExitThread() only ends the WinForms message loop. The in-process
+            // Kestrel/MCP host can leave non-background work running, so the
+            // process stays visible in Task Manager. Force a full process exit.
+            Environment.Exit(0);
         }
     }
 
@@ -187,5 +226,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         base.Dispose(disposing);
+    }
+
+    private static string GetAppVersion()
+    {
+        var assembly = typeof(TrayApplicationContext).Assembly;
+        var informational = assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            // Strip optional SemVer build metadata (e.g. "+abc123").
+            var plus = informational.IndexOf('+', StringComparison.Ordinal);
+            return plus >= 0 ? informational[..plus] : informational;
+        }
+
+        return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 }

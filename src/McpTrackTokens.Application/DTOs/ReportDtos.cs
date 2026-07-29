@@ -166,6 +166,8 @@ public sealed record ProjectTokenCostEstimate
 
     public long CachedInputTokens { get; init; }
 
+    public long CacheWriteTokens { get; init; }
+
     public long ReasoningTokens { get; init; }
 
     public long TotalTokens { get; init; }
@@ -196,6 +198,8 @@ public sealed record TokenCostModelRow
 
     public long CachedInputTokens { get; init; }
 
+    public long CacheWriteTokens { get; init; }
+
     public long ReasoningTokens { get; init; }
 
     public long TotalTokens { get; init; }
@@ -209,6 +213,8 @@ public sealed record TokenCostModelRow
     public decimal OutputPerMillion { get; init; }
 
     public decimal CacheReadPerMillion { get; init; }
+
+    public decimal CacheWritePerMillion { get; init; }
 
     public decimal? ReasoningPerMillion { get; init; }
 }
@@ -233,6 +239,8 @@ public sealed record ClientTokenCostEstimate
     public long OutputTokens { get; init; }
 
     public long CachedInputTokens { get; init; }
+
+    public long CacheWriteTokens { get; init; }
 
     public long ReasoningTokens { get; init; }
 
@@ -402,6 +410,8 @@ public sealed record ImportedUsageItemDto
     public long? OutputTokens { get; init; }
 
     public long? CachedInputTokens { get; init; }
+
+    public long? CacheWriteTokens { get; init; }
 
     public long TotalTokens { get; init; }
 

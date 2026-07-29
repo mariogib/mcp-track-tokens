@@ -42,7 +42,9 @@ internal static class DesktopAppLauncher
 
             if (process is not null)
             {
-                AllowSetForegroundWindow(process.Id);
+                var processId = process.Id;
+                process.Dispose();
+                AllowSetForegroundWindow(processId);
                 // Window may not exist yet; briefly poll so a cold start still lands in front.
                 _ = Task.Run(async () =>
                 {

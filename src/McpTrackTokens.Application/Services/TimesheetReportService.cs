@@ -13,28 +13,33 @@ public sealed class TimesheetReportService : ITimesheetReportService
     private readonly IProjectRepository _projects;
     private readonly ITimesheetEntryRepository _timesheets;
     private readonly ITimesheetCategoryRepository _categories;
+    private readonly TimeZoneInfo _calendarTimeZone;
 
     public TimesheetReportService(
         IProjectRepository projects,
         ITimesheetEntryRepository timesheets,
-        ITimesheetCategoryRepository categories)
+        ITimesheetCategoryRepository categories,
+        TimeZoneInfo? calendarTimeZone = null)
     {
         _projects = projects;
         _timesheets = timesheets;
         _categories = categories;
+        _calendarTimeZone = calendarTimeZone ?? TimeZoneInfo.Local;
     }
 
     /// <inheritdoc />
     public async Task<TimesheetOverallReport> GetOverallReportAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default)
     {
         var (from, to) = NormalizeRange(fromUtc, toUtc);
+        var calendar = ResolveCalendarTimeZone(timeZoneOffsetMinutes);
         var entries = await _timesheets.ListAsync(null, from, to, cancellationToken).ConfigureAwait(false);
         var projects = await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
         var categories = await _categories.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
-        var built = BuildReportData(entries, projects, categories, from, to);
+        var built = BuildReportData(entries, projects, categories, from, to, calendar);
 
         return new TimesheetOverallReport
         {
@@ -53,15 +58,17 @@ public sealed class TimesheetReportService : ITimesheetReportService
         Guid projectId,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default)
     {
         var project = await _projects.GetByIdAsync(projectId, cancellationToken).ConfigureAwait(false)
             ?? throw new EntityNotFoundException(nameof(Project), projectId);
 
         var (from, to) = NormalizeRange(fromUtc, toUtc);
+        var calendar = ResolveCalendarTimeZone(timeZoneOffsetMinutes);
         var entries = await _timesheets.ListAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
         var categories = await _categories.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
-        var built = BuildReportData(entries, [project], categories, from, to);
+        var built = BuildReportData(entries, [project], categories, from, to, calendar);
 
         return new TimesheetProjectReport
         {
@@ -81,6 +88,7 @@ public sealed class TimesheetReportService : ITimesheetReportService
         string clientName,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
+        int? timeZoneOffsetMinutes = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(clientName))
@@ -90,6 +98,7 @@ public sealed class TimesheetReportService : ITimesheetReportService
 
         var normalizedClient = clientName.Trim();
         var (from, to) = NormalizeRange(fromUtc, toUtc);
+        var calendar = ResolveCalendarTimeZone(timeZoneOffsetMinutes);
         var allProjects = await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
         var clientProjects = allProjects
             .Where(p => string.Equals(p.ClientName?.Trim(), normalizedClient, StringComparison.OrdinalIgnoreCase))
@@ -100,7 +109,7 @@ public sealed class TimesheetReportService : ITimesheetReportService
             .Where(e => projectIds.Contains(e.ProjectId))
             .ToList();
         var categories = await _categories.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
-        var built = BuildReportData(entries, clientProjects, categories, from, to);
+        var built = BuildReportData(entries, clientProjects, categories, from, to, calendar);
 
         return new TimesheetClientReport
         {
@@ -113,6 +122,13 @@ public sealed class TimesheetReportService : ITimesheetReportService
             ByDay = built.ByDay
         };
     }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TimesheetMonthAvailabilityDto>> ListMonthsWithEntriesAsync(
+        Guid? projectId = null,
+        string? clientName = null,
+        CancellationToken cancellationToken = default)
+        => _timesheets.ListMonthsWithEntriesAsync(projectId, clientName, cancellationToken);
 
     private static (DateTimeOffset From, DateTimeOffset To) NormalizeRange(
         DateTimeOffset fromUtc,
@@ -128,12 +144,13 @@ public sealed class TimesheetReportService : ITimesheetReportService
         return (from, to);
     }
 
-    private static BuiltReport BuildReportData(
+    private BuiltReport BuildReportData(
         IReadOnlyList<TimesheetEntry> entries,
         IReadOnlyList<Project> projects,
         IReadOnlyList<TimesheetCategory> categories,
         DateTimeOffset fromUtc,
-        DateTimeOffset toUtc)
+        DateTimeOffset toUtc,
+        TimeZoneInfo calendarTimeZone)
     {
         var now = DateTimeOffset.UtcNow;
         var projectById = projects.ToDictionary(p => p.Id);
@@ -242,20 +259,25 @@ public sealed class TimesheetReportService : ITimesheetReportService
             .ThenBy(r => r.ClientName, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var byDay = BuildDailyBreakdown(entries, fromUtc, toUtc, now);
+        var byDay = BuildDailyBreakdown(entries, fromUtc, toUtc, now, calendarTimeZone);
 
         return new BuiltReport(totals, byCategory, byProject, byClient, byDay);
     }
 
+    /// <summary>
+    /// Buckets entries by the calendar day they <em>started</em> on (viewer timezone), matching
+    /// the dashboard timesheet day drill-down and project timesheet calendar.
+    /// </summary>
     private static IReadOnlyList<TimesheetDailyBreakdownRow> BuildDailyBreakdown(
         IReadOnlyList<TimesheetEntry> entries,
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        TimeZoneInfo calendarTimeZone)
     {
         var dayStarts = new Dictionary<DateOnly, (long DurationSeconds, HashSet<Guid> EntryIds)>();
-        var fromDay = DateOnly.FromDateTime(fromUtc.UtcDateTime);
-        var toDay = DateOnly.FromDateTime(toUtc.UtcDateTime);
+        var fromDay = ToCalendarDay(fromUtc, calendarTimeZone);
+        var toDay = ToCalendarDay(toUtc, calendarTimeZone);
 
         for (var day = fromDay; day <= toDay; day = day.AddDays(1))
         {
@@ -264,28 +286,16 @@ public sealed class TimesheetReportService : ITimesheetReportService
 
         foreach (var entry in entries)
         {
-            var entryEnd = entry.EndedAtUtc ?? now;
-            var cursorDay = DateOnly.FromDateTime(
-                (entry.StartedAtUtc < fromUtc ? fromUtc : entry.StartedAtUtc).UtcDateTime);
-            var lastDay = DateOnly.FromDateTime((entryEnd > toUtc ? toUtc : entryEnd).UtcDateTime);
-
-            while (cursorDay <= lastDay)
+            var startDay = ToCalendarDay(entry.StartedAtUtc, calendarTimeZone);
+            if (startDay < fromDay || startDay > toDay)
             {
-                if (cursorDay >= fromDay && cursorDay <= toDay)
-                {
-                    var dayStart = new DateTimeOffset(cursorDay.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-                    var dayEnd = new DateTimeOffset(cursorDay.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc));
-                    var seconds = OverlapSeconds(entry.StartedAtUtc, entry.EndedAtUtc, dayStart, dayEnd, now);
-                    if (seconds > 0)
-                    {
-                        var current = dayStarts[cursorDay];
-                        current.EntryIds.Add(entry.Id);
-                        dayStarts[cursorDay] = (current.DurationSeconds + seconds, current.EntryIds);
-                    }
-                }
-
-                cursorDay = cursorDay.AddDays(1);
+                continue;
             }
+
+            var seconds = OverlapSeconds(entry.StartedAtUtc, entry.EndedAtUtc, fromUtc, toUtc, now);
+            var current = dayStarts[startDay];
+            current.EntryIds.Add(entry.Id);
+            dayStarts[startDay] = (current.DurationSeconds + Math.Max(0, seconds), current.EntryIds);
         }
 
         return dayStarts
@@ -297,6 +307,36 @@ public sealed class TimesheetReportService : ITimesheetReportService
             })
             .OrderByDescending(r => r.Day)
             .ToList();
+    }
+
+    private TimeZoneInfo ResolveCalendarTimeZone(int? timeZoneOffsetMinutes)
+    {
+        if (timeZoneOffsetMinutes is null)
+        {
+            return _calendarTimeZone;
+        }
+
+        var offset = TimeSpan.FromMinutes(timeZoneOffsetMinutes.Value);
+        if (offset < TimeSpan.FromHours(-14) || offset > TimeSpan.FromHours(14))
+        {
+            return _calendarTimeZone;
+        }
+
+        var id = $"ClientOffset/{(int)offset.TotalMinutes}";
+        try
+        {
+            return TimeZoneInfo.CreateCustomTimeZone(id, offset, id, id);
+        }
+        catch (Exception)
+        {
+            return _calendarTimeZone;
+        }
+    }
+
+    private static DateOnly ToCalendarDay(DateTimeOffset instant, TimeZoneInfo calendarTimeZone)
+    {
+        var local = TimeZoneInfo.ConvertTime(instant.ToUniversalTime(), calendarTimeZone);
+        return DateOnly.FromDateTime(local.DateTime);
     }
 
     private static long OverlapSeconds(

@@ -31,6 +31,8 @@ public static class DashboardAdminEndpoints
         api.MapPut("/timesheet-categories/{id:guid}", UpdateTimesheetCategoryAsync);
         api.MapDelete("/timesheet-categories/{id:guid}", DeleteTimesheetCategoryAsync);
         api.MapGet("/integrations/status", GetIntegrationsAsync);
+        api.MapPost("/integrations/cursor-hooks/check", CheckCursorHooksAsync);
+        api.MapPost("/integrations/offline-queue/replay", ReplayOfflineQueueAsync);
         api.MapGet("/database/backup-info", GetDatabaseBackupInfo);
         api.MapPost("/database/backup", BackupDatabaseAsync);
         api.MapGet("/database/backup-download", DownloadDatabaseBackupAsync);
@@ -56,7 +58,7 @@ public static class DashboardAdminEndpoints
     private static async Task<IResult> FetchCursorTokenRatesAsync(
         ICursorDocsPricingClient pricingClient,
         IOptions<TrackingOptions> optionsAccessor,
-        ICursorTokenRateStore rateStore,
+        ITrackingSettingsStore settingsStore,
         CancellationToken cancellationToken)
     {
         try
@@ -86,7 +88,7 @@ public static class DashboardAdminEndpoints
                 options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
             }
 
-            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
+            await settingsStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
 
             return Results.Ok(new
             {
@@ -118,7 +120,7 @@ public static class DashboardAdminEndpoints
     private static async Task<IResult> UpdateSettingsAsync(
         UpdateSettingsRequestDto request,
         IOptions<TrackingOptions> optionsAccessor,
-        ICursorTokenRateStore rateStore,
+        ITrackingSettingsStore settingsStore,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -189,11 +191,9 @@ public static class DashboardAdminEndpoints
             options.DataRetentionDays = null;
         }
 
-        var ratesChanged = false;
         if (request.EstimateCostFromTokenRates is bool estimate)
         {
             options.EstimateCostFromTokenRates = estimate;
-            ratesChanged = true;
         }
 
         if (request.CursorTokenRates is not null)
@@ -216,14 +216,9 @@ public static class DashboardAdminEndpoints
             {
                 options.CursorTokenRates = CursorTokenRateStore.CreateDefaultRates();
             }
-
-            ratesChanged = true;
         }
 
-        if (ratesChanged)
-        {
-            await rateStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
-        }
+        await settingsStore.SaveAsync(options, cancellationToken).ConfigureAwait(false);
 
         return Results.Ok(ToSettingsDto(options));
     }
@@ -362,8 +357,7 @@ public static class DashboardAdminEndpoints
         {
             status.QueuedEventCount > 0
                 ? $"{status.QueuedEventCount} queued offline event(s) under {queuePath}."
-                : "No queued offline events detected.",
-            "VS Code extension presence is not auto-detected from the server process."
+                : "No queued offline events detected."
         };
 
         if (hooksOnDisk)
@@ -388,11 +382,41 @@ public static class DashboardAdminEndpoints
             cursorHooksConfigured,
             cursorHooksOnDisk = hooksOnDisk,
             cursorHooksInferredFromActivity = !hooksOnDisk && recentCursorIngest,
-            vscodeExtensionDetected = false,
             mcpConfigured = true,
             lastIngestAtUtc = status.LastEventAtUtc,
             notes
         });
+    }
+
+    private static async Task<IResult> CheckCursorHooksAsync(
+        ICursorHooksCompatibilityService hooksCompatibility,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var report = await hooksCompatibility.CheckAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> ReplayOfflineQueueAsync(
+        IOfflineQueueReplayService replay,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await replay.ReplayAsync(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     private static IResult GetDatabaseBackupInfo(

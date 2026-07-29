@@ -34,6 +34,7 @@ public static class ApiEndpoints
         api.MapPost("/usage/{id:guid}/allocate-to-prompt", AllocateUsageToClosestPromptAsync);
 
         api.MapGet("/projects", ListProjectsAsync);
+        api.MapPost("/projects", CreateProjectAsync);
         api.MapGet("/projects/{id:guid}", GetProjectAsync);
         api.MapPut("/projects/{id:guid}", UpdateProjectAsync);
         api.MapDelete("/projects/{id:guid}", DeleteProjectAsync);
@@ -46,6 +47,7 @@ public static class ApiEndpoints
         api.MapGet("/projects/{id:guid}/timesheet-entries", GetProjectTimesheetEntriesAsync);
         api.MapPost("/projects/{id:guid}/timesheet-entries", CreateProjectTimesheetEntryAsync);
         api.MapGet("/projects/{id:guid}/prompts", GetProjectPromptsAsync);
+        api.MapGet("/projects/{id:guid}/prompts/facets", GetProjectPromptFacetsAsync);
 
         api.MapGet("/sessions/active", GetActiveSessionsAsync);
         api.MapGet("/sessions", GetSessionsAsync);
@@ -56,6 +58,7 @@ public static class ApiEndpoints
         api.MapGet("/timesheet/reports/overall", GetTimesheetOverallReportAsync);
         api.MapGet("/timesheet/reports/projects/{id:guid}", GetTimesheetProjectReportAsync);
         api.MapGet("/timesheet/reports/clients/{clientName}", GetTimesheetClientReportAsync);
+        api.MapGet("/timesheet/reports/months", GetTimesheetReportMonthsAsync);
         api.MapPost("/timesheet/start", StartTimesheetAsync);
         api.MapPost("/timesheet/end", EndTimesheetAsync);
         api.MapPut("/timesheet-entries/{id:guid}", UpdateTimesheetEntryAsync);
@@ -66,6 +69,8 @@ public static class ApiEndpoints
         api.MapDelete("/unallocated/usage", DeleteUnallocatedUsageAsync);
         api.MapGet("/usage/imported", GetImportedUsageAsync);
         api.MapPost("/activity/assign", AssignActivityAsync);
+        api.MapPost("/activity/delete", DeleteActivityAsync);
+        api.MapPost("/activity/windows/recalculate", RecalculateActivityWindowsAsync);
         api.MapGet("/reports/summary", GetSummaryAsync);
         api.MapGet("/reports/clients", ListReportClientsAsync);
         api.MapGet("/reports/clients/{clientName}/cost", GetClientCostAsync);
@@ -424,6 +429,22 @@ public static class ApiEndpoints
         return Results.Ok(list.Select(ProjectMapper.ToDto).ToList());
     }
 
+    private static async Task<IResult> CreateProjectAsync(
+        CreateProjectRequest request,
+        IProjectDetectionService projects,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var created = await projects.RegisterAsync(request, cancellationToken).ConfigureAwait(false);
+            return Results.Created($"/api/v1/projects/{created.Id}", created);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
     private static async Task<IResult> UpdateProjectAsync(
         Guid id,
         UpdateProjectRequest request,
@@ -581,6 +602,10 @@ public static class ApiEndpoints
         ISessionRepository sessions,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -590,6 +615,32 @@ public static class ApiEndpoints
         }
 
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new SessionPageFilter
+            {
+                ProjectId = id,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status
+            };
+            var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var page = await sessions
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = page.Select(SessionMapper.ToDto).Cast<object>().ToList(),
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await sessions.ListByProjectAsync(id, from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
     }
@@ -599,9 +650,39 @@ public static class ApiEndpoints
         Guid? projectId,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
         CancellationToken cancellationToken)
     {
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new SessionPageFilter
+            {
+                ProjectId = projectId,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status
+            };
+            var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var page = await sessions
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = page.Select(SessionMapper.ToDto).Cast<object>().ToList(),
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await sessions.ListAsync(projectId, from, to, cancellationToken).ConfigureAwait(false);
         return Results.Ok(list.Select(SessionMapper.ToDto).ToList());
     }
@@ -681,10 +762,34 @@ public static class ApiEndpoints
         ITimesheetManagementService timesheets,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? openClosed,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (pageIndex is not null || pageSize is not null)
+            {
+                var index = pageIndex ?? 0;
+                var size = Math.Clamp(pageSize ?? 25, 1, 100);
+                var paged = await timesheets.ListPagedAsync(
+                        new TimesheetEntryPageFilter
+                        {
+                            ProjectId = id,
+                            FromUtc = fromUtc,
+                            ToUtc = toUtc,
+                            Search = search,
+                            OpenClosed = openClosed
+                        },
+                        index,
+                        size,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Ok(paged);
+            }
+
             var list = await timesheets.ListForProjectAsync(id, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(list);
@@ -700,10 +805,34 @@ public static class ApiEndpoints
         Guid? projectId,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? openClosed,
         CancellationToken cancellationToken)
     {
         try
         {
+            if (pageIndex is not null || pageSize is not null)
+            {
+                var index = pageIndex ?? 0;
+                var size = Math.Clamp(pageSize ?? 25, 1, 100);
+                var paged = await timesheets.ListPagedAsync(
+                        new TimesheetEntryPageFilter
+                        {
+                            ProjectId = projectId,
+                            FromUtc = fromUtc,
+                            ToUtc = toUtc,
+                            Search = search,
+                            OpenClosed = openClosed
+                        },
+                        index,
+                        size,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return Results.Ok(paged);
+            }
+
             var list = await timesheets.ListAsync(projectId, fromUtc, toUtc, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(list);
@@ -718,13 +847,35 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetOverallReportAsync(from, to, cancellationToken).ConfigureAwait(false);
+            var report = await reports
+                .GetOverallReportAsync(from, to, timeZoneOffsetMinutes, cancellationToken)
+                .ConfigureAwait(false);
             return Results.Ok(report);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> GetTimesheetReportMonthsAsync(
+        ITimesheetReportService reports,
+        Guid? projectId,
+        string? clientName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var months = await reports
+                .ListMonthsWithEntriesAsync(projectId, clientName, cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(months);
         }
         catch (Exception ex)
         {
@@ -737,12 +888,14 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetProjectReportAsync(id, from, to, cancellationToken)
+            var report = await reports
+                .GetProjectReportAsync(id, from, to, timeZoneOffsetMinutes, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
         }
@@ -757,13 +910,15 @@ public static class ApiEndpoints
         ITimesheetReportService reports,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? timeZoneOffsetMinutes,
         CancellationToken cancellationToken)
     {
         try
         {
             var decoded = Uri.UnescapeDataString(clientName);
             var (from, to) = DateRange.Resolve(fromUtc, toUtc);
-            var report = await reports.GetClientReportAsync(decoded, from, to, cancellationToken)
+            var report = await reports
+                .GetClientReportAsync(decoded, from, to, timeZoneOffsetMinutes, cancellationToken)
                 .ConfigureAwait(false);
             return Results.Ok(report);
         }
@@ -865,6 +1020,13 @@ public static class ApiEndpoints
         IOptions<TrackingOptions> trackingOptions,
         DateTimeOffset? fromUtc,
         DateTimeOffset? toUtc,
+        int? pageIndex,
+        int? pageSize,
+        string? search,
+        string? status,
+        string? eventType,
+        string? model,
+        string? branch,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -874,12 +1036,91 @@ public static class ApiEndpoints
         }
 
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+
+        if (pageIndex is not null || pageSize is not null)
+        {
+            var index = Math.Max(0, pageIndex ?? 0);
+            var size = Math.Clamp(pageSize ?? 25, 1, 100);
+            var filter = new ActivityEventPageFilter
+            {
+                ProjectId = id,
+                FromUtc = from,
+                ToUtc = to,
+                Search = search,
+                Status = status,
+                EventType = eventType,
+                Model = model,
+                Branch = branch,
+                PromptSubmittedOnly = true
+            };
+            var totalCount = await events.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+            var prompts = await events
+                .ListPagedAsync(filter, index, size, cancellationToken)
+                .ConfigureAwait(false);
+            var items = await MapPromptsWithUsageAsync(
+                    prompts,
+                    attributions,
+                    usage,
+                    trackingOptions,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(new PagedResultDto<object>
+            {
+                Items = items,
+                PageIndex = index,
+                PageSize = size,
+                TotalCount = totalCount
+            });
+        }
+
         var list = await events.ListAsync(from, to, id, unallocatedOnly: null, cancellationToken)
             .ConfigureAwait(false);
-        var prompts = list
+        var allPrompts = list
             .Where(e => e.EventType == ActivityEventType.PromptSubmitted)
             .OrderByDescending(e => e.TimestampUtc)
             .ToList();
+        var mapped = await MapPromptsWithUsageAsync(
+                allPrompts,
+                attributions,
+                usage,
+                trackingOptions,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(mapped);
+    }
+
+    private static async Task<IResult> GetProjectPromptFacetsAsync(
+        Guid id,
+        IProjectRepository projects,
+        IActivityEventRepository events,
+        DateTimeOffset? fromUtc,
+        DateTimeOffset? toUtc,
+        CancellationToken cancellationToken)
+    {
+        var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        if (project is null)
+        {
+            return Results.NotFound();
+        }
+
+        var (from, to) = DateRange.Resolve(fromUtc, toUtc);
+        var facets = await events
+            .GetPromptFacetsAsync(id, from, to, cancellationToken)
+            .ConfigureAwait(false);
+        return Results.Ok(facets);
+    }
+
+    private static async Task<IReadOnlyList<object>> MapPromptsWithUsageAsync(
+        IReadOnlyList<PromptActivityEvent> prompts,
+        IUsageAttributionRepository attributions,
+        IExternalUsageRepository usage,
+        IOptions<TrackingOptions> trackingOptions,
+        CancellationToken cancellationToken)
+    {
+        if (prompts.Count == 0)
+        {
+            return [];
+        }
 
         var linked = await attributions
             .ListByActivityEventIdsAsync(prompts.Select(p => p.Id).ToList(), cancellationToken)
@@ -895,9 +1136,8 @@ public static class ApiEndpoints
             }
         }
 
-        var rates = trackingOptions.Value.CursorTokenRates.Count > 0
-            ? trackingOptions.Value.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(
+            trackingOptions.Value.CursorTokenRates);
 
         var usageByPrompt = linked
             .Where(a => a.ActivityEventId is Guid)
@@ -918,19 +1158,17 @@ public static class ApiEndpoints
                         }
                         else if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var fallback))
                         {
-                            tokens += fallback.TotalTokens
-                                ?? ((fallback.InputTokens ?? 0) + (fallback.OutputTokens ?? 0)
-                                    + (fallback.CachedInputTokens ?? 0) + (fallback.ReasoningTokens ?? 0));
+                            tokens += CursorTokenCostCalculator.ResolveTotalTokens(fallback);
                             cost += fallback.ReportedCost ?? 0m;
                         }
 
-                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record) &&
-                            CursorTokenCostCalculator.ResolveRate(rates, record.Model) is { } rate)
+                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record))
                         {
-                            calculated += CursorTokenCostCalculator.Estimate(
+                            calculated += CursorTokenCostCalculator.EstimateOrZero(
                                 record,
-                                attr.AllocationPercentage > 0m ? attr.AllocationPercentage : 100m,
-                                rate);
+                                CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
+                                    attr.AllocationPercentage),
+                                rates);
                         }
                     }
 
@@ -942,10 +1180,10 @@ public static class ApiEndpoints
                         Linked: true);
                 });
 
-        return Results.Ok(prompts.Select(e =>
+        return prompts.Select(e =>
         {
             usageByPrompt.TryGetValue(e.Id, out var linkedUsage);
-            return new
+            return (object)new
             {
                 e.Id,
                 e.TimestampUtc,
@@ -962,7 +1200,7 @@ public static class ApiEndpoints
                 linkedUsageCount = linkedUsage.Linked ? linkedUsage.Count : 0,
                 hasLinkedUsage = linkedUsage.Linked
             };
-        }).ToList());
+        }).ToList();
     }
 
     private static object ToPromptDto(PromptActivityEvent e) => new
@@ -1100,6 +1338,62 @@ public static class ApiEndpoints
             ProjectId = request.ProjectId,
             Assigned = request.EventIds.Count
         });
+    }
+
+    private static async Task<IResult> DeleteActivityAsync(
+        DeleteActivityRequestDto request,
+        IActivityEventRepository events,
+        IUnitOfWork unitOfWork,
+        CancellationToken cancellationToken)
+    {
+        if (request.EventIds is null || request.EventIds.Count == 0)
+        {
+            return Results.BadRequest(new { error = "At least one event id is required." });
+        }
+
+        try
+        {
+            var deleted = await events
+                .DeleteUnallocatedByIdsAsync(request.EventIds, cancellationToken)
+                .ConfigureAwait(false);
+            await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return Results.Ok(new DeleteActivityResultDto { Deleted = deleted });
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
+    }
+
+    private static async Task<IResult> RecalculateActivityWindowsAsync(
+        RecalculateWindowsRequestDto request,
+        IActivityWindowService windows,
+        CancellationToken cancellationToken)
+    {
+        var from = request.FromUtc.ToUniversalTime();
+        var to = request.ToUtc.ToUniversalTime();
+        if (from > to)
+        {
+            (from, to) = (to, from);
+        }
+
+        try
+        {
+            var result = await windows
+                .RecalculateAsync(
+                    request.ProjectId,
+                    from,
+                    to,
+                    request.InactivityThresholdMinutes,
+                    request.DryRun,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return MapException(ex);
+        }
     }
 
     private static async Task<IResult> GetSummaryAsync(
@@ -1249,17 +1543,3 @@ public static class ApiEndpoints
     };
 }
 
-internal static class DateRange
-{
-    public static (DateTimeOffset From, DateTimeOffset To) Resolve(DateTimeOffset? fromUtc, DateTimeOffset? toUtc)
-    {
-        var to = toUtc?.ToUniversalTime() ?? DateTimeOffset.UtcNow;
-        var from = fromUtc?.ToUniversalTime() ?? to.AddDays(-30);
-        if (from > to)
-        {
-            (from, to) = (to, from);
-        }
-
-        return (from, to);
-    }
-}

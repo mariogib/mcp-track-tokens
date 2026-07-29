@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useMemo, useState, type FormEvent } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
   useCreateTimesheetEntryMutation,
@@ -10,30 +10,52 @@ import {
   useProjectActivityQuery,
   useProjectCostQuery,
   useProjectTokenCostQuery,
-  useProjectPromptsQuery,
+  useProjectPromptFacetsQuery,
   useProjectQuery,
-  useProjectSessionsQuery,
-  useProjectTimesheetQuery,
   useProjectUsageQuery,
+  useRecalculateActivityWindowsMutation,
   useTimesheetCategoriesQuery,
+  useTimesheetReportMonthsQuery,
   useUpdateProjectMutation,
   useUpdateSessionMutation,
   useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
-import type { SessionDto, TimesheetEntryDto } from '../api/types';
+import { api } from '../api/client';
+import type { PromptEventDto, SessionDto, TimesheetEntryDto } from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
+import { DateRangeFilters } from '../components/DateRangeFilters';
 import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
-import { MetricCard } from '../components/MetricCard';
+import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
+import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
+import { MetricCard, Panel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
+import { Breadcrumb, PopupForm, TextLink } from '../shared/adminUi';
+import {
+  buildDaySeries,
+  buildModelCalculatedSeries,
+  buildModelCostSeries,
+  resolveDisplayCost,
+} from '../utils/chartDetail';
+import { sessionDurationMs, timesheetEntryDurationMs } from '../utils/duration';
+import {
+  currentUtcYearMonth,
+  monthDateInputs,
+  parseMonthParam,
+  parseRangePreset,
+  parseYearParam,
+  resolveRange,
+  toDateInputValue,
+  type RangePreset,
+} from '../utils/dateRange';
 import {
   formatCurrency,
   formatDateTime,
@@ -41,8 +63,36 @@ import {
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
-  lastDaysRange,
 } from '../utils/format';
+import { exportProjectDetailsWorkbook } from '../utils/projectDetailsExcelExport';
+
+const PROMPT_TIME_CUSTOM = '__custom__';
+
+function dayBoundsUtc(dayKey: string): { fromUtc: string; toUtc: string } {
+  return {
+    fromUtc: `${dayKey}T00:00:00.000Z`,
+    toUtc: `${dayKey}T23:59:59.999Z`,
+  };
+}
+
+function resolvePromptBrowseRange(
+  baseFromUtc: string,
+  baseToUtc: string,
+  dayFilter: string,
+  customFrom: string,
+  customTo: string,
+): { fromUtc: string; toUtc: string } {
+  if (dayFilter === PROMPT_TIME_CUSTOM) {
+    return {
+      fromUtc: customFrom ? `${customFrom}T00:00:00.000Z` : baseFromUtc,
+      toUtc: customTo ? `${customTo}T23:59:59.999Z` : baseToUtc,
+    };
+  }
+  if (dayFilter) {
+    return dayBoundsUtc(dayFilter);
+  }
+  return { fromUtc: baseFromUtc, toUtc: baseToUtc };
+}
 
 const TABS = [
   'Overview',
@@ -51,12 +101,17 @@ const TABS = [
   'Sessions',
   'Timesheet',
   'Usage',
-  'Cost',
-  'Token Costs',
+  'Costs',
   'Repositories',
   'Exports',
   'Settings',
 ] as const;
+
+/** Old Cost / Token Costs tab URLs map onto the combined Costs tab. */
+const TAB_ALIASES = {
+  cost: 'Costs',
+  'token-costs': 'Costs',
+} as const satisfies Readonly<Record<string, (typeof TABS)[number]>>;
 
 const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
 const SESSION_EDITORS = ['Cursor', 'VisualStudioCode', 'Other'] as const;
@@ -125,16 +180,6 @@ function draftFromSession(session: SessionDto): SessionDraft {
   };
 }
 
-function sessionDurationMs(session: SessionDto): number | null {
-  const started = new Date(session.startedAtUtc).getTime();
-  if (Number.isNaN(started)) return null;
-  const ended = session.endedAtUtc
-    ? new Date(session.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(ended) || ended < started) return null;
-  return ended - started;
-}
-
 type TimesheetDraft = {
   categoryId: string;
   startedAtLocal: string;
@@ -163,20 +208,40 @@ function draftFromTimesheet(entry: TimesheetEntryDto): TimesheetDraft {
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const [tab, setTab] = useTabSearchParam(TABS, 'Overview');
-  const range = useMemo(() => lastDaysRange(30), []);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useTabSearchParam(TABS, 'Overview', 'tab', TAB_ALIASES);
+  const rangePreset = parseRangePreset(searchParams.get('range'));
+  const fromDate = searchParams.get('from') ?? '';
+  const toDate = searchParams.get('to') ?? '';
+  const selectedYear = parseYearParam(searchParams.get('year'));
+  const selectedMonth = parseMonthParam(searchParams.get('month'));
+  const range = useMemo(
+    () =>
+      resolveRange(
+        rangePreset === 'custom' || (fromDate && toDate) ? 'custom' : rangePreset,
+        fromDate,
+        toDate,
+        selectedYear,
+        selectedMonth,
+      ),
+    [rangePreset, fromDate, toDate, selectedYear, selectedMonth],
+  );
 
   const project = useProjectQuery(projectId);
   const activity = useProjectActivityQuery(projectId, range.fromUtc, range.toUtc);
   const usage = useProjectUsageQuery(projectId, range.fromUtc, range.toUtc);
   const cost = useProjectCostQuery(projectId, range.fromUtc, range.toUtc);
   const tokenCost = useProjectTokenCostQuery(projectId, range.fromUtc, range.toUtc);
-  const prompts = useProjectPromptsQuery(projectId, range.fromUtc, range.toUtc);
-  // Omit toUtc so the server uses "now" on each fetch — a frozen page-load toUtc
-  // was hiding newly created/edited sessions from the table.
-  const sessions = useProjectSessionsQuery(projectId, range.fromUtc);
-  const timesheet = useProjectTimesheetQuery(projectId, range.fromUtc);
+  const monthsQuery = useTimesheetReportMonthsQuery(projectId);
+  const promptFacets = useProjectPromptFacetsQuery(
+    projectId,
+    range.fromUtc,
+    range.toUtc,
+    tab === 'Prompts',
+  );
+  const [sessionBrowseEpoch, setSessionBrowseEpoch] = useState(0);
   const timesheetCategories = useTimesheetCategoriesQuery(true);
+  const [timesheetBrowseEpoch, setTimesheetBrowseEpoch] = useState(0);
   const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
@@ -203,6 +268,116 @@ export function ProjectDetailsPage() {
   const [editingTimesheetId, setEditingTimesheetId] = useState<string | null>(null);
   const [timesheetDraft, setTimesheetDraft] = useState<TimesheetDraft>(emptyTimesheetDraft);
   const [timesheetMessage, setTimesheetMessage] = useState<string | null>(null);
+  const [promptTypeFilter, setPromptTypeFilter] = useState('');
+  const [promptModelFilter, setPromptModelFilter] = useState('');
+  const [promptBranchFilter, setPromptBranchFilter] = useState('');
+  const [promptDayFilter, setPromptDayFilter] = useState('');
+  const [promptFromDate, setPromptFromDate] = useState('');
+  const [promptToDate, setPromptToDate] = useState('');
+  const [overviewExporting, setOverviewExporting] = useState(false);
+  const [overviewExportMessage, setOverviewExportMessage] = useState<string | null>(null);
+  const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
+  const recalculateWindows = useRecalculateActivityWindowsMutation();
+
+  const promptBrowseRange = useMemo(
+    () =>
+      resolvePromptBrowseRange(
+        range.fromUtc,
+        range.toUtc,
+        promptDayFilter,
+        promptFromDate,
+        promptToDate,
+      ),
+    [promptDayFilter, promptFromDate, promptToDate, range.fromUtc, range.toUtc],
+  );
+
+  const promptFilterOptions = useMemo(() => {
+    const facets = promptFacets.data;
+    const sortLabels = (a: string, b: string) => a.localeCompare(b);
+    return {
+      types: [...(facets?.eventTypes ?? [])].sort(sortLabels),
+      models: [...(facets?.models ?? [])].sort(sortLabels),
+      branches: [...(facets?.branches ?? [])].sort(sortLabels),
+      days: [...(facets?.days ?? [])]
+        .map((dayKey) => [dayKey, formatDay(dayKey)] as const)
+        .sort((a, b) => b[0].localeCompare(a[0])),
+    };
+  }, [promptFacets.data]);
+
+  const onPromptTimeFilterChange = (value: string) => {
+    setPromptDayFilter(value);
+    if (value !== PROMPT_TIME_CUSTOM) {
+      return;
+    }
+    if (promptFromDate || promptToDate || promptFilterOptions.days.length === 0) {
+      return;
+    }
+    const newest = promptFilterOptions.days[0]?.[0] ?? '';
+    const oldest = promptFilterOptions.days[promptFilterOptions.days.length - 1]?.[0] ?? '';
+    setPromptFromDate(oldest);
+    setPromptToDate(newest);
+  };
+
+  const updateParams = (patch: Record<string, string | null>) => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(patch)) {
+          if (value == null || value === '') next.delete(key);
+          else next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
+  const onPresetChange = (next: RangePreset) => {
+    if (next === 'custom') {
+      const defaults = resolveRange('30d');
+      updateParams({
+        range: 'custom',
+        from: toDateInputValue(defaults.fromUtc),
+        to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
+      });
+      return;
+    }
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (year: number, month: number) => {
+    updateParams({
+      range: 'month',
+      year: String(year),
+      month: String(month),
+      from: null,
+      to: null,
+    });
+  };
+
+  const onMonthSelect = (year: number, month: number) => {
+    const bounds = monthDateInputs(year, month);
+    updateParams({
+      range: 'custom',
+      from: bounds.from,
+      to: bounds.to,
+      year: null,
+      month: null,
+    });
+  };
 
   if (project.isLoading) return <LoadingState label="Loading project…" />;
   if (project.error || !project.data) {
@@ -219,63 +394,170 @@ export function ProjectDetailsPage() {
   const byDay = activity.data?.byDay ?? [];
   // Charts stay chronological (oldest → newest); grids use byDay as returned (newest first).
   const byDayChronological = [...byDay].sort((a, b) => a.day.localeCompare(b.day));
-  const daySeries = byDayChronological.map((row) => ({
-    day: formatDay(row.day),
-    prompts: row.promptCount,
-    activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
-    tokens: row.totalTokens ?? 0,
-  }));
-
   // When Cursor exports are Included/Free, reported totalAiCost is $0 — use rate-card
   // calculatedTokenCost so overview charts stay meaningful.
   const reportedTotalCost = cost.data?.totalAiCost ?? 0;
   const calculatedTotalCost = cost.data?.calculatedTokenCost ?? 0;
-  const displayTotalCost = reportedTotalCost > 0 ? reportedTotalCost : calculatedTotalCost;
-  const usingCalculatedCost = reportedTotalCost <= 0 && calculatedTotalCost > 0;
-
-  const tokenTotalForDays = byDayChronological.reduce(
-    (sum, row) => sum + (row.totalTokens ?? 0),
-    0,
+  const { displayTotalCost, usingCalculatedCost } = resolveDisplayCost(
+    reportedTotalCost,
+    calculatedTotalCost,
   );
-  const costByDay = byDayChronological.map((row) => {
-    const share =
-      tokenTotalForDays > 0
-        ? ((row.totalTokens ?? 0) / tokenTotalForDays) * displayTotalCost
-        : displayTotalCost / Math.max(byDayChronological.length, 1);
-    return {
-      day: formatDay(row.day),
-      cost: Number(share.toFixed(2)),
-    };
-  });
+  const chartDaySeries = buildDaySeries(byDayChronological, displayTotalCost);
+  const daySeries = chartDaySeries;
+  const costByDay = chartDaySeries;
+  const modelCostSeries = buildModelCostSeries(cost.data?.byModel ?? [], '');
+  const modelCalculatedSeries = buildModelCalculatedSeries(cost.data?.byModel ?? [], '');
 
-  const modelCostSeries = (cost.data?.byModel ?? [])
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.usageBasedCost + m.subscriptionAllocation,
-    }))
-    .filter((m) => m.cost > 0);
+  const combinedModelCostRows = (() => {
+    const byKey = new Map<
+      string,
+      {
+        model: string;
+        promptCount: number;
+        usageBasedCost: number;
+        subscriptionAllocation: number;
+        calculatedTokenCost: number;
+        rateSource: string;
+        inputTokens: number;
+        outputTokens: number;
+        cachedInputTokens: number;
+        cacheWriteTokens: number;
+        reasoningTokens: number;
+        totalTokens: number;
+        estimatedCost: number;
+        reportedCost: number;
+      }
+    >();
 
-  const modelCalculatedSeries = (cost.data?.byModel ?? [])
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.calculatedTokenCost ?? 0,
-    }))
-    .filter((m) => m.cost > 0);
+    const keyFor = (name: string) => name.trim().toLowerCase() || 'unknown';
+
+    for (const row of cost.data?.byModel ?? []) {
+      const model = row.name || 'Unknown';
+      byKey.set(keyFor(model), {
+        model,
+        promptCount: row.promptCount,
+        usageBasedCost: row.usageBasedCost,
+        subscriptionAllocation: row.subscriptionAllocation,
+        calculatedTokenCost: row.calculatedTokenCost ?? 0,
+        rateSource: '—',
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        estimatedCost: row.calculatedTokenCost ?? 0,
+        reportedCost: 0,
+      });
+    }
+
+    for (const row of tokenCost.data?.byModel ?? []) {
+      const model = row.model || 'Unknown';
+      const key = keyFor(model);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.rateSource = row.rateSource;
+        existing.inputTokens = row.inputTokens;
+        existing.outputTokens = row.outputTokens;
+        existing.cachedInputTokens = row.cachedInputTokens;
+        existing.cacheWriteTokens = row.cacheWriteTokens ?? 0;
+        existing.reasoningTokens = row.reasoningTokens;
+        existing.totalTokens = row.totalTokens;
+        existing.estimatedCost = row.estimatedCost;
+        existing.reportedCost = row.reportedCost;
+        if (!existing.calculatedTokenCost) {
+          existing.calculatedTokenCost = row.estimatedCost;
+        }
+      } else {
+        byKey.set(key, {
+          model,
+          promptCount: 0,
+          usageBasedCost: 0,
+          subscriptionAllocation: 0,
+          calculatedTokenCost: row.estimatedCost,
+          rateSource: row.rateSource,
+          inputTokens: row.inputTokens,
+          outputTokens: row.outputTokens,
+          cachedInputTokens: row.cachedInputTokens,
+          cacheWriteTokens: row.cacheWriteTokens ?? 0,
+          reasoningTokens: row.reasoningTokens,
+          totalTokens: row.totalTokens,
+          estimatedCost: row.estimatedCost,
+          reportedCost: row.reportedCost,
+        });
+      }
+    }
+
+    return [...byKey.values()].sort((a, b) => a.model.localeCompare(b.model));
+  })();
 
   const branchSeries = (activity.data?.byBranch ?? []).map((b) => ({
     name: b.name || '(none)',
     prompts: b.promptCount,
   }));
 
+  const onExportProjectWorkbook = () => {
+    if (overviewExporting) return;
+    setOverviewExportMessage(null);
+    setOverviewExporting(true);
+    void exportProjectDetailsWorkbook({
+      project: detail,
+      fromUtc: range.fromUtc,
+      toUtc: range.toUtc,
+      activity: activity.data,
+      usage: usage.data,
+      cost: cost.data,
+      tokenCost: tokenCost.data,
+    })
+      .then(() => {
+        setOverviewExportMessage(null);
+      })
+      .catch((err: unknown) => {
+        setOverviewExportMessage(err instanceof Error ? err.message : 'Export failed');
+      })
+      .finally(() => {
+        setOverviewExporting(false);
+      });
+  };
+
+  const onRecalculateTime = () => {
+    if (recalculateWindows.isPending) return;
+    setRecalculateMessage(null);
+    recalculateWindows.mutate(
+      {
+        projectId: detail.id,
+        fromUtc: range.fromUtc,
+        toUtc: range.toUtc,
+        dryRun: false,
+      },
+      {
+        onSuccess: (result) => {
+          const hours = Math.floor(result.totalActiveSeconds / 3600);
+          const minutes = Math.floor((result.totalActiveSeconds % 3600) / 60);
+          setRecalculateMessage(
+            `Recalculated ${formatNumber(result.windowCount)} activity window${result.windowCount === 1 ? '' : 's'} · ${hours}h ${minutes}m active time.`,
+          );
+        },
+        onError: (err: unknown) => {
+          setRecalculateMessage(
+            err instanceof Error ? err.message : 'Failed to re-calculate time.',
+          );
+        },
+      },
+    );
+  };
+
   return (
     <Page>
       <section className="page-section">
         <div className="section-header">
           <div>
-            <p>
-              <Link to="/projects">Projects</Link> / {detail.name}
-            </p>
+            <Breadcrumb
+              items={[
+                { label: 'Projects', to: '/projects' },
+                { label: detail.name },
+              ]}
+            />
             <h2>{detail.name}</h2>
             <p>
               {detail.clientName ?? 'No client'} · {detail.slug}
@@ -313,10 +595,87 @@ export function ProjectDetailsPage() {
             </button>
           ))}
         </div>
+
+        <Panel>
+          <div className="field-row">
+            <div className="field">
+              <label className="label">Period</label>
+              <p className="hint">{range.label}</p>
+            </div>
+          </div>
+          <DateRangeFilters
+            preset={range.preset}
+            fromDate={fromDate || toDateInputValue(range.fromUtc)}
+            toDate={toDate || toDateInputValue(range.toUtc)}
+            onPresetChange={onPresetChange}
+            onFromDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: value,
+                to: toDate || toDateInputValue(range.toUtc),
+                year: null,
+                month: null,
+              })
+            }
+            onToDateChange={(value) =>
+              updateParams({
+                range: 'custom',
+                from: fromDate || toDateInputValue(range.fromUtc),
+                to: value,
+                year: null,
+                month: null,
+              })
+            }
+            year={selectedYear ?? currentUtcYearMonth().year}
+            month={selectedMonth ?? currentUtcYearMonth().month}
+            onYearMonthChange={onYearMonthChange}
+            monthsWithData={monthsQuery.data}
+            onMonthSelect={onMonthSelect}
+            idPrefix="project-details-range"
+          />
+        </Panel>
       </section>
 
       {tab === 'Overview' && (
         <section className="page-section">
+          <div className="section-header">
+            <div>
+              <h2>Overview</h2>
+              <p className="muted">
+                Activity, usage, and cost for {range.label}. Re-calculate Time rebuilds prompt and
+                session activity windows for this range. Export builds an Excel workbook with a
+                sheet for each data tab.
+              </p>
+            </div>
+            <div className="section-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={recalculateWindows.isPending || overviewExporting}
+                onClick={onRecalculateTime}
+              >
+                {recalculateWindows.isPending ? 'Re-calculating…' : 'Re-calculate Time'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={overviewExporting || recalculateWindows.isPending}
+                onClick={onExportProjectWorkbook}
+              >
+                {overviewExporting ? 'Exporting…' : 'Export to Excel'}
+              </button>
+            </div>
+          </div>
+          {recalculateMessage ? (
+            <p className="form-message" role="status">
+              {recalculateMessage}
+            </p>
+          ) : null}
+          {overviewExportMessage ? (
+            <p className="form-message" role="alert">
+              {overviewExportMessage}
+            </p>
+          ) : null}
           <div className="metric-grid">
             <MetricCard label="Prompts" value={formatNumber(activity.data?.promptCount ?? detail.activity?.promptCount)} />
             <MetricCard
@@ -415,14 +774,48 @@ export function ProjectDetailsPage() {
         </section>
       )}
 
-      {tab === 'Activity' && (
-        <section className="page-section">
-          {activity.isLoading ? (
-            <LoadingState />
-          ) : activity.error ? (
-            <ErrorState message={activity.error instanceof Error ? activity.error.message : 'Failed'} />
-          ) : (
-            <div className="table-wrap">
+      {tab === 'Activity' &&
+        (activity.isLoading ? (
+          <LoadingState />
+        ) : activity.error ? (
+          <ErrorState
+            message={activity.error instanceof Error ? activity.error.message : 'Failed'}
+          />
+        ) : (
+          <AnalysisDetailBrowse
+            heading="Activity by day"
+            searchPlaceholder="Search days..."
+            rows={activity.data?.byDay ?? []}
+            getSearchText={(row) =>
+              [
+                formatDay(row.day),
+                row.promptCount,
+                row.agentRuns,
+                row.sessionCount,
+              ]
+                .map(String)
+                .join(' ')
+            }
+            exportFilename={`project-${detail.id}-activity.xlsx`}
+            exportTitle={`${detail.name} · Activity`}
+            exportColumns={[
+              { header: 'Day', key: 'day' },
+              { header: 'Prompts', key: 'promptCount' },
+              { header: 'Agent runs', key: 'agentRuns' },
+              { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
+              { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
+              { header: 'Sessions', key: 'sessionCount' },
+            ]}
+            toExportRow={(row) => ({
+              day: formatDay(row.day),
+              promptCount: row.promptCount,
+              agentRuns: row.agentRuns,
+              agentDurationMilliseconds: row.agentDurationMilliseconds,
+              activeProjectTimeSeconds: row.activeProjectTimeSeconds,
+              sessionCount: row.sessionCount,
+            })}
+            emptySourceMessage="No activity in the selected range."
+            renderTable={(rows) => (
               <table className="data">
                 <thead>
                   <tr>
@@ -435,7 +828,7 @@ export function ProjectDetailsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(activity.data?.byDay ?? []).map((row) => (
+                  {rows.map((row) => (
                     <tr key={row.day}>
                       <td>{formatDay(row.day)}</td>
                       <td>{formatNumber(row.promptCount)}</td>
@@ -447,21 +840,163 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-        </section>
-      )}
+            )}
+            renderGrid={(rows) =>
+              rows.map((row) => (
+                <article key={row.day} className="analysis-browse-tile">
+                  <strong>{formatDay(row.day)}</strong>
+                  <span>Prompts {formatNumber(row.promptCount)}</span>
+                  <span>Agent runs {formatNumber(row.agentRuns)}</span>
+                  <span>
+                    Active {formatDurationSeconds(row.activeProjectTimeSeconds)}
+                  </span>
+                  <span>Sessions {formatNumber(row.sessionCount)}</span>
+                </article>
+              ))
+            }
+          />
+        ))}
 
       {tab === 'Prompts' && (
-        <section className="page-section">
-          {prompts.isLoading ? (
-            <LoadingState />
-          ) : prompts.error ? (
-            <ErrorState message={prompts.error instanceof Error ? prompts.error.message : 'Failed'} />
-          ) : !Array.isArray(prompts.data) || prompts.data.length === 0 ? (
-            <EmptyState message="No prompts in the selected range." />
-          ) : (
-            <div className="table-wrap">
+          <RemoteAnalysisDetailBrowse<PromptEventDto>
+            heading="Prompts"
+            searchPlaceholder="Search prompts..."
+            filterKey={[
+              projectId,
+              promptBrowseRange.fromUtc,
+              promptBrowseRange.toUtc,
+              promptTypeFilter,
+              promptModelFilter,
+              promptBranchFilter,
+              promptDayFilter,
+              promptFromDate,
+              promptToDate,
+            ].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectPromptsPaged(
+                projectId!,
+                {
+                  fromUtc: promptBrowseRange.fromUtc,
+                  toUtc: promptBrowseRange.toUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  status: status || undefined,
+                  eventType: promptTypeFilter || undefined,
+                  model: promptModelFilter || undefined,
+                  branch: promptBranchFilter || undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(p) => p.status?.trim() || 'None'}
+            filters={[
+              {
+                id: 'prompt-type-filter',
+                label: 'Type',
+                value: promptTypeFilter,
+                onChange: setPromptTypeFilter,
+                options: [
+                  { value: '', label: 'All types' },
+                  ...promptFilterOptions.types.map((value) => ({ value, label: value })),
+                ],
+              },
+              {
+                id: 'prompt-model-filter',
+                label: 'Model',
+                value: promptModelFilter,
+                onChange: setPromptModelFilter,
+                options: [
+                  { value: '', label: 'All models' },
+                  ...promptFilterOptions.models.map((value) => ({ value, label: value })),
+                ],
+              },
+              {
+                id: 'prompt-branch-filter',
+                label: 'Branch',
+                value: promptBranchFilter,
+                onChange: setPromptBranchFilter,
+                options: [
+                  { value: '', label: 'All branches' },
+                  ...promptFilterOptions.branches.map((value) => ({ value, label: value })),
+                ],
+              },
+              {
+                id: 'prompt-day-filter',
+                label: 'Time',
+                value: promptDayFilter,
+                onChange: onPromptTimeFilterChange,
+                options: [
+                  { value: '', label: 'All days' },
+                  { value: PROMPT_TIME_CUSTOM, label: 'Custom range' },
+                  ...promptFilterOptions.days.map(([value, label]) => ({ value, label })),
+                ],
+              },
+            ]}
+            filtersExtra={
+              promptDayFilter === PROMPT_TIME_CUSTOM ? (
+                <div className="field-row chart-detail-filters">
+                  <div className="field">
+                    <label htmlFor="prompt-time-from">From</label>
+                    <input
+                      id="prompt-time-from"
+                      type="date"
+                      value={promptFromDate}
+                      max={promptToDate || undefined}
+                      onChange={(e) => setPromptFromDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="prompt-time-to">To</label>
+                    <input
+                      id="prompt-time-to"
+                      type="date"
+                      value={promptToDate}
+                      min={promptFromDate || undefined}
+                      onChange={(e) => setPromptToDate(e.target.value)}
+                    />
+                  </div>
+                  {(promptFromDate || promptToDate) && (
+                    <p className="hint" style={{ alignSelf: 'end' }}>
+                      Custom range
+                      {promptFromDate ? ` from ${promptFromDate}` : ''}
+                      {promptToDate ? ` to ${promptToDate}` : ''}
+                    </p>
+                  )}
+                </div>
+              ) : null
+            }
+            exportFilename={`project-${detail.id}-prompts.xlsx`}
+            exportTitle={`${detail.name} · Prompts`}
+            exportColumns={[
+              { header: 'Time', key: 'timestampUtc' },
+              { header: 'Type', key: 'eventType' },
+              { header: 'Editor', key: 'editor' },
+              { header: 'Model', key: 'model' },
+              { header: 'Branch', key: 'branch' },
+              { header: 'Status', key: 'status' },
+              { header: 'Duration (ms)', key: 'durationMilliseconds' },
+              { header: 'Linked usages', key: 'linkedUsageCount' },
+              { header: 'Total tokens', key: 'totalTokens' },
+              { header: 'Cost', key: 'reportedCost' },
+              { header: 'Calculated cost', key: 'calculatedTokenCost' },
+            ]}
+            toExportRow={(p) => ({
+              timestampUtc: formatDateTime(p.timestampUtc),
+              eventType: p.eventType,
+              editor: p.editor ?? '',
+              model: p.model ?? '',
+              branch: p.branch ?? '',
+              status: p.status ?? '',
+              durationMilliseconds: p.durationMilliseconds ?? '',
+              linkedUsageCount: p.linkedUsageCount ?? '',
+              totalTokens: p.totalTokens ?? '',
+              reportedCost: p.reportedCost ?? '',
+              calculatedTokenCost: p.calculatedTokenCost ?? '',
+            })}
+            emptySourceMessage="No prompts in the selected range."
+            emptyMessage="No prompts match the current search or filters."
+            renderTable={(rows) => (
               <table className="data">
                 <thead>
                   <tr>
@@ -479,7 +1014,7 @@ export function ProjectDetailsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {prompts.data.map((p) => (
+                  {rows.map((p) => (
                     <tr key={p.id}>
                       <td>{formatDateTime(p.timestampUtc)}</td>
                       <td>{p.eventType}</td>
@@ -512,9 +1047,25 @@ export function ProjectDetailsPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-        </section>
+            )}
+            renderGrid={(rows) =>
+              rows.map((p) => (
+                <article key={p.id} className="analysis-browse-tile">
+                  <strong>{formatDateTime(p.timestampUtc)}</strong>
+                  <span>
+                    {p.eventType}
+                    {p.model ? ` · ${p.model}` : ''}
+                  </span>
+                  <span>{p.branch ?? 'No branch'}</span>
+                  <span>
+                    {p.hasLinkedUsage || p.calculatedTokenCost != null
+                      ? formatCurrency(p.calculatedTokenCost ?? 0)
+                      : '—'}
+                  </span>
+                </article>
+              ))
+            }
+          />
       )}
 
       {tab === 'Sessions' && (
@@ -539,213 +1090,261 @@ export function ProjectDetailsPage() {
           </div>
 
           {sessionEditorOpen ? (
-            <form
-              className="panel stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+            <PopupForm
+              title={editingSessionId ? 'Edit session' : 'New session'}
+              onClose={() => {
+                setSessionEditorOpen(false);
+                setEditingSessionId(null);
                 setSessionMessage(null);
-                if (!isCompleteLocalDateTime(sessionDraft.startedAtLocal)) {
-                  setSessionMessage('Started date and time are required.');
-                  return;
-                }
-                const startedAtUtc = fromLocalInputValue(sessionDraft.startedAtLocal);
-                if (!startedAtUtc) {
-                  setSessionMessage('Started date and time are invalid.');
-                  return;
-                }
-                if (
-                  sessionDraft.endedAtLocal.trim() &&
-                  !isCompleteLocalDateTime(sessionDraft.endedAtLocal)
-                ) {
-                  setSessionMessage('Ended date and time are incomplete.');
-                  return;
-                }
-                const endedAtUtc = fromLocalInputValue(sessionDraft.endedAtLocal);
-                if (
-                  endedAtUtc &&
-                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
-                ) {
-                  setSessionMessage('Ended time cannot be earlier than started time.');
-                  return;
-                }
-                const payload = {
-                  editor: sessionDraft.editor,
-                  status: sessionDraft.status,
-                  startedAtUtc,
-                  endedAtUtc,
-                  branch: sessionDraft.branch.trim() || null,
-                  workspacePath: sessionDraft.workspacePath.trim() || null,
-                  repositoryPath: sessionDraft.repositoryPath.trim() || null,
-                  remoteUrl: sessionDraft.remoteUrl.trim() || null,
-                  externalSessionId: sessionDraft.externalSessionId.trim() || null,
-                  editorVersion: sessionDraft.editorVersion.trim() || null,
-                  machineName: sessionDraft.machineName.trim() || null,
-                  userName: sessionDraft.userName.trim() || null,
-                };
-                try {
-                  if (editingSessionId) {
-                    await updateSessionMutation.mutateAsync({
-                      id: editingSessionId,
-                      body: {
-                        ...payload,
-                        projectId: detail.id,
-                        status: sessionDraft.status,
-                        startedAtUtc,
-                      },
-                    });
-                    setSessionMessage('Session updated.');
-                  } else {
-                    await createSessionMutation.mutateAsync({
-                      projectId: detail.id,
-                      body: payload,
-                    });
-                    setSessionMessage('Session created.');
-                  }
-                  setSessionEditorOpen(false);
-                  setEditingSessionId(null);
-                  await sessions.refetch();
-                } catch (err) {
-                  setSessionMessage(err instanceof Error ? err.message : 'Save failed');
-                }
               }}
-            >
-              <h3>{editingSessionId ? 'Edit session' : 'New session'}</h3>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-editor">Editor</label>
-                  <select
-                    id="session-editor"
-                    value={sessionDraft.editor}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, editor: e.target.value }))}
-                  >
-                    {SESSION_EDITORS.map((editor) => (
-                      <option key={editor} value={editor}>
-                        {editor}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label htmlFor="session-status">Status</label>
-                  <select
-                    id="session-status"
-                    value={sessionDraft.status}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, status: e.target.value }))}
-                  >
-                    {SESSION_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <DateTimeField
-                  id="session-started"
-                  label="Started"
-                  required
-                  value={sessionDraft.startedAtLocal}
-                  onChange={(startedAtLocal) =>
-                    setSessionDraft((s) => ({ ...s, startedAtLocal }))
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                void (async () => {
+                  setSessionMessage(null);
+                  if (!isCompleteLocalDateTime(sessionDraft.startedAtLocal)) {
+                    setSessionMessage('Started date and time are required.');
+                    return;
                   }
-                />
-                <DateTimeField
-                  id="session-ended"
-                  label="Ended"
-                  value={sessionDraft.endedAtLocal}
-                  onChange={(endedAtLocal) => setSessionDraft((s) => ({ ...s, endedAtLocal }))}
-                />
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-branch">Branch</label>
-                  <input
-                    id="session-branch"
-                    value={sessionDraft.branch}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, branch: e.target.value }))}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-workspace">Workspace path</label>
-                  <input
-                    id="session-workspace"
-                    value={sessionDraft.workspacePath}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, workspacePath: e.target.value }))
+                  const startedAtUtc = fromLocalInputValue(sessionDraft.startedAtLocal);
+                  if (!startedAtUtc) {
+                    setSessionMessage('Started date and time are invalid.');
+                    return;
+                  }
+                  if (
+                    sessionDraft.endedAtLocal.trim() &&
+                    !isCompleteLocalDateTime(sessionDraft.endedAtLocal)
+                  ) {
+                    setSessionMessage('Ended date and time are incomplete.');
+                    return;
+                  }
+                  const endedAtUtc = fromLocalInputValue(sessionDraft.endedAtLocal);
+                  if (
+                    endedAtUtc &&
+                    new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                  ) {
+                    setSessionMessage('Ended time cannot be earlier than started time.');
+                    return;
+                  }
+                  const payload = {
+                    editor: sessionDraft.editor,
+                    status: sessionDraft.status,
+                    startedAtUtc,
+                    endedAtUtc,
+                    branch: sessionDraft.branch.trim() || null,
+                    workspacePath: sessionDraft.workspacePath.trim() || null,
+                    repositoryPath: sessionDraft.repositoryPath.trim() || null,
+                    remoteUrl: sessionDraft.remoteUrl.trim() || null,
+                    externalSessionId: sessionDraft.externalSessionId.trim() || null,
+                    editorVersion: sessionDraft.editorVersion.trim() || null,
+                    machineName: sessionDraft.machineName.trim() || null,
+                    userName: sessionDraft.userName.trim() || null,
+                  };
+                  try {
+                    if (editingSessionId) {
+                      await updateSessionMutation.mutateAsync({
+                        id: editingSessionId,
+                        body: {
+                          ...payload,
+                          projectId: detail.id,
+                          status: sessionDraft.status,
+                          startedAtUtc,
+                        },
+                      });
+                      setSessionMessage('Session updated.');
+                    } else {
+                      await createSessionMutation.mutateAsync({
+                        projectId: detail.id,
+                        body: payload,
+                      });
+                      setSessionMessage('Session created.');
                     }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-repo">Repository path</label>
-                  <input
-                    id="session-repo"
-                    value={sessionDraft.repositoryPath}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, repositoryPath: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label htmlFor="session-remote">Remote URL</label>
-                  <input
-                    id="session-remote"
-                    value={sessionDraft.remoteUrl}
-                    onChange={(e) => setSessionDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="session-external">External session id</label>
-                  <input
-                    id="session-external"
-                    value={sessionDraft.externalSessionId}
-                    onChange={(e) =>
-                      setSessionDraft((s) => ({ ...s, externalSessionId: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-              <div className="row-actions">
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={createSessionMutation.isPending || updateSessionMutation.isPending}
-                >
-                  {createSessionMutation.isPending || updateSessionMutation.isPending
-                    ? 'Saving…'
-                    : editingSessionId
-                      ? 'Save session'
-                      : 'Create session'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
                     setSessionEditorOpen(false);
                     setEditingSessionId(null);
-                    setSessionMessage(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                {sessionMessage ? <span className="form-message">{sessionMessage}</span> : null}
+                    setSessionBrowseEpoch((value) => value + 1);
+                  } catch (err) {
+                    setSessionMessage(err instanceof Error ? err.message : 'Save failed');
+                  }
+                })();
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={createSessionMutation.isPending || updateSessionMutation.isPending}
+                  >
+                    {createSessionMutation.isPending || updateSessionMutation.isPending
+                      ? 'Saving…'
+                      : editingSessionId
+                        ? 'Save session'
+                        : 'Create session'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setSessionEditorOpen(false);
+                      setEditingSessionId(null);
+                      setSessionMessage(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="stack">
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-editor">Editor</label>
+                    <select
+                      id="session-editor"
+                      value={sessionDraft.editor}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, editor: e.target.value }))}
+                    >
+                      {SESSION_EDITORS.map((editor) => (
+                        <option key={editor} value={editor}>
+                          {editor}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-status">Status</label>
+                    <select
+                      id="session-status"
+                      value={sessionDraft.status}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, status: e.target.value }))}
+                    >
+                      {SESSION_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <DateTimeField
+                    id="session-started"
+                    label="Started"
+                    required
+                    value={sessionDraft.startedAtLocal}
+                    onChange={(startedAtLocal) =>
+                      setSessionDraft((s) => ({ ...s, startedAtLocal }))
+                    }
+                  />
+                  <DateTimeField
+                    id="session-ended"
+                    label="Ended"
+                    value={sessionDraft.endedAtLocal}
+                    onChange={(endedAtLocal) => setSessionDraft((s) => ({ ...s, endedAtLocal }))}
+                  />
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-branch">Branch</label>
+                    <input
+                      id="session-branch"
+                      value={sessionDraft.branch}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, branch: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-workspace">Workspace path</label>
+                    <input
+                      id="session-workspace"
+                      value={sessionDraft.workspacePath}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, workspacePath: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-repo">Repository path</label>
+                    <input
+                      id="session-repo"
+                      value={sessionDraft.repositoryPath}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, repositoryPath: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="session-remote">Remote URL</label>
+                    <input
+                      id="session-remote"
+                      value={sessionDraft.remoteUrl}
+                      onChange={(e) => setSessionDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="session-external">External session id</label>
+                    <input
+                      id="session-external"
+                      value={sessionDraft.externalSessionId}
+                      onChange={(e) =>
+                        setSessionDraft((s) => ({ ...s, externalSessionId: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
               </div>
-            </form>
+            </PopupForm>
           ) : null}
 
-          {!sessionEditorOpen && sessionMessage ? (
+          {sessionMessage ? (
             <p className="form-message">{sessionMessage}</p>
           ) : null}
 
-          {sessions.isLoading ? (
-            <LoadingState />
-          ) : sessions.error ? (
-            <ErrorState message={sessions.error instanceof Error ? sessions.error.message : 'Failed'} />
-          ) : !Array.isArray(sessions.data) || sessions.data.length === 0 ? (
-            <EmptyState message="No sessions in the selected range." />
-          ) : (
-            <div className="table-wrap">
+          <RemoteAnalysisDetailBrowse<SessionDto>
+            embedded
+            heading="Sessions"
+            showHeading={false}
+            searchPlaceholder="Search sessions..."
+            filterKey={[projectId, range.fromUtc, range.toUtc, sessionBrowseEpoch].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectSessionsPaged(
+                projectId!,
+                {
+                  fromUtc: range.fromUtc,
+                  toUtc: range.toUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  status: status || undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(s) => s.status || (s.isActive ? 'Active' : 'Closed')}
+            statusOptions={[
+              ...SESSION_STATUSES.map((status) => ({ value: status, label: status })),
+              { value: 'Closed', label: 'Closed' },
+            ]}
+            exportFilename={`project-${detail.id}-sessions.xlsx`}
+            exportTitle={`${detail.name} · Sessions`}
+            exportColumns={[
+              { header: 'Session', key: 'id' },
+              { header: 'Editor', key: 'editor' },
+              { header: 'Started', key: 'startedAtUtc' },
+              { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Duration (ms)', key: 'durationMilliseconds' },
+              { header: 'Branch', key: 'branch' },
+              { header: 'Status', key: 'status' },
+            ]}
+            toExportRow={(s) => ({
+              id: s.id,
+              editor: s.editor ?? '',
+              startedAtUtc: formatDateTime(s.startedAtUtc),
+              endedAtUtc: formatDateTime(s.endedAtUtc),
+              durationMilliseconds: sessionDurationMs(s) ?? '',
+              branch: s.branch ?? '',
+              status: s.status || (s.isActive ? 'Active' : 'Closed'),
+            })}
+            emptySourceMessage="No sessions in the selected range."
+            renderTable={(rows) => (
               <table className="data">
                 <thead>
                   <tr>
@@ -760,69 +1359,125 @@ export function ProjectDetailsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.data.map((s) => {
+                  {rows.map((s) => {
                     const durationMs = sessionDurationMs(s);
                     return (
-                    <tr key={s.id}>
-                      <td className="mono">{s.id.slice(0, 8)}</td>
-                      <td>{s.editor ?? '—'}</td>
-                      <td>{formatDateTime(s.startedAtUtc)}</td>
-                      <td>{formatDateTime(s.endedAtUtc)}</td>
-                      <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
-                      <td>{s.branch ?? '—'}</td>
-                      <td>
-                        <StatusBadge
-                          label={s.status || (s.isActive ? 'Active' : 'Closed')}
-                          tone={s.isActive || s.status === 'Active' ? 'success' : 'neutral'}
-                        />
-                      </td>
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-secondary"
-                            onClick={() => {
-                              setEditingSessionId(s.id);
-                              setSessionDraft(draftFromSession(s));
-                              setSessionMessage(null);
-                              setSessionEditorOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-danger"
-                            disabled={deleteSessionMutation.isPending}
-                            onClick={() => {
-                              const ok = window.confirm(
-                                `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
-                              );
-                              if (!ok) return;
-                              void deleteSessionMutation
-                                .mutateAsync({ id: s.id, projectId: detail.id })
-                                .then(() => {
-                                  setSessionMessage(null);
-                                  return sessions.refetch();
-                                })
-                                .catch((err: unknown) => {
-                                  setSessionMessage(
-                                    err instanceof Error ? err.message : 'Delete failed',
-                                  );
-                                });
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                      <tr key={s.id}>
+                        <td className="mono">{s.id.slice(0, 8)}</td>
+                        <td>{s.editor ?? '—'}</td>
+                        <td>{formatDateTime(s.startedAtUtc)}</td>
+                        <td>{formatDateTime(s.endedAtUtc)}</td>
+                        <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
+                        <td>{s.branch ?? '—'}</td>
+                        <td>
+                          <StatusBadge
+                            label={s.status || (s.isActive ? 'Active' : 'Closed')}
+                            tone={
+                              s.isActive || s.status === 'Active' ? 'success' : 'neutral'
+                            }
+                          />
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-secondary"
+                              onClick={() => {
+                                setEditingSessionId(s.id);
+                                setSessionDraft(draftFromSession(s));
+                                setSessionMessage(null);
+                                setSessionEditorOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-danger"
+                              disabled={deleteSessionMutation.isPending}
+                              onClick={() => {
+                                const ok = window.confirm(
+                                  `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
+                                );
+                                if (!ok) return;
+                                void deleteSessionMutation
+                                  .mutateAsync({ id: s.id, projectId: detail.id })
+                                  .then(() => {
+                                    setSessionMessage(null);
+                                    setSessionBrowseEpoch((value) => value + 1);
+                                  })
+                                  .catch((err: unknown) => {
+                                    setSessionMessage(
+                                      err instanceof Error ? err.message : 'Delete failed',
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>
               </table>
-            </div>
-          )}
+            )}
+            renderGrid={(rows) =>
+              rows.map((s) => {
+                const durationMs = sessionDurationMs(s);
+                return (
+                  <article key={s.id} className="analysis-browse-tile">
+                    <strong className="mono">{s.id.slice(0, 8)}</strong>
+                    <span>{s.editor ?? '—'}</span>
+                    <span>{formatDateTime(s.startedAtUtc)}</span>
+                    <span>
+                      {durationMs == null ? '—' : formatDurationMs(durationMs)}
+                    </span>
+                    <span>{s.branch ?? 'No branch'}</span>
+                    <div className="row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-compact btn-secondary"
+                        onClick={() => {
+                          setEditingSessionId(s.id);
+                          setSessionDraft(draftFromSession(s));
+                          setSessionMessage(null);
+                          setSessionEditorOpen(true);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-compact btn-danger"
+                        disabled={deleteSessionMutation.isPending}
+                        onClick={() => {
+                          const ok = window.confirm(
+                            `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
+                          );
+                          if (!ok) return;
+                          void deleteSessionMutation
+                            .mutateAsync({ id: s.id, projectId: detail.id })
+                            .then(() => {
+                              setSessionMessage(null);
+                              setSessionBrowseEpoch((value) => value + 1);
+                            })
+                            .catch((err: unknown) => {
+                              setSessionMessage(
+                                err instanceof Error ? err.message : 'Delete failed',
+                              );
+                            });
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            }
+          />
         </section>
       )}
 
@@ -858,272 +1513,504 @@ export function ProjectDetailsPage() {
           </div>
 
           {timesheetEditorOpen ? (
-            <form
-              className="panel stack"
-              noValidate
-              onSubmit={async (event) => {
-                event.preventDefault();
+            <PopupForm
+              title={editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}
+              onClose={() => {
+                setTimesheetEditorOpen(false);
+                setEditingTimesheetId(null);
                 setTimesheetMessage(null);
-                if (!isCompleteLocalDateTime(timesheetDraft.startedAtLocal)) {
-                  setTimesheetMessage('Started date and time are required.');
-                  return;
-                }
-                const startedAtUtc = fromLocalInputValue(timesheetDraft.startedAtLocal);
-                if (!startedAtUtc) {
-                  setTimesheetMessage('Started date and time are invalid.');
-                  return;
-                }
-                if (
-                  timesheetDraft.endedAtLocal.trim() &&
-                  !isCompleteLocalDateTime(timesheetDraft.endedAtLocal)
-                ) {
-                  setTimesheetMessage('Ended date and time are incomplete.');
-                  return;
-                }
-                const endedAtUtc = fromLocalInputValue(timesheetDraft.endedAtLocal);
-                if (
-                  endedAtUtc &&
-                  new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
-                ) {
-                  setTimesheetMessage('Ended time cannot be earlier than started time.');
-                  return;
-                }
-                if (!timesheetDraft.categoryId) {
-                  setTimesheetMessage('Category is required.');
-                  return;
-                }
-                const payload = {
-                  categoryId: timesheetDraft.categoryId,
-                  startedAtUtc,
-                  endedAtUtc,
-                  notes: timesheetDraft.notes.trim() || null,
-                };
-                try {
-                  if (editingTimesheetId) {
-                    await updateTimesheetMutation.mutateAsync({
-                      id: editingTimesheetId,
-                      body: {
-                        categoryId: payload.categoryId,
-                        startedAtUtc,
-                        endedAtUtc,
-                        notes: payload.notes,
-                      },
-                    });
-                    setTimesheetMessage('Timesheet entry updated.');
-                  } else {
-                    await createTimesheetMutation.mutateAsync({
-                      projectId: detail.id,
-                      body: payload,
-                    });
-                    setTimesheetMessage('Timesheet entry created.');
-                  }
-                  setTimesheetEditorOpen(false);
-                  setEditingTimesheetId(null);
-                  await timesheet.refetch();
-                } catch (err) {
-                  setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
-                }
               }}
-            >
-              <h3>{editingTimesheetId ? 'Edit timesheet entry' : 'New timesheet entry'}</h3>
-              <div className="field">
-                <label htmlFor="timesheet-category">Category</label>
-                <select
-                  id="timesheet-category"
-                  required
-                  value={timesheetDraft.categoryId}
-                  onChange={(e) =>
-                    setTimesheetDraft((s) => ({ ...s, categoryId: e.target.value }))
+              onSubmit={(e) => {
+                const event = e as FormEvent;
+                event.preventDefault();
+                void (async () => {
+                  setTimesheetMessage(null);
+                  if (!isCompleteLocalDateTime(timesheetDraft.startedAtLocal)) {
+                    setTimesheetMessage('Started date and time are required.');
+                    return;
                   }
-                >
-                  <option value="" disabled>
-                    Select category…
-                  </option>
-                  {(timesheetCategories.data ?? []).map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                  {editingTimesheetId &&
-                  timesheetDraft.categoryId &&
-                  !(timesheetCategories.data ?? []).some(
-                    (c) => c.id === timesheetDraft.categoryId,
-                  ) ? (
-                    <option value={timesheetDraft.categoryId}>
-                      {timesheet.data?.find((e) => e.id === editingTimesheetId)?.categoryName ??
-                        'Inactive category'}
-                    </option>
-                  ) : null}
-                </select>
-              </div>
-              <div className="field-row">
-                <DateTimeField
-                  id="timesheet-started"
-                  label="Started"
-                  required
-                  value={timesheetDraft.startedAtLocal}
-                  onChange={(startedAtLocal) =>
-                    setTimesheetDraft((s) => ({ ...s, startedAtLocal }))
+                  const startedAtUtc = fromLocalInputValue(timesheetDraft.startedAtLocal);
+                  if (!startedAtUtc) {
+                    setTimesheetMessage('Started date and time are invalid.');
+                    return;
                   }
-                />
-                <DateTimeField
-                  id="timesheet-ended"
-                  label="Ended"
-                  value={timesheetDraft.endedAtLocal}
-                  onChange={(endedAtLocal) => setTimesheetDraft((s) => ({ ...s, endedAtLocal }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="timesheet-notes">Notes</label>
-                <textarea
-                  id="timesheet-notes"
-                  value={timesheetDraft.notes}
-                  onChange={(e) => setTimesheetDraft((s) => ({ ...s, notes: e.target.value }))}
-                  rows={4}
-                />
-              </div>
-              <div className="row-actions">
-                <button
-                  type="submit"
-                  className="btn"
-                  disabled={createTimesheetMutation.isPending || updateTimesheetMutation.isPending}
-                >
-                  {createTimesheetMutation.isPending || updateTimesheetMutation.isPending
-                    ? 'Saving…'
-                    : editingTimesheetId
-                      ? 'Save entry'
-                      : 'Create entry'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => {
+                  if (
+                    timesheetDraft.endedAtLocal.trim() &&
+                    !isCompleteLocalDateTime(timesheetDraft.endedAtLocal)
+                  ) {
+                    setTimesheetMessage('Ended date and time are incomplete.');
+                    return;
+                  }
+                  const endedAtUtc = fromLocalInputValue(timesheetDraft.endedAtLocal);
+                  if (
+                    endedAtUtc &&
+                    new Date(endedAtUtc).getTime() < new Date(startedAtUtc).getTime()
+                  ) {
+                    setTimesheetMessage('Ended time cannot be earlier than started time.');
+                    return;
+                  }
+                  if (!timesheetDraft.categoryId) {
+                    setTimesheetMessage('Category is required.');
+                    return;
+                  }
+                  const payload = {
+                    categoryId: timesheetDraft.categoryId,
+                    startedAtUtc,
+                    endedAtUtc,
+                    notes: timesheetDraft.notes.trim() || null,
+                  };
+                  try {
+                    if (editingTimesheetId) {
+                      await updateTimesheetMutation.mutateAsync({
+                        id: editingTimesheetId,
+                        body: {
+                          categoryId: payload.categoryId,
+                          startedAtUtc,
+                          endedAtUtc,
+                          notes: payload.notes,
+                        },
+                      });
+                      setTimesheetMessage('Timesheet entry updated.');
+                    } else {
+                      await createTimesheetMutation.mutateAsync({
+                        projectId: detail.id,
+                        body: payload,
+                      });
+                      setTimesheetMessage('Timesheet entry created.');
+                    }
                     setTimesheetEditorOpen(false);
                     setEditingTimesheetId(null);
-                    setTimesheetMessage(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                {timesheetMessage ? <span className="form-message">{timesheetMessage}</span> : null}
+                    await Promise.resolve();
+                    setTimesheetBrowseEpoch((value) => value + 1);
+                  } catch (err) {
+                    setTimesheetMessage(err instanceof Error ? err.message : 'Save failed');
+                  }
+                })();
+              }}
+              footer={
+                <>
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={
+                      createTimesheetMutation.isPending || updateTimesheetMutation.isPending
+                    }
+                  >
+                    {createTimesheetMutation.isPending || updateTimesheetMutation.isPending
+                      ? 'Saving…'
+                      : editingTimesheetId
+                        ? 'Save entry'
+                        : 'Create entry'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setTimesheetEditorOpen(false);
+                      setEditingTimesheetId(null);
+                      setTimesheetMessage(null);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </>
+              }
+            >
+              <div className="stack">
+                <div className="field">
+                  <label htmlFor="timesheet-category">Category</label>
+                  <select
+                    id="timesheet-category"
+                    required
+                    value={timesheetDraft.categoryId}
+                    onChange={(e) =>
+                      setTimesheetDraft((s) => ({ ...s, categoryId: e.target.value }))
+                    }
+                  >
+                    <option value="" disabled>
+                      Select category…
+                    </option>
+                    {(timesheetCategories.data ?? []).map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                    {editingTimesheetId &&
+                    timesheetDraft.categoryId &&
+                    !(timesheetCategories.data ?? []).some(
+                      (c) => c.id === timesheetDraft.categoryId,
+                    ) ? (
+                      <option value={timesheetDraft.categoryId}>Inactive category</option>
+                    ) : null}
+                  </select>
+                </div>
+                <div className="field-row">
+                  <DateTimeField
+                    id="timesheet-started"
+                    label="Started"
+                    required
+                    value={timesheetDraft.startedAtLocal}
+                    onChange={(startedAtLocal) =>
+                      setTimesheetDraft((s) => ({ ...s, startedAtLocal }))
+                    }
+                  />
+                  <DateTimeField
+                    id="timesheet-ended"
+                    label="Ended"
+                    value={timesheetDraft.endedAtLocal}
+                    onChange={(endedAtLocal) =>
+                      setTimesheetDraft((s) => ({ ...s, endedAtLocal }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="timesheet-notes">Notes</label>
+                  <textarea
+                    id="timesheet-notes"
+                    value={timesheetDraft.notes}
+                    onChange={(e) => setTimesheetDraft((s) => ({ ...s, notes: e.target.value }))}
+                    rows={4}
+                  />
+                </div>
               </div>
-            </form>
+            </PopupForm>
           ) : null}
 
-          {!timesheetEditorOpen && timesheetMessage ? (
+          {timesheetMessage ? (
             <p className="form-message">{timesheetMessage}</p>
           ) : null}
 
-          {timesheet.isLoading ? (
-            <LoadingState />
-          ) : timesheet.error ? (
-            <ErrorState
-              message={timesheet.error instanceof Error ? timesheet.error.message : 'Failed'}
-            />
-          ) : !Array.isArray(timesheet.data) || timesheet.data.length === 0 ? (
-            <EmptyState message="No timesheet entries in the selected range." />
-          ) : (
-            <div className="table-wrap">
+          <RemoteAnalysisDetailBrowse<TimesheetEntryDto>
+            embedded
+            heading="Timesheet entries"
+            showHeading={false}
+            searchPlaceholder="Search timesheet entries..."
+            filterKey={[projectId, range.fromUtc, range.toUtc, timesheetBrowseEpoch].join('|')}
+            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+              api.getProjectTimesheetEntriesPaged(
+                projectId!,
+                {
+                  fromUtc: range.fromUtc,
+                  toUtc: range.toUtc,
+                  pageIndex,
+                  pageSize,
+                  search: search || undefined,
+                  openClosed:
+                    status === 'Open' ? 'open' : status === 'Closed' ? 'closed' : undefined,
+                },
+                signal,
+              )
+            }
+            getStatusValue={(entry) => (entry.isOpen ? 'Open' : 'Closed')}
+            statusOptions={[
+              { value: 'Open', label: 'Open' },
+              { value: 'Closed', label: 'Closed' },
+            ]}
+            exportFilename={`project-${detail.id}-timesheet.xlsx`}
+            exportTitle={`${detail.name} · Timesheet`}
+            exportColumns={[
+              { header: 'Category', key: 'categoryName' },
+              { header: 'Started', key: 'startedAtUtc' },
+              { header: 'Ended', key: 'endedAtUtc' },
+              { header: 'Duration (ms)', key: 'durationMilliseconds' },
+              { header: 'Notes', key: 'notes' },
+              { header: 'Status', key: 'status' },
+            ]}
+            toExportRow={(entry) => ({
+              categoryName: entry.categoryName ?? '',
+              startedAtUtc: formatDateTime(entry.startedAtUtc),
+              endedAtUtc: formatDateTime(entry.endedAtUtc),
+              durationMilliseconds: timesheetEntryDurationMs(entry) ?? '',
+              notes: entry.notes ?? '',
+              status: entry.isOpen ? 'Open' : 'Closed',
+            })}
+            emptySourceMessage="No timesheet entries in the selected range."
+            renderTable={(rows) => (
               <table className="data">
                 <thead>
                   <tr>
                     <th>Category</th>
                     <th>Started</th>
                     <th>Ended</th>
+                    <th>Duration</th>
                     <th>Notes</th>
                     <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {timesheet.data.map((entry) => (
-                    <tr key={entry.id}>
-                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                      <td>{formatDateTime(entry.startedAtUtc)}</td>
-                      <td>{formatDateTime(entry.endedAtUtc)}</td>
-                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                      <td>
-                        <StatusBadge
-                          label={entry.isOpen ? 'Open' : 'Closed'}
-                          tone={entry.isOpen ? 'success' : 'neutral'}
-                        />
-                      </td>
-                      <td>
-                        <div className="row-actions">
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-secondary"
-                            onClick={() => {
-                              setEditingTimesheetId(entry.id);
-                              setTimesheetDraft(draftFromTimesheet(entry));
-                              setTimesheetMessage(null);
-                              setTimesheetEditorOpen(true);
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-compact btn-danger"
-                            disabled={deleteTimesheetMutation.isPending}
-                            onClick={() => {
-                              const ok = window.confirm('Delete this timesheet entry?');
-                              if (!ok) return;
-                              void deleteTimesheetMutation
-                                .mutateAsync({ id: entry.id, projectId: detail.id })
-                                .then(() => {
-                                  setTimesheetMessage(null);
-                                  return timesheet.refetch();
-                                })
-                                .catch((err: unknown) => {
-                                  setTimesheetMessage(
-                                    err instanceof Error ? err.message : 'Delete failed',
-                                  );
-                                });
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map((entry) => {
+                    const duration = timesheetEntryDurationMs(entry);
+                    return (
+                      <tr key={entry.id}>
+                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                        <td>{formatDateTime(entry.startedAtUtc)}</td>
+                        <td>{formatDateTime(entry.endedAtUtc)}</td>
+                        <td>
+                          {duration == null
+                            ? '—'
+                            : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                        </td>
+                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                        <td>
+                          <StatusBadge
+                            label={entry.isOpen ? 'Open' : 'Closed'}
+                            tone={entry.isOpen ? 'success' : 'neutral'}
+                          />
+                        </td>
+                        <td>
+                          <div className="row-actions">
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-secondary"
+                              onClick={() => {
+                                setEditingTimesheetId(entry.id);
+                                setTimesheetDraft(draftFromTimesheet(entry));
+                                setTimesheetMessage(null);
+                                setTimesheetEditorOpen(true);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-compact btn-danger"
+                              disabled={deleteTimesheetMutation.isPending}
+                              onClick={() => {
+                                const ok = window.confirm('Delete this timesheet entry?');
+                                if (!ok) return;
+                                void deleteTimesheetMutation
+                                  .mutateAsync({ id: entry.id, projectId: detail.id })
+                                  .then(() => {
+                                    setTimesheetMessage(null);
+                                    setTimesheetBrowseEpoch((value) => value + 1);
+                                  })
+                                  .catch((err: unknown) => {
+                                    setTimesheetMessage(
+                                      err instanceof Error ? err.message : 'Delete failed',
+                                    );
+                                  });
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-            </div>
-          )}
+            )}
+            renderGrid={(rows) =>
+              rows.map((entry) => {
+                const duration = timesheetEntryDurationMs(entry);
+                return (
+                <article key={entry.id} className="analysis-browse-tile">
+                  <strong>
+                    {entry.categoryName?.trim() ? entry.categoryName : 'Uncategorized'}
+                  </strong>
+                  <span>{formatDateTime(entry.startedAtUtc)}</span>
+                  <span>{entry.isOpen ? 'Open' : formatDateTime(entry.endedAtUtc)}</span>
+                  <span>
+                    {duration == null
+                      ? '—'
+                      : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                  </span>
+                  <span>{entry.notes?.trim() ? entry.notes : 'No notes'}</span>
+                  <div className="row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-compact btn-secondary"
+                      onClick={() => {
+                        setEditingTimesheetId(entry.id);
+                        setTimesheetDraft(draftFromTimesheet(entry));
+                        setTimesheetMessage(null);
+                        setTimesheetEditorOpen(true);
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-compact btn-danger"
+                      disabled={deleteTimesheetMutation.isPending}
+                      onClick={() => {
+                        const ok = window.confirm('Delete this timesheet entry?');
+                        if (!ok) return;
+                        void deleteTimesheetMutation
+                          .mutateAsync({ id: entry.id, projectId: detail.id })
+                          .then(() => {
+                            setTimesheetMessage(null);
+                            setTimesheetBrowseEpoch((value) => value + 1);
+                          })
+                          .catch((err: unknown) => {
+                            setTimesheetMessage(
+                              err instanceof Error ? err.message : 'Delete failed',
+                            );
+                          });
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </article>
+                );
+              })
+            }
+          />
         </section>
       )}
 
       {tab === 'Usage' && (
-        <section className="page-section">
+        <section className="page-section stack">
           {usage.isLoading ? (
             <LoadingState />
           ) : usage.error ? (
             <ErrorState message={usage.error instanceof Error ? usage.error.message : 'Failed'} />
           ) : (
-            <div className="metric-grid">
-              <MetricCard label="Total tokens" value={formatNumber(usage.data?.totalTokens)} />
-              <MetricCard label="Input tokens" value={formatNumber(usage.data?.inputTokens)} />
-              <MetricCard label="Output tokens" value={formatNumber(usage.data?.outputTokens)} />
-              <MetricCard label="Cached input" value={formatNumber(usage.data?.cachedInputTokens)} />
-              <MetricCard label="Reasoning" value={formatNumber(usage.data?.reasoningTokens)} />
-              <MetricCard
-                label="Reported cost"
-                value={formatCurrency(usage.data?.reportedCost, usage.data?.currency)}
+            <>
+              <div className="metric-grid">
+                <MetricCard label="Total tokens" value={formatNumber(usage.data?.totalTokens)} />
+                <MetricCard label="Input tokens" value={formatNumber(usage.data?.inputTokens)} />
+                <MetricCard label="Output tokens" value={formatNumber(usage.data?.outputTokens)} />
+                <MetricCard label="Cached input" value={formatNumber(usage.data?.cachedInputTokens)} />
+                <MetricCard
+                  label="Cache write"
+                  value={formatNumber(usage.data?.cacheWriteTokens ?? 0)}
+                />
+                <MetricCard label="Reasoning" value={formatNumber(usage.data?.reasoningTokens)} />
+                <MetricCard label="Requests" value={formatNumber(usage.data?.requestCount)} />
+                <MetricCard
+                  label="Total calculated cost"
+                  value={formatCurrency(
+                    usage.data?.calculatedTokenCost ?? 0,
+                    usage.data?.currency ?? detail.currency,
+                  )}
+                  hint="Settings rate card × attributed tokens"
+                />
+              </div>
+              <AnalysisDetailBrowse
+                embedded
+                heading="Usage entries"
+                searchPlaceholder="Search models..."
+                rows={usage.data?.items ?? []}
+                getSearchText={(row) =>
+                  [
+                    row.model,
+                    row.timestampUtc,
+                    row.inputTokens,
+                    row.outputTokens,
+                    row.cachedInputTokens,
+                    row.cacheWriteTokens,
+                    row.reasoningTokens,
+                    row.totalTokens,
+                    row.calculatedTokenCost,
+                  ]
+                    .map(String)
+                    .join(' ')
+                }
+                exportFilename={`project-${detail.id}-usage-entries.xlsx`}
+                exportTitle={`${detail.name} · Usage entries`}
+                exportColumns={[
+                  { header: 'When', key: 'timestampUtc' },
+                  { header: 'Model', key: 'model' },
+                  { header: 'Input', key: 'inputTokens' },
+                  { header: 'Output', key: 'outputTokens' },
+                  { header: 'Cached', key: 'cachedInputTokens' },
+                  { header: 'Cache write', key: 'cacheWriteTokens' },
+                  { header: 'Reasoning', key: 'reasoningTokens' },
+                  { header: 'Total tokens', key: 'totalTokens' },
+                  { header: 'Calculated cost', key: 'calculatedTokenCost' },
+                ]}
+                toExportRow={(row) => ({
+                  timestampUtc: formatDateTime(row.timestampUtc),
+                  model: row.model ?? '',
+                  inputTokens: row.inputTokens,
+                  outputTokens: row.outputTokens,
+                  cachedInputTokens: row.cachedInputTokens,
+                  cacheWriteTokens: row.cacheWriteTokens ?? 0,
+                  reasoningTokens: row.reasoningTokens,
+                  totalTokens: row.totalTokens,
+                  calculatedTokenCost: row.calculatedTokenCost,
+                })}
+                emptySourceMessage="No attributed usage entries in this range."
+                renderTable={(rows) => {
+                  const currency = usage.data?.currency ?? detail.currency;
+                  return (
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Model</th>
+                          <th>Input</th>
+                          <th>Output</th>
+                          <th>Cached</th>
+                          <th>Cache write</th>
+                          <th>Reasoning</th>
+                          <th>Total tokens</th>
+                          <th>Calculated cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.usageRecordId}>
+                            <td>{formatDateTime(row.timestampUtc)}</td>
+                            <td>{row.model ?? '—'}</td>
+                            <td>{formatNumber(row.inputTokens)}</td>
+                            <td>{formatNumber(row.outputTokens)}</td>
+                            <td>{formatNumber(row.cachedInputTokens)}</td>
+                            <td>{formatNumber(row.cacheWriteTokens ?? 0)}</td>
+                            <td>{formatNumber(row.reasoningTokens)}</td>
+                            <td>{formatNumber(row.totalTokens)}</td>
+                            <td>{formatCurrency(row.calculatedTokenCost, currency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                }}
+                renderGrid={(rows) => {
+                  const currency = usage.data?.currency ?? detail.currency;
+                  return rows.map((row) => (
+                    <article key={row.usageRecordId} className="analysis-browse-tile">
+                      <strong>{row.model ?? 'Unknown model'}</strong>
+                      <span>{formatDateTime(row.timestampUtc)}</span>
+                      <span>
+                        In {formatNumber(row.inputTokens)} · Out {formatNumber(row.outputTokens)}
+                      </span>
+                      <span>
+                        Cached {formatNumber(row.cachedInputTokens)} · Write{' '}
+                        {formatNumber(row.cacheWriteTokens ?? 0)} · Reasoning{' '}
+                        {formatNumber(row.reasoningTokens)}
+                      </span>
+                      <span>Total {formatNumber(row.totalTokens)}</span>
+                      <span>{formatCurrency(row.calculatedTokenCost, currency)}</span>
+                    </article>
+                  ));
+                }}
               />
-              <MetricCard label="Requests" value={formatNumber(usage.data?.requestCount)} />
-            </div>
+            </>
           )}
         </section>
       )}
 
-      {tab === 'Cost' && (
-        <section className="page-section">
-          {cost.isLoading ? (
-            <LoadingState />
-          ) : cost.error ? (
-            <ErrorState message={cost.error instanceof Error ? cost.error.message : 'Failed'} />
+      {tab === 'Costs' && (
+        <section className="page-section stack">
+          {cost.isLoading || tokenCost.isLoading ? (
+            <LoadingState label="Loading costs…" />
+          ) : cost.error || tokenCost.error ? (
+            <ErrorState
+              message={
+                (cost.error instanceof Error
+                  ? cost.error.message
+                  : null) ??
+                (tokenCost.error instanceof Error
+                  ? tokenCost.error.message
+                  : null) ??
+                'Failed to load costs'
+              }
+            />
           ) : (
             <>
               <div className="metric-grid">
@@ -1152,68 +2039,18 @@ export function ProjectDetailsPage() {
                   value={formatCurrency(cost.data?.calculatedTokenCost ?? 0, cost.data?.currency)}
                   hint="Settings rate card × attributed tokens"
                 />
-              </div>
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Model</th>
-                      <th>Usage cost</th>
-                      <th>Subscription</th>
-                      <th>Token cost</th>
-                      <th>Prompts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(cost.data?.byModel ?? []).map((m) => (
-                      <tr key={m.name}>
-                        <td>{m.name}</td>
-                        <td>{formatCurrency(m.usageBasedCost, cost.data?.currency)}</td>
-                        <td>{formatCurrency(m.subscriptionAllocation, cost.data?.currency)}</td>
-                        <td>{formatCurrency(m.calculatedTokenCost ?? 0, cost.data?.currency)}</td>
-                        <td>{formatNumber(m.promptCount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
-      )}
-
-      {tab === 'Token Costs' && (
-        <section className="page-section">
-          {tokenCost.isLoading ? (
-            <LoadingState label="Calculating token costs…" />
-          ) : tokenCost.error ? (
-            <ErrorState
-              message={
-                tokenCost.error instanceof Error
-                  ? tokenCost.error.message
-                  : 'Failed to load token costs'
-              }
-            />
-          ) : (
-            <>
-              <p className="muted" style={{ marginBottom: '1rem' }}>
-                Estimated from attributed tokens using the Cursor rate card in Settings. Cached
-                tokens use the cache-read rate. Reported cost is the imported dollar amount when
-                present.
-              </p>
-              <div className="metric-grid">
                 <MetricCard
                   label="Estimated cost"
                   value={formatCurrency(
                     tokenCost.data?.estimatedCost,
-                    tokenCost.data?.currency,
+                    tokenCost.data?.currency ?? cost.data?.currency,
                   )}
                 />
                 <MetricCard
                   label="Reported cost"
                   value={formatCurrency(
                     tokenCost.data?.reportedCost,
-                    tokenCost.data?.currency,
+                    tokenCost.data?.currency ?? cost.data?.currency,
                   )}
                 />
                 <MetricCard
@@ -1233,6 +2070,10 @@ export function ProjectDetailsPage() {
                   value={formatNumber(tokenCost.data?.cachedInputTokens)}
                 />
                 <MetricCard
+                  label="Cache write"
+                  value={formatNumber(tokenCost.data?.cacheWriteTokens ?? 0)}
+                />
+                <MetricCard
                   label="Reasoning"
                   value={formatNumber(tokenCost.data?.reasoningTokens)}
                 />
@@ -1241,48 +2082,125 @@ export function ProjectDetailsPage() {
                   value={formatNumber(tokenCost.data?.rateCardModelCount)}
                 />
               </div>
-              {!(tokenCost.data?.byModel?.length) ? (
-                <EmptyState message="No attributed usage in this range to price." />
-              ) : (
-                <div className="table-wrap">
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Rate used</th>
-                        <th>Input</th>
-                        <th>Output</th>
-                        <th>Cached</th>
-                        <th>Reasoning</th>
-                        <th>Total tokens</th>
-                        <th>Estimated</th>
-                        <th>Reported</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tokenCost.data.byModel.map((row) => (
-                        <tr key={row.model}>
-                          <td>{row.model}</td>
-                          <td className="mono">{row.rateSource}</td>
-                          <td>{formatNumber(row.inputTokens)}</td>
-                          <td>{formatNumber(row.outputTokens)}</td>
-                          <td>{formatNumber(row.cachedInputTokens)}</td>
-                          <td>{formatNumber(row.reasoningTokens)}</td>
-                          <td>{formatNumber(row.totalTokens)}</td>
-                          <td>
-                            {formatCurrency(row.estimatedCost, tokenCost.data?.currency)}
-                          </td>
-                          <td>
-                            {formatCurrency(row.reportedCost, tokenCost.data?.currency)}
-                          </td>
+              <p className="muted">
+                Estimated from attributed tokens using the Cursor rate card in Settings. Cached
+                input uses the cache-read rate; cache-write tokens use the cache-write rate.
+                Reported cost is the imported dollar amount when present.
+              </p>
+              <AnalysisDetailBrowse
+                embedded
+                heading="Cost by model"
+                searchPlaceholder="Search models..."
+                rows={combinedModelCostRows}
+                getSearchText={(row) =>
+                  [
+                    row.model,
+                    row.rateSource,
+                    row.promptCount,
+                    row.totalTokens,
+                    row.usageBasedCost,
+                    row.estimatedCost,
+                    row.reportedCost,
+                  ]
+                    .map(String)
+                    .join(' ')
+                }
+                exportFilename={`project-${detail.id}-costs-by-model.xlsx`}
+                exportTitle={`${detail.name} · Costs by model`}
+                exportColumns={[
+                  { header: 'Model', key: 'model' },
+                  { header: 'Rate used', key: 'rateSource' },
+                  { header: 'Prompts', key: 'promptCount' },
+                  { header: 'Input', key: 'inputTokens' },
+                  { header: 'Output', key: 'outputTokens' },
+                  { header: 'Cached', key: 'cachedInputTokens' },
+                  { header: 'Cache write', key: 'cacheWriteTokens' },
+                  { header: 'Reasoning', key: 'reasoningTokens' },
+                  { header: 'Total tokens', key: 'totalTokens' },
+                  { header: 'Usage cost', key: 'usageBasedCost' },
+                  { header: 'Subscription', key: 'subscriptionAllocation' },
+                  { header: 'Estimated', key: 'estimatedCost' },
+                  { header: 'Reported', key: 'reportedCost' },
+                ]}
+                toExportRow={(row) => ({
+                  model: row.model,
+                  rateSource: row.rateSource === '—' ? '' : row.rateSource,
+                  promptCount: row.promptCount,
+                  inputTokens: row.inputTokens,
+                  outputTokens: row.outputTokens,
+                  cachedInputTokens: row.cachedInputTokens,
+                  cacheWriteTokens: row.cacheWriteTokens,
+                  reasoningTokens: row.reasoningTokens,
+                  totalTokens: row.totalTokens,
+                  usageBasedCost: row.usageBasedCost,
+                  subscriptionAllocation: row.subscriptionAllocation,
+                  estimatedCost: row.estimatedCost,
+                  reportedCost: row.reportedCost,
+                })}
+                emptySourceMessage="No model cost breakdown in this range."
+                renderTable={(rows) => {
+                  const currency =
+                    cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency;
+                  return (
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>Model</th>
+                          <th>Rate used</th>
+                          <th>Prompts</th>
+                          <th>Input</th>
+                          <th>Output</th>
+                          <th>Cached</th>
+                          <th>Cache write</th>
+                          <th>Reasoning</th>
+                          <th>Total tokens</th>
+                          <th>Usage cost</th>
+                          <th>Subscription</th>
+                          <th>Estimated</th>
+                          <th>Reported</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.model}>
+                            <td>{row.model}</td>
+                            <td className="mono">{row.rateSource}</td>
+                            <td>{formatNumber(row.promptCount)}</td>
+                            <td>{formatNumber(row.inputTokens)}</td>
+                            <td>{formatNumber(row.outputTokens)}</td>
+                            <td>{formatNumber(row.cachedInputTokens)}</td>
+                            <td>{formatNumber(row.cacheWriteTokens)}</td>
+                            <td>{formatNumber(row.reasoningTokens)}</td>
+                            <td>{formatNumber(row.totalTokens)}</td>
+                            <td>{formatCurrency(row.usageBasedCost, currency)}</td>
+                            <td>{formatCurrency(row.subscriptionAllocation, currency)}</td>
+                            <td>{formatCurrency(row.estimatedCost, currency)}</td>
+                            <td>{formatCurrency(row.reportedCost, currency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                }}
+                renderGrid={(rows) => {
+                  const currency =
+                    cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency;
+                  return rows.map((row) => (
+                    <article key={row.model} className="analysis-browse-tile">
+                      <strong>{row.model}</strong>
+                      <span className="mono">{row.rateSource}</span>
+                      <span>Prompts {formatNumber(row.promptCount)}</span>
+                      <span>Tokens {formatNumber(row.totalTokens)}</span>
+                      <span>Usage {formatCurrency(row.usageBasedCost, currency)}</span>
+                      <span>Est. {formatCurrency(row.estimatedCost, currency)}</span>
+                    </article>
+                  ));
+                }}
+              />
               <p className="muted" style={{ marginTop: '0.75rem' }}>
-                <Link to="/settings">Edit Cursor token rates in Settings</Link>
+                <TextLink to="/settings?tab=cursor-token-costs">
+                  Edit Cursor token rates in Settings
+                </TextLink>
               </p>
             </>
           )}
@@ -1290,44 +2208,83 @@ export function ProjectDetailsPage() {
       )}
 
       {tab === 'Repositories' && (
-        <section className="page-section">
-          {!(detail.repositories?.length) ? (
-            <EmptyState message="No repositories mapped to this project." />
-          ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Local path</th>
-                    <th>Remote</th>
-                    <th>Default branch</th>
-                    <th>Status</th>
+        <AnalysisDetailBrowse
+          heading="Repositories"
+          searchPlaceholder="Search repositories..."
+          rows={detail.repositories ?? []}
+          getStatusValue={(repo) => (repo.isActive ? 'Active' : 'Inactive')}
+          statusOptions={[
+            { value: 'Active', label: 'Active' },
+            { value: 'Inactive', label: 'Inactive' },
+          ]}
+          getSearchText={(repo) =>
+            [
+              repo.localPath,
+              repo.remoteUrl,
+              repo.defaultBranch,
+              repo.isActive ? 'Active' : 'Inactive',
+            ]
+              .filter(Boolean)
+              .join(' ')
+          }
+          exportFilename={`project-${detail.id}-repositories.xlsx`}
+          exportTitle={`${detail.name} · Repositories`}
+          exportColumns={[
+            { header: 'Local path', key: 'localPath' },
+            { header: 'Remote', key: 'remoteUrl' },
+            { header: 'Default branch', key: 'defaultBranch' },
+            { header: 'Status', key: 'status' },
+          ]}
+          toExportRow={(repo) => ({
+            localPath: repo.localPath,
+            remoteUrl: repo.remoteUrl ?? '',
+            defaultBranch: repo.defaultBranch ?? '',
+            status: repo.isActive ? 'Active' : 'Inactive',
+          })}
+          emptySourceMessage="No repositories mapped to this project."
+          renderTable={(rows) => (
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Local path</th>
+                  <th>Remote</th>
+                  <th>Default branch</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((repo) => (
+                  <tr key={repo.id}>
+                    <td className="mono">{repo.localPath}</td>
+                    <td className="mono">{repo.remoteUrl ?? '—'}</td>
+                    <td>{repo.defaultBranch ?? '—'}</td>
+                    <td>
+                      <StatusBadge
+                        label={repo.isActive ? 'Active' : 'Inactive'}
+                        tone={repo.isActive ? 'success' : 'neutral'}
+                      />
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {detail.repositories.map((repo) => (
-                    <tr key={repo.id}>
-                      <td className="mono">{repo.localPath}</td>
-                      <td className="mono">{repo.remoteUrl ?? '—'}</td>
-                      <td>{repo.defaultBranch ?? '—'}</td>
-                      <td>
-                        <StatusBadge
-                          label={repo.isActive ? 'Active' : 'Inactive'}
-                          tone={repo.isActive ? 'success' : 'neutral'}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           )}
-        </section>
+          renderGrid={(rows) =>
+            rows.map((repo) => (
+              <article key={repo.id} className="analysis-browse-tile">
+                <strong className="mono">{repo.localPath}</strong>
+                <span className="mono">{repo.remoteUrl ?? 'No remote'}</span>
+                <span>{repo.defaultBranch ?? 'No default branch'}</span>
+                <span>{repo.isActive ? 'Active' : 'Inactive'}</span>
+              </article>
+            ))
+          }
+        />
       )}
 
       {tab === 'Exports' && (
         <section className="page-section">
-          <div className="panel stack">
+          <Panel className="stack">
             <p>Download a project report as JSON or CSV.</p>
             <div className="row">
               <button
@@ -1384,14 +2341,14 @@ export function ProjectDetailsPage() {
                 }
               />
             ) : null}
-          </div>
+          </Panel>
         </section>
       )}
 
       {tab === 'Settings' && (
         <section className="page-section">
-          <form
-            className="panel stack"
+          <Panel className="stack"><form
+            className="stack"
             onSubmit={async (event) => {
               event.preventDefault();
               setSettingsMessage(null);
@@ -1492,7 +2449,7 @@ export function ProjectDetailsPage() {
               </button>
               {settingsMessage ? <span>{settingsMessage}</span> : null}
             </div>
-          </form>
+          </form></Panel>
         </section>
       )}
     </Page>

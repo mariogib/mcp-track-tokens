@@ -88,6 +88,42 @@ public sealed class ReportServiceTests
     }
 
     [Fact]
+    public async Task GetActivitySummaryAsync_uses_completed_prompt_duration_when_agent_row_has_none()
+    {
+        var projectId = Guid.NewGuid();
+        var from = DateTimeOffset.Parse("2026-07-17T08:00:00Z");
+        var to = DateTimeOffset.Parse("2026-07-17T12:00:00Z");
+        var started = from.AddMinutes(5);
+
+        var prompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            started,
+            projectId);
+        prompt.ApplyCompletion(ActivityStatus.Completed, started.AddMinutes(3));
+
+        var events = new[]
+        {
+            prompt,
+            PromptActivityEvent.Create(
+                ActivityEventType.AgentCompleted,
+                EditorType.Cursor,
+                started.AddMinutes(3),
+                projectId),
+        };
+
+        _events.ListAsync(from, to, projectId, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
+            .Returns(events);
+        _sessions.ListAsync(projectId, from, to, Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var sut = CreateSut();
+        var summary = await sut.GetActivitySummaryAsync(projectId, from, to);
+
+        summary.AgentDurationMilliseconds.Should().Be(180_000);
+    }
+
+    [Fact]
     public async Task GetProjectActivityAsync_exposes_both_metrics_separately()
     {
         var project = Project.Create("Demo", "demo");
@@ -207,6 +243,18 @@ public sealed class ReportServiceTests
         summary.Currency.Should().Be("USD");
         summary.FromUtc.Should().Be(from);
         summary.ToUtc.Should().Be(to);
+        summary.Items.Should().HaveCount(2);
+        summary.Items[0].UsageRecordId.Should().Be(usagePartial.Id);
+        summary.Items[0].InputTokens.Should().Be(400);
+        summary.Items[0].OutputTokens.Should().Be(50);
+        summary.Items[0].CachedInputTokens.Should().Be(100);
+        summary.Items[0].ReasoningTokens.Should().Be(20);
+        summary.Items[0].TotalTokens.Should().Be(570);
+        summary.Items[1].UsageRecordId.Should().Be(usageFull.Id);
+        summary.Items[1].InputTokens.Should().Be(1000);
+        summary.Items[1].CachedInputTokens.Should().Be(400);
+        summary.Items[1].ReasoningTokens.Should().Be(50);
+        summary.CalculatedTokenCost.Should().Be(summary.Items.Sum(i => i.CalculatedTokenCost));
     }
 
     [Fact]

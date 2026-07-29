@@ -4,6 +4,9 @@ import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { ThemeProvider } from './theme/ThemeProvider';
+import '@lunarq/frontend-shared/theme/index.css';
+import '@lunarq/frontend-shared/components/index.css';
+import '@lunarq/frontend-shared/admin/index.css';
 import './styles/global.css';
 
 const queryClient = new QueryClient({

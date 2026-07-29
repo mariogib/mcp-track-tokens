@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   useClientCostQuery,
   useClientTokenCostQuery,
@@ -18,22 +17,20 @@ import {
   NamedBarChart,
   NamedPieChart,
 } from '../components/Charts';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
+import { TextLink } from '../shared/adminUi';
 import {
   formatCurrency,
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
-  lastDaysRange,
-  monthBoundsUtc,
 } from '../utils/format';
+import { resolveRange, type RangePreset } from '../utils/dateRange';
 
 const SECTIONS = ['Clients', 'Projects'] as const;
-
-type RangePreset = '7d' | '30d' | '90d' | 'month';
 
 type ClientReportId =
   | 'client-billing'
@@ -99,22 +96,6 @@ const PROJECT_REPORTS: { id: ProjectReportId; title: string; description: string
     description: 'Compare prompt and agent activity across editors.',
   },
 ];
-
-function resolveRange(preset: RangePreset): { fromUtc: string; toUtc: string; label: string } {
-  const now = new Date();
-  if (preset === 'month') {
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
-    const bounds = monthBoundsUtc(year, month);
-    return {
-      ...bounds,
-      label: `${year}-${String(month).padStart(2, '0')}`,
-    };
-  }
-
-  const days = preset === '7d' ? 7 : preset === '90d' ? 90 : 30;
-  return { ...lastDaysRange(days), label: `Last ${days} days` };
-}
 
 export function ReportsPage() {
   const [section, setSection] = useTabSearchParam(SECTIONS, 'Clients');
@@ -256,10 +237,9 @@ export function ReportsPage() {
           {reportCards.map((report) => {
             const selected = report.id === activeReportId;
             return (
-              <button
+              <Panel
                 key={report.id}
-                type="button"
-                className={`panel stack report-card${selected ? ' report-card--active' : ''}`}
+                className={`stack report-card${selected ? ' report-card--active' : ''}`}
                 onClick={() => {
                   if (section === 'Clients') {
                     setClientReport(report.id as ClientReportId);
@@ -267,22 +247,17 @@ export function ReportsPage() {
                     setProjectReport(report.id as ProjectReportId);
                   }
                 }}
-                style={{
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  borderColor: selected ? 'var(--accent)' : undefined,
-                }}
               >
                 <strong>{report.title}</strong>
                 <span className="muted">{report.description}</span>
-              </button>
+              </Panel>
             );
           })}
         </div>
       </section>
 
       <section className="page-section">
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="field-row">
             <div className="field">
               <label htmlFor="report-range">Date range</label>
@@ -351,7 +326,7 @@ export function ReportsPage() {
             Range: {range.label} ({new Date(range.fromUtc).toLocaleString()} –{' '}
             {new Date(range.toUtc).toLocaleString()})
           </p>
-        </div>
+        </Panel>
       </section>
 
       {section === 'Clients' && clientReport === 'client-billing' && (
@@ -490,7 +465,7 @@ function ClientBillingReport({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -507,7 +482,7 @@ function ClientBillingReport({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{formatNumber(project.promptCount)}</td>
                     <td>{formatDurationSeconds(project.activeProjectTimeSeconds)}</td>
@@ -519,7 +494,7 @@ function ClientBillingReport({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       )}
     </section>
@@ -578,6 +553,7 @@ function ClientTokenCostReportView({
         <MetricCard label="Input tokens" value={formatNumber(data.inputTokens)} />
         <MetricCard label="Output tokens" value={formatNumber(data.outputTokens)} />
         <MetricCard label="Cached tokens" value={formatNumber(data.cachedInputTokens)} />
+        <MetricCard label="Cache write" value={formatNumber(data.cacheWriteTokens ?? 0)} />
         <MetricCard label="Projects" value={formatNumber(data.projectCount)} />
       </div>
       {data.projects.length === 0 ? (
@@ -608,7 +584,7 @@ function ClientTokenCostReportView({
               </ChartCard>
             ) : null}
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -622,7 +598,7 @@ function ClientTokenCostReportView({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{formatNumber(project.totalTokens)}</td>
                     <td>{formatCurrency(project.estimatedCost, project.currency)}</td>
@@ -631,9 +607,9 @@ function ClientTokenCostReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
           {data.byModel.length > 0 ? (
-            <div className="table-wrap" style={{ marginTop: '1rem' }}>
+            <TablePanel style={{ marginTop: '1rem' }}>
               <table className="data">
                 <thead>
                   <tr>
@@ -658,7 +634,7 @@ function ClientTokenCostReportView({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TablePanel>
           ) : null}
         </>
       )}
@@ -710,7 +686,7 @@ function ClientsOverviewReport({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -731,7 +707,7 @@ function ClientsOverviewReport({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }
@@ -784,7 +760,7 @@ function ModelCostReportView({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -817,7 +793,7 @@ function ModelCostReportView({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }
@@ -846,7 +822,7 @@ function ProjectCostReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">{data.clientName ? `Client: ${data.clientName}` : 'No client assigned'}</p>
         </div>
@@ -928,7 +904,7 @@ function ProjectActivityReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">Activity for the selected range.</p>
         </div>
@@ -1007,7 +983,7 @@ function ProjectTokenCostReportView({
       <div className="section-header">
         <div>
           <h3>
-            <Link to={`/projects/${data.projectId}`}>{data.projectName}</Link>
+            <TextLink to={`/projects/${data.projectId}`}>{data.projectName}</TextLink>
           </h3>
           <p className="muted">
             Calculated from Settings → Cursor token costs × attributed tokens
@@ -1027,6 +1003,7 @@ function ProjectTokenCostReportView({
         <MetricCard label="Input tokens" value={formatNumber(data.inputTokens)} />
         <MetricCard label="Output tokens" value={formatNumber(data.outputTokens)} />
         <MetricCard label="Cached tokens" value={formatNumber(data.cachedInputTokens)} />
+        <MetricCard label="Cache write" value={formatNumber(data.cacheWriteTokens ?? 0)} />
       </div>
       {data.byModel.length > 0 ? (
         <>
@@ -1042,7 +1019,7 @@ function ProjectTokenCostReportView({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -1069,7 +1046,7 @@ function ProjectTokenCostReportView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       ) : (
         <EmptyState message="No attributed token usage for this project in the selected range." />
@@ -1153,7 +1130,7 @@ function ProjectsMonthlyReport({
               />
             </ChartCard>
           </div>
-          <div className="table-wrap">
+          <TablePanel>
             <table className="data">
               <thead>
                 <tr>
@@ -1170,7 +1147,7 @@ function ProjectsMonthlyReport({
                 {data.projects.map((project) => (
                   <tr key={project.projectId}>
                     <td>
-                      <Link to={`/projects/${project.projectId}`}>{project.projectName}</Link>
+                      <TextLink to={`/projects/${project.projectId}`}>{project.projectName}</TextLink>
                     </td>
                     <td>{project.clientName?.trim() || '—'}</td>
                     <td>{formatNumber(project.promptCount)}</td>
@@ -1182,7 +1159,7 @@ function ProjectsMonthlyReport({
                 ))}
               </tbody>
             </table>
-          </div>
+          </TablePanel>
         </>
       )}
     </section>
@@ -1234,7 +1211,7 @@ function EditorComparisonReportView({
           />
         </ChartCard>
       </div>
-      <div className="table-wrap">
+      <TablePanel>
         <table className="data">
           <thead>
             <tr>
@@ -1257,7 +1234,7 @@ function EditorComparisonReportView({
             ))}
           </tbody>
         </table>
-      </div>
+      </TablePanel>
     </section>
   );
 }

@@ -20,35 +20,43 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     private readonly IProjectDetectionService _projectDetection;
     private readonly ITimesheetEntryRepository _timesheets;
     private readonly ITimesheetCategoryRepository _categories;
+    private readonly ISessionRepository _sessions;
     private readonly IActivityEventRepository _events;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IValidator<CreateTimesheetEntryRequest> _createValidator;
     private readonly IValidator<UpdateTimesheetEntryRequest> _updateValidator;
     private readonly IValidator<StartTimesheetRequest> _startValidator;
     private readonly IValidator<EndTimesheetRequest> _endValidator;
+    private readonly TimeZoneInfo _calendarTimeZone;
 
     public TimesheetManagementService(
         IProjectRepository projects,
         IProjectDetectionService projectDetection,
         ITimesheetEntryRepository timesheets,
         ITimesheetCategoryRepository categories,
+        ISessionRepository sessions,
         IActivityEventRepository events,
         IUnitOfWork unitOfWork,
         IValidator<CreateTimesheetEntryRequest> createValidator,
         IValidator<UpdateTimesheetEntryRequest> updateValidator,
         IValidator<StartTimesheetRequest> startValidator,
-        IValidator<EndTimesheetRequest> endValidator)
+        IValidator<EndTimesheetRequest> endValidator,
+        TimeZoneInfo? calendarTimeZone = null)
     {
         _projects = projects;
         _projectDetection = projectDetection;
         _timesheets = timesheets;
         _categories = categories;
+        _sessions = sessions;
         _events = events;
         _unitOfWork = unitOfWork;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
         _startValidator = startValidator;
         _endValidator = endValidator;
+        // Billable day boundaries follow the host machine's local calendar (not UTC),
+        // so late-evening UTC activity still rolls timesheets after local midnight.
+        _calendarTimeZone = calendarTimeZone ?? TimeZoneInfo.Local;
     }
 
     /// <inheritdoc />
@@ -123,7 +131,11 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 "Timesheet entry is already ended.");
         }
 
-        entry.End(request.EndedAtUtc ?? DateTimeOffset.UtcNow, request.AppendNotes);
+        var fallback = (request.EndedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
+        var endedAt = request.EndedAtUtc is not null
+            ? fallback
+            : await ResolveCloseAtAsync(entry, fallback, cancellationToken).ConfigureAwait(false);
+        entry.End(endedAt, request.AppendNotes);
         await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return await ToDtoAsync(entry, cancellationToken).ConfigureAwait(false);
@@ -162,6 +174,52 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 categoryNames.GetValueOrDefault(e.CategoryId, string.Empty),
                 projectNames.GetValueOrDefault(e.ProjectId, string.Empty)))
             .ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<PagedResultDto<TimesheetEntryDto>> ListPagedAsync(
+        TimesheetEntryPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (filter.ProjectId is Guid id)
+        {
+            _ = await _projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+                ?? throw new EntityNotFoundException(nameof(Project), id);
+        }
+
+        var totalCount = await _timesheets.CountAsync(filter, cancellationToken).ConfigureAwait(false);
+        var list = await _timesheets
+            .ListPagedAsync(filter, pageIndex, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+        var categoryNames = await LoadCategoryNamesAsync(list.Select(e => e.CategoryId), cancellationToken)
+            .ConfigureAwait(false);
+        var projectNames = await LoadProjectNamesAsync(list.Select(e => e.ProjectId), cancellationToken)
+            .ConfigureAwait(false);
+        var (skip, take) = NormalizePage(pageIndex, pageSize);
+        _ = skip;
+
+        return new PagedResultDto<TimesheetEntryDto>
+        {
+            Items = list
+                .Select(e => ToDto(
+                    e,
+                    categoryNames.GetValueOrDefault(e.CategoryId, string.Empty),
+                    projectNames.GetValueOrDefault(e.ProjectId, string.Empty)))
+                .ToList(),
+            PageIndex = Math.Max(0, pageIndex),
+            PageSize = take,
+            TotalCount = totalCount
+        };
+    }
+
+    private static (int Skip, int Take) NormalizePage(int pageIndex, int pageSize)
+    {
+        var size = Math.Clamp(pageSize <= 0 ? 25 : pageSize, 1, 100);
+        var index = Math.Max(0, pageIndex);
+        return (index * size, size);
     }
 
     /// <inheritdoc />
@@ -209,16 +267,17 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         }
 
         var activityAt = (startedAtUtc ?? DateTimeOffset.UtcNow).ToUniversalTime();
-        var activityDay = DateOnly.FromDateTime(activityAt.UtcDateTime);
+        var activityDay = ToCalendarDay(activityAt);
         var openForProject = await _timesheets.ListOpenByProjectAsync(projectId, cancellationToken)
             .ConfigureAwait(false);
 
+        var handledEntryIds = new HashSet<Guid>();
+        var crossedDay = false;
         if (openForProject.Count > 0)
         {
-            var crossedDay = false;
             foreach (var open in openForProject.OrderBy(e => e.StartedAtUtc))
             {
-                var startDay = DateOnly.FromDateTime(open.StartedAtUtc.UtcDateTime);
+                var startDay = ToCalendarDay(open.StartedAtUtc);
                 if (startDay >= activityDay)
                 {
                     continue;
@@ -226,8 +285,17 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
 
                 var closeAt = await ResolveDayBoundaryCloseAsync(projectId, open, startDay, cancellationToken)
                     .ConfigureAwait(false);
-                open.End(closeAt, DayBoundaryNotes);
-                await _timesheets.UpdateAsync(open, cancellationToken).ConfigureAwait(false);
+                if (closeAt <= open.StartedAtUtc)
+                {
+                    await _timesheets.DeleteAsync(open, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    open.End(closeAt, DayBoundaryNotes);
+                    await _timesheets.UpdateAsync(open, cancellationToken).ConfigureAwait(false);
+                }
+
+                handledEntryIds.Add(open.Id);
                 crossedDay = true;
             }
 
@@ -235,9 +303,18 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             {
                 return;
             }
+
+            // Persist day-boundary closes before autoclose scans opens, otherwise the same
+            // entries are re-closed and their end time can be overwritten to a zero-duration.
+            await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await CloseAllOpenEntriesAsync(activityAt, AutoclosedNotes, exceptEntryId: null, cancellationToken)
+        await CloseAllOpenEntriesAsync(
+                activityAt,
+                AutoclosedNotes,
+                exceptEntryId: null,
+                excludeEntryIds: handledEntryIds,
+                cancellationToken)
             .ConfigureAwait(false);
 
         var category = await ResolveCategoryAsync(
@@ -246,7 +323,19 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             requireActive: false,
             cancellationToken).ConfigureAwait(false);
 
-        var entry = TimesheetEntry.Start(projectId, category.Id, activityAt, AutocreatedNotes);
+        var newStart = activityAt;
+        if (crossedDay)
+        {
+            // Keep coverage continuous when work continues past midnight: start the new day
+            // entry at local calendar midnight rather than the first post-midnight prompt.
+            var (dayStart, _) = GetCalendarDayBoundsUtc(activityDay);
+            if (dayStart < activityAt)
+            {
+                newStart = dayStart;
+            }
+        }
+
+        var entry = TimesheetEntry.Start(projectId, category.Id, newStart, AutocreatedNotes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 
@@ -256,25 +345,102 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         DateOnly startDay,
         CancellationToken cancellationToken)
     {
-        var dayStart = new DateTimeOffset(startDay.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var dayEnd = dayStart.AddDays(1);
+        var (dayStart, dayEnd) = GetCalendarDayBoundsUtc(startDay);
+
+        var sessionEnd = await TryGetLastSessionEndedAtOnDayAsync(projectId, startDay, cancellationToken)
+            .ConfigureAwait(false);
+        if (sessionEnd is DateTimeOffset fromSession)
+        {
+            return ClampCloseAt(open.StartedAtUtc, fromSession, dayEnd);
+        }
+
         var from = open.StartedAtUtc > dayStart ? open.StartedAtUtc : dayStart;
         var lastPrompt = await _events
             .GetLatestPromptTimestampForProjectAsync(projectId, from, dayEnd, cancellationToken)
             .ConfigureAwait(false);
 
         var closeAt = lastPrompt?.ToUniversalTime() ?? open.StartedAtUtc;
-        if (closeAt < open.StartedAtUtc)
+        return ClampCloseAt(open.StartedAtUtc, closeAt, dayEnd);
+    }
+
+    /// <summary>
+    /// When ending a timesheet without an explicit end time, use the last ended editor session
+    /// for the project on the timesheet's start calendar day; otherwise <paramref name="fallbackUtc"/>.
+    /// </summary>
+    private async Task<DateTimeOffset> ResolveCloseAtAsync(
+        TimesheetEntry entry,
+        DateTimeOffset fallbackUtc,
+        CancellationToken cancellationToken)
+    {
+        var startDay = ToCalendarDay(entry.StartedAtUtc);
+        var sessionEnd = await TryGetLastSessionEndedAtOnDayAsync(entry.ProjectId, startDay, cancellationToken)
+            .ConfigureAwait(false);
+        var closeAt = sessionEnd ?? fallbackUtc.ToUniversalTime();
+        if (closeAt < entry.StartedAtUtc)
         {
-            closeAt = open.StartedAtUtc;
+            closeAt = entry.StartedAtUtc;
         }
 
-        if (closeAt >= dayEnd)
-        {
-            closeAt = dayEnd.AddTicks(-1);
-            if (closeAt < open.StartedAtUtc)
+        return closeAt;
+    }
+
+    private async Task<DateTimeOffset?> TryGetLastSessionEndedAtOnDayAsync(
+        Guid projectId,
+        DateOnly day,
+        CancellationToken cancellationToken)
+    {
+        var (dayStart, dayEnd) = GetCalendarDayBoundsUtc(day);
+        var sessions = await _sessions
+            .ListByProjectAsync(projectId, dayStart, dayEnd, cancellationToken)
+            .ConfigureAwait(false);
+
+        var lastEnded = sessions
+            .Where(s => s.EndedAtUtc is not null)
+            .Where(s =>
             {
-                closeAt = open.StartedAtUtc;
+                var startedOnDay = s.StartedAtUtc >= dayStart && s.StartedAtUtc < dayEnd;
+                var ended = s.EndedAtUtc!.Value.ToUniversalTime();
+                var endedOnDay = ended >= dayStart && ended < dayEnd;
+                return startedOnDay || endedOnDay;
+            })
+            .OrderByDescending(s => s.StartedAtUtc)
+            .ThenByDescending(s => s.EndedAtUtc)
+            .FirstOrDefault();
+
+        return lastEnded?.EndedAtUtc?.ToUniversalTime();
+    }
+
+    private DateOnly ToCalendarDay(DateTimeOffset instant)
+    {
+        var local = TimeZoneInfo.ConvertTime(instant.ToUniversalTime(), _calendarTimeZone);
+        return DateOnly.FromDateTime(local.DateTime);
+    }
+
+    private (DateTimeOffset DayStartUtc, DateTimeOffset DayEndUtc) GetCalendarDayBoundsUtc(DateOnly day)
+    {
+        var localMidnight = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var startUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight, _calendarTimeZone);
+        var endUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight.AddDays(1), _calendarTimeZone);
+        return (new DateTimeOffset(startUtc, TimeSpan.Zero), new DateTimeOffset(endUtc, TimeSpan.Zero));
+    }
+
+    private static DateTimeOffset ClampCloseAt(
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset closeAtUtc,
+        DateTimeOffset dayEndExclusive)
+    {
+        var closeAt = closeAtUtc.ToUniversalTime();
+        if (closeAt < startedAtUtc)
+        {
+            closeAt = startedAtUtc;
+        }
+
+        if (closeAt >= dayEndExclusive)
+        {
+            closeAt = dayEndExclusive.AddTicks(-1);
+            if (closeAt < startedAtUtc)
+            {
+                closeAt = startedAtUtc;
             }
         }
 
@@ -320,6 +486,20 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         string? appendNotes,
         Guid? exceptEntryId,
         CancellationToken cancellationToken)
+        => await CloseAllOpenEntriesAsync(
+                endedAtUtc,
+                appendNotes,
+                exceptEntryId,
+                excludeEntryIds: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    private async Task CloseAllOpenEntriesAsync(
+        DateTimeOffset endedAtUtc,
+        string? appendNotes,
+        Guid? exceptEntryId,
+        IReadOnlySet<Guid>? excludeEntryIds,
+        CancellationToken cancellationToken)
     {
         var open = await _timesheets.ListOpenAsync(cancellationToken).ConfigureAwait(false);
         foreach (var entry in open)
@@ -329,7 +509,26 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 continue;
             }
 
-            var endAt = endedAtUtc < entry.StartedAtUtc ? entry.StartedAtUtc : endedAtUtc;
+            if (excludeEntryIds is not null && excludeEntryIds.Contains(entry.Id))
+            {
+                continue;
+            }
+
+            // Already closed in this unit of work (e.g. day-boundary) — do not overwrite.
+            if (entry.EndedAtUtc is not null)
+            {
+                continue;
+            }
+
+            var endAt = await ResolveCloseAtAsync(entry, endedAtUtc, cancellationToken)
+                .ConfigureAwait(false);
+            // Zero-duration autoclose artifacts are noise from rapid session/project switches.
+            if (endAt <= entry.StartedAtUtc)
+            {
+                await _timesheets.DeleteAsync(entry, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             entry.End(endAt, appendNotes);
             await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         }

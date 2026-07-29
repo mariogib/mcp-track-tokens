@@ -1,24 +1,86 @@
-import { type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Panel } from '../components/MetricCard';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
-import { Page } from '../layout/AppLayout';
+import { TextLink } from '../shared/adminUi';
+import { copyText } from '../utils/clipboard';
 
 const HELP_TABS = ['Overview', 'Cursor setup'] as const;
 
-function CodeBlock({ children }: { children: string }) {
+const HOOKS_JSON = `{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
+    ],
+    "sessionStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
+    ],
+    "sessionEnd": [
+      { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
+    ],
+    "subagentStart": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
+    ],
+    "subagentStop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ],
+    "stop": [
+      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
+    ]
+  }
+}`;
+
+const MCP_SERVER_JSON = `{
+  "mcpServers": {
+    "mcp-track-tokens": {
+      "url": "http://127.0.0.1:5187/mcp",
+      "headers": {
+        "Authorization": "Bearer OverTheMoon"
+      }
+    }
+  }
+}`;
+
+const ENV_VARS = `MCP_TRACK_TOKENS_API_KEY=OverTheMoon
+MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`;
+
+function CodeBlock({ children, label = 'Copy' }: { children: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
   return (
-    <pre className="mono" style={{ whiteSpace: 'pre-wrap', overflowX: 'auto' }}>
-      <code>{children}</code>
-    </pre>
+    <div className="copyable-code-block">
+      <div className="copyable-code-block-toolbar">
+        <button
+          type="button"
+          className="btn btn-secondary btn-copy-inline"
+          aria-label={copied ? 'Copied to clipboard' : label}
+          onClick={async () => {
+            const ok = await copyText(children);
+            if (ok) setCopied(true);
+          }}
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="mono copyable-code-block-pre">
+        <code>{children}</code>
+      </pre>
+    </div>
   );
 }
 
 function Step({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="stack" style={{ gap: '0.5rem' }}>
+    <Panel className="stack help-step-card">
       <h3>{title}</h3>
       <div className="stack">{children}</div>
-    </div>
+    </Panel>
   );
 }
 
@@ -26,8 +88,8 @@ export function HelpPage() {
   const [tab, setTab] = useTabSearchParam(HELP_TABS, 'Cursor setup');
 
   return (
-    <Page>
-      <div className="tabs" role="tablist" aria-label="Help sections">
+    <>
+      <div className="tabs" role="tablist" aria-label="Windows setup sections">
         {HELP_TABS.map((name) => (
           <button
             key={name}
@@ -46,7 +108,7 @@ export function HelpPage() {
         <section className="page-section">
           <div className="section-header">
             <div>
-              <h2>Help</h2>
+              <h2>Windows setup</h2>
               <p>
                 This guide is for the Windows installer (tray host + desktop dashboard). MCP Track
                 Tokens correlates editor activity with imported Cursor usage so you can attribute
@@ -54,12 +116,12 @@ export function HelpPage() {
               </p>
             </div>
           </div>
-          <div className="panel stack">
+          <Panel className="stack">
             <p>
               Start with the <strong>Cursor setup</strong> tab to connect Cursor. Then open{' '}
-              <Link to="/settings">Settings</Link> to confirm your API key, and use{' '}
-              <Link to="/imported-usage">Imported usage</Link> for Cursor usage exports. For the MCP tool,
-              resource, and prompt catalog, open <Link to="/help/mcp">MCP Help</Link>.
+              <TextLink to="/settings">Settings</TextLink> to confirm your API key, and use{' '}
+              <TextLink to="/imported-usage">Imported usage</TextLink> for Cursor usage exports. For the MCP
+              tool, resource, and prompt catalog, open the <strong>MCP Help</strong> tab.
             </p>
             <ul>
               <li>
@@ -79,7 +141,7 @@ export function HelpPage() {
                 you create your own keys)
               </li>
             </ul>
-          </div>
+          </Panel>
         </section>
       )}
 
@@ -96,7 +158,7 @@ export function HelpPage() {
             </div>
           </div>
 
-          <div className="panel stack">
+          <div className="stack help-setup-steps">
             <Step title="1. Install and start the Windows host">
               <p>
                 Run <code className="mono">MCP-Track-Tokens-Setup.msi</code>. Leave these options
@@ -105,7 +167,6 @@ export function HelpPage() {
               <ul>
                 <li>Start MCP Track Tokens when Windows starts</li>
                 <li>Install Cursor hooks</li>
-                <li>Install VS Code / Cursor extension</li>
                 <li>Start MCP Track Tokens now</li>
               </ul>
               <p>
@@ -136,35 +197,13 @@ export function HelpPage() {
                 Open Cursor Settings → Hooks (or your Cursor hooks config file) and wire the paths.
                 Paths are relative to <code className="mono">%USERPROFILE%\.cursor</code>:
               </p>
-              <CodeBlock>{`{
-  "version": 1,
-  "hooks": {
-    "beforeSubmitPrompt": [
-      { "command": "./mcp-track-tokens-hooks/dist/prompt-submitted.js", "timeout": 5 }
-    ],
-    "sessionStart": [
-      { "command": "./mcp-track-tokens-hooks/dist/session-started.js", "timeout": 5 }
-    ],
-    "sessionEnd": [
-      { "command": "./mcp-track-tokens-hooks/dist/session-ended.js", "timeout": 5 }
-    ],
-    "subagentStart": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-started.js", "timeout": 5 }
-    ],
-    "subagentStop": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
-    ],
-    "stop": [
-      { "command": "./mcp-track-tokens-hooks/dist/agent-completed.js", "timeout": 5 }
-    ]
-  }
-}`}</CodeBlock>
+              <CodeBlock label="Copy hooks JSON">{HOOKS_JSON}</CodeBlock>
               <p className="hint">
                 Use current Cursor event names (<code className="mono">beforeSubmitPrompt</code>,{' '}
                 <code className="mono">sessionStart</code>, <code className="mono">stop</code>, …).
                 After a Cursor upgrade, run MCP tool{' '}
                 <code className="mono">check_cursor_hooks</code> (see{' '}
-                <Link to="/help/mcp">MCP Help → Tools</Link>) to confirm the mapping still works.
+                <TextLink to="/help?view=mcp-help&tab=tools">MCP Help → Tools</TextLink>) to confirm the mapping still works.
               </p>
             </Step>
 
@@ -174,10 +213,9 @@ export function HelpPage() {
                 environment variables (Windows Settings → System → About → Advanced system settings
                 → Environment Variables), then restart Cursor:
               </p>
-              <CodeBlock>{`MCP_TRACK_TOKENS_API_KEY=OverTheMoon
-MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
+              <CodeBlock label="Copy environment variables">{ENV_VARS}</CodeBlock>
               <p>
-                Use the same key under <Link to="/settings">Settings → Connection</Link> in the
+                Use the same key under <TextLink to="/settings">Settings → Connection</TextLink> in the
                 desktop dashboard.
               </p>
             </Step>
@@ -187,16 +225,7 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 With the tray host running, add this MCP server entry in Cursor (HTTP MCP shares the
                 same local database as the dashboard):
               </p>
-              <CodeBlock>{`{
-  "mcpServers": {
-    "mcp-track-tokens": {
-      "url": "http://127.0.0.1:5187/mcp",
-      "headers": {
-        "Authorization": "Bearer OverTheMoon"
-      }
-    }
-  }
-}`}</CodeBlock>
+              <CodeBlock label="Copy MCP server JSON">{MCP_SERVER_JSON}</CodeBlock>
               <p className="hint">
                 Replace the Bearer value if you created a different API key. The tray host must be
                 running for MCP tools and hooks to reach the API.
@@ -206,11 +235,11 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
             <Step title="6. Verify">
               <ul>
                 <li>
-                  <Link to="/settings">Settings → Integrations</Link> shows Cursor hooks configured
+                  <TextLink to="/settings?tab=integrations">Settings → Integrations</TextLink> shows Cursor hooks configured
                   or inferred from activity.
                 </li>
                 <li>
-                  Submit a prompt in Cursor, then check <Link to="/">Overview</Link> for new
+                  Submit a prompt in Cursor, then check <TextLink to="/">Overview</TextLink> for new
                   activity.
                 </li>
               </ul>
@@ -227,7 +256,7 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                   the export Cursor provides for the period you care about.
                 </li>
                 <li>
-                  Open the dashboard <Link to="/imported-usage">Imported usage</Link> page.
+                  Open the dashboard <TextLink to="/imported-usage">Imported usage</TextLink> page.
                 </li>
                 <li>
                   In <strong>Upload &amp; map</strong>, choose the export file and run{' '}
@@ -240,21 +269,21 @@ MCP_TRACK_TOKENS_SERVER_URL=http://127.0.0.1:5187`}</CodeBlock>
                 <li>
                   Review imported rows below the upload section, then use{' '}
                   <strong>Allocate all</strong> when needed and check project costs under{' '}
-                  <Link to="/projects">Projects</Link>.
+                  <TextLink to="/projects">Projects</TextLink>.
                 </li>
               </ol>
               <p className="hint">
                 Related pages:{' '}
-                <Link to="/imported-usage">Imported usage</Link>
+                <TextLink to="/imported-usage">Imported usage</TextLink>
                 {' · '}
-                <Link to="/projects">Projects</Link>
+                <TextLink to="/projects">Projects</TextLink>
                 {' · '}
-                <Link to="/">Overview</Link>
+                <TextLink to="/">Overview</TextLink>
               </p>
             </Step>
           </div>
         </section>
       )}
-    </Page>
+    </>
   );
 }

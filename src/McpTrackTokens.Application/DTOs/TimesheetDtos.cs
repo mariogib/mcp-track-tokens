@@ -127,6 +127,18 @@ public sealed record TimesheetReportTotals
 }
 
 /// <summary>
+/// A UTC calendar month that contains timesheet entries.
+/// </summary>
+public sealed record TimesheetMonthAvailabilityDto
+{
+    public int Year { get; init; }
+
+    public int Month { get; init; }
+
+    public int EntryCount { get; init; }
+}
+
+/// <summary>
 /// Timesheet duration rolled up by category.
 /// </summary>
 public sealed record TimesheetCategoryBreakdownRow

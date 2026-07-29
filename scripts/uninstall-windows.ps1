@@ -64,6 +64,4 @@ else {
     Write-Host "Data kept at $AppDir (use -RemoveData to delete)."
 }
 
-Write-Host "To remove the VS Code/Cursor extension, uninstall it from the editor UI or:"
-Write-Host "  code --uninstall-extension mabatar.mcp-track-tokens"
 Write-Host "Uninstall finished."

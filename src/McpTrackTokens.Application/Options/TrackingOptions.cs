@@ -92,7 +92,7 @@ public sealed class TrackingOptions
     /// <summary>
     /// When true, unknown repositories may auto-create projects.
     /// </summary>
-    public bool AutoCreateProjects { get; set; }
+    public bool AutoCreateProjects { get; set; } = true;
 
     /// <summary>
     /// When true, prompt content may be stored encrypted at rest.

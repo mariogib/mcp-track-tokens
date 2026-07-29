@@ -6,20 +6,28 @@ import { ProjectDetailsPage } from './pages/ProjectDetailsPage';
 import { ProjectChartDetailPage } from './pages/ProjectChartDetailPage';
 import { OverviewChartDetailPage } from './pages/OverviewChartDetailPage';
 import { ReportsPage } from './pages/ReportsPage';
-import { TimesheetPage } from './pages/TimesheetPage';
-import { TimesheetReportsPage } from './pages/TimesheetReportsPage';
+import { TimesheetLandingPage } from './pages/TimesheetLandingPage';
 import { ImportedUsagePage } from './pages/ImportedUsagePage';
-import { UnallocatedActivityPage } from './pages/UnallocatedActivityPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { HelpPage } from './pages/HelpPage';
-import { McpHelpPage } from './pages/McpHelpPage';
+import { HelpLandingPage } from './pages/HelpLandingPage';
 
+/** Old `/timesheet/reports*` URLs → `/timesheet?tab=reports` (keeps scope/range/etc.). */
 function RedirectTimesheetReports({ scope }: { scope?: 'project' | 'client' }) {
   const [params] = useSearchParams();
   const next = new URLSearchParams(params);
+  next.set('tab', 'reports');
   if (scope) next.set('scope', scope);
   const qs = next.toString();
-  return <Navigate to={qs ? `/timesheet/reports?${qs}` : '/timesheet/reports'} replace />;
+  return <Navigate to={`/timesheet?${qs}`} replace />;
+}
+
+/** Old `/help/mcp` → `/help?view=mcp-help` (keeps nested Tools/Resources/Prompts tab). */
+function RedirectMcpHelp() {
+  const [params] = useSearchParams();
+  const next = new URLSearchParams(params);
+  next.set('view', 'mcp-help');
+  const qs = next.toString();
+  return <Navigate to={`/help?${qs}`} replace />;
 }
 
 export default function App() {
@@ -34,8 +42,8 @@ export default function App() {
           path="projects/:projectId/charts/:chartKey"
           element={<ProjectChartDetailPage />}
         />
-        <Route path="timesheet" element={<TimesheetPage />} />
-        <Route path="timesheet/reports" element={<TimesheetReportsPage />} />
+        <Route path="timesheet" element={<TimesheetLandingPage />} />
+        <Route path="timesheet/reports" element={<RedirectTimesheetReports />} />
         <Route path="timesheet/reports/overall" element={<RedirectTimesheetReports />} />
         <Route
           path="timesheet/reports/projects"
@@ -49,10 +57,13 @@ export default function App() {
         <Route path="imported-usage" element={<ImportedUsagePage />} />
         <Route path="imports" element={<Navigate to="/imported-usage" replace />} />
         <Route path="reconciliation" element={<Navigate to="/imported-usage" replace />} />
-        <Route path="unallocated" element={<UnallocatedActivityPage />} />
+        <Route
+          path="unallocated"
+          element={<Navigate to="/imported-usage?tab=unallocated-prompts" replace />}
+        />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="help" element={<HelpPage />} />
-        <Route path="help/mcp" element={<McpHelpPage />} />
+        <Route path="help" element={<HelpLandingPage />} />
+        <Route path="help/mcp" element={<RedirectMcpHelp />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

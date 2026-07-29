@@ -26,6 +26,12 @@ public sealed class CursorUsageColumnMapper : ICursorUsageColumnMapper
         [
             "cachedinputtokens", "cachetokens", "cacheread"
         ],
+        ["CacheWriteTokens"] =
+        [
+            "cachewritetokens", "cachewrite",
+            // Cursor dashboard export
+            "inputwcachewrite", "inputwithcachewrite"
+        ],
         ["ReasoningTokens"] = ["reasoningtokens"],
         ["ReportedCost"] =
         [
@@ -103,6 +109,48 @@ public sealed class CursorUsageColumnMapper : ICursorUsageColumnMapper
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Determines whether a source header is an alias for a canonical import field.
+    /// </summary>
+    internal static bool HeaderMatchesCanonical(string header, string canonical)
+    {
+        if (!CanonicalAliases.TryGetValue(canonical, out var aliases))
+        {
+            return false;
+        }
+
+        var normalizedHeader = NormalizeHeader(header);
+        return aliases.Any(alias =>
+            string.Equals(NormalizeHeader(alias), normalizedHeader, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Determines whether the supplied columns contain a canonical field or one of its aliases.
+    /// </summary>
+    internal static bool AnyColumnMatchesCanonical(
+        IEnumerable<string> columns,
+        string canonical)
+        => columns.Any(column => HeaderMatchesCanonical(column, canonical));
+
+    /// <summary>
+    /// Lists source columns that have been mapped or recognized as standard import fields.
+    /// </summary>
+    internal static HashSet<string> GetKnownColumns(
+        IReadOnlyDictionary<string, string> mappings,
+        IEnumerable<string> columns)
+    {
+        var known = new HashSet<string>(mappings.Values, StringComparer.OrdinalIgnoreCase);
+        foreach (var column in columns)
+        {
+            if (CanonicalAliases.Keys.Any(canonical => HeaderMatchesCanonical(column, canonical)))
+            {
+                known.Add(column);
+            }
+        }
+
+        return known;
     }
 
     /// <summary>

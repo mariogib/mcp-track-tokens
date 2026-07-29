@@ -70,8 +70,18 @@ public sealed class TimesheetEntry : EntityBase, IAuditable
     /// <summary>
     /// Ends the timesheet entry.
     /// </summary>
+    /// <remarks>
+    /// Already-closed entries are left unchanged so autoclose cannot overwrite a prior
+    /// day-boundary close (which previously produced zero-duration artifacts).
+    /// Use <see cref="ApplyAdminEdit"/> for intentional admin corrections.
+    /// </remarks>
     public void End(DateTimeOffset endedAtUtc, string? appendNotes = null)
     {
+        if (EndedAtUtc is not null)
+        {
+            return;
+        }
+
         var ended = endedAtUtc.ToUniversalTime();
         if (ended < StartedAtUtc)
         {

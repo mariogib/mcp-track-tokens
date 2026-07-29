@@ -25,29 +25,40 @@ import type {
   ProjectDetailDto,
   ProjectDto,
   PromptEventDto,
+  PromptBrowseQuery,
+  PromptFacetsDto,
+  PagedResult,
   ReconciliationRequestDto,
   ReconciliationResultDto,
   CreateProjectSessionRequest,
   CreateTimesheetCategoryRequest,
   CreateTimesheetEntryRequest,
   EndTimesheetRequest,
+  SessionBrowseQuery,
   SessionDto,
   SettingsDto,
   StartTimesheetRequest,
   TimesheetCategoryDto,
   TimesheetClientReport,
   TimesheetEntryDto,
+  TimesheetBrowseQuery,
+  TimesheetMonthAvailabilityDto,
   TimesheetOverallReport,
   TimesheetProjectReport,
   TrackingStatusDto,
   UpdateTimesheetCategoryRequest,
   AssignActivityRequestDto,
   AssignActivityResultDto,
+  CreateProjectRequest,
+  DeleteActivityRequestDto,
+  DeleteActivityResultDto,
+  RecalculateWindowsRequestDto,
+  RecalculateWindowsResultDto,
   UnallocatedBundle,
-  UnallocatedItemDto,
-  UnallocatedUsageReport,
   DeleteUnallocatedUsageResultDto,
   CursorDocsPricingFetchResultDto,
+  CursorHooksCompatibilityReportDto,
+  OfflineQueueReplayResultDto,
   UpdateProjectRequest,
   UpdateSessionRequest,
   UpdateSettingsRequest,
@@ -266,6 +277,13 @@ export const api = {
   listProjects: (signal?: AbortSignal) =>
     apiRequest<ProjectDto[]>('/api/v1/projects', { signal }),
 
+  createProject: (body: CreateProjectRequest, signal?: AbortSignal) =>
+    apiRequest<ProjectDetailDto>('/api/v1/projects', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
   getProject: (id: string, signal?: AbortSignal) =>
     apiRequest<ProjectDetailDto>(`/api/v1/projects/${id}`, { signal }),
 
@@ -299,9 +317,57 @@ export const api = {
       signal,
     }),
 
+  getProjectPromptsPaged: (
+    id: string,
+    query: PromptBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<PromptEventDto>>(`/api/v1/projects/${id}/prompts`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        status: query.status,
+        eventType: query.eventType,
+        model: query.model,
+        branch: query.branch,
+      },
+      signal,
+    }),
+
+  getProjectPromptFacets: (
+    id: string,
+    fromUtc: string,
+    toUtc: string,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PromptFacetsDto>(`/api/v1/projects/${id}/prompts/facets`, {
+      query: { fromUtc, toUtc },
+      signal,
+    }),
+
   getProjectSessions: (id: string, fromUtc?: string, toUtc?: string, signal?: AbortSignal) =>
     apiRequest<SessionDto[]>(`/api/v1/projects/${id}/sessions`, {
       query: { fromUtc, toUtc },
+      signal,
+    }),
+
+  getProjectSessionsPaged: (
+    id: string,
+    query: SessionBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<SessionDto>>(`/api/v1/projects/${id}/sessions`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        status: query.status,
+      },
       signal,
     }),
 
@@ -356,6 +422,23 @@ export const api = {
       signal,
     }),
 
+  getProjectTimesheetEntriesPaged: (
+    id: string,
+    query: TimesheetBrowseQuery,
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<PagedResult<TimesheetEntryDto>>(`/api/v1/projects/${id}/timesheet-entries`, {
+      query: {
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        openClosed: query.openClosed,
+      },
+      signal,
+    }),
+
   getTimesheetEntries: (
     params?: {
       projectId?: string;
@@ -369,6 +452,20 @@ export const api = {
         projectId: params?.projectId,
         fromUtc: params?.fromUtc,
         toUtc: params?.toUtc,
+      },
+      signal,
+    }),
+
+  getTimesheetEntriesPaged: (query: TimesheetBrowseQuery, signal?: AbortSignal) =>
+    apiRequest<PagedResult<TimesheetEntryDto>>('/api/v1/timesheet-entries', {
+      query: {
+        projectId: query.projectId,
+        fromUtc: query.fromUtc,
+        toUtc: query.toUtc,
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        search: query.search,
+        openClosed: query.openClosed,
       },
       signal,
     }),
@@ -411,9 +508,26 @@ export const api = {
       signal,
     }),
 
-  getTimesheetOverallReport: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
+  getTimesheetOverallReport: (
+    fromUtc: string,
+    toUtc: string,
+    timeZoneOffsetMinutes?: number,
+    signal?: AbortSignal,
+  ) =>
     apiRequest<TimesheetOverallReport>('/api/v1/timesheet/reports/overall', {
-      query: { fromUtc, toUtc },
+      query: { fromUtc, toUtc, timeZoneOffsetMinutes },
+      signal,
+    }),
+
+  getTimesheetReportMonths: (
+    query?: { projectId?: string; clientName?: string },
+    signal?: AbortSignal,
+  ) =>
+    apiRequest<TimesheetMonthAvailabilityDto[]>('/api/v1/timesheet/reports/months', {
+      query: {
+        projectId: query?.projectId,
+        clientName: query?.clientName,
+      },
       signal,
     }),
 
@@ -421,10 +535,11 @@ export const api = {
     projectId: string,
     fromUtc: string,
     toUtc: string,
+    timeZoneOffsetMinutes?: number,
     signal?: AbortSignal,
   ) =>
     apiRequest<TimesheetProjectReport>(`/api/v1/timesheet/reports/projects/${projectId}`, {
-      query: { fromUtc, toUtc },
+      query: { fromUtc, toUtc, timeZoneOffsetMinutes },
       signal,
     }),
 
@@ -432,12 +547,13 @@ export const api = {
     clientName: string,
     fromUtc: string,
     toUtc: string,
+    timeZoneOffsetMinutes?: number,
     signal?: AbortSignal,
   ) =>
     apiRequest<TimesheetClientReport>(
       `/api/v1/timesheet/reports/clients/${encodeURIComponent(clientName)}`,
       {
-        query: { fromUtc, toUtc },
+        query: { fromUtc, toUtc, timeZoneOffsetMinutes },
         signal,
       },
     ),
@@ -464,12 +580,6 @@ export const api = {
       signal,
     }),
 
-  unallocatedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
-    apiRequest<UnallocatedUsageReport>('/api/v1/unallocated/usage', {
-      query: { fromUtc, toUtc },
-      signal,
-    }),
-
   deleteUnallocatedUsage: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
     apiRequest<DeleteUnallocatedUsageResultDto>('/api/v1/unallocated/usage', {
       method: 'DELETE',
@@ -483,14 +593,22 @@ export const api = {
       signal,
     }),
 
-  unallocatedActivity: (fromUtc: string, toUtc: string, signal?: AbortSignal) =>
-    apiRequest<UnallocatedItemDto[]>('/api/v1/unallocated/activity', {
-      query: { fromUtc, toUtc },
+  assignActivity: (body: AssignActivityRequestDto, signal?: AbortSignal) =>
+    apiRequest<AssignActivityResultDto>('/api/v1/activity/assign', {
+      method: 'POST',
+      body,
       signal,
     }),
 
-  assignActivity: (body: AssignActivityRequestDto, signal?: AbortSignal) =>
-    apiRequest<AssignActivityResultDto>('/api/v1/activity/assign', {
+  deleteActivity: (body: DeleteActivityRequestDto, signal?: AbortSignal) =>
+    apiRequest<DeleteActivityResultDto>('/api/v1/activity/delete', {
+      method: 'POST',
+      body,
+      signal,
+    }),
+
+  recalculateActivityWindows: (body: RecalculateWindowsRequestDto, signal?: AbortSignal) =>
+    apiRequest<RecalculateWindowsResultDto>('/api/v1/activity/windows/recalculate', {
       method: 'POST',
       body,
       signal,
@@ -701,6 +819,18 @@ export const api = {
 
   integrationStatus: (signal?: AbortSignal) =>
     apiRequest<IntegrationStatusDto>('/api/v1/integrations/status', { signal }),
+
+  checkCursorHooks: (signal?: AbortSignal) =>
+    apiRequest<CursorHooksCompatibilityReportDto>('/api/v1/integrations/cursor-hooks/check', {
+      method: 'POST',
+      signal,
+    }),
+
+  replayOfflineQueue: (signal?: AbortSignal) =>
+    apiRequest<OfflineQueueReplayResultDto>('/api/v1/integrations/offline-queue/replay', {
+      method: 'POST',
+      signal,
+    }),
 
   databaseBackupInfo: (destinationDirectory?: string, signal?: AbortSignal) =>
     apiRequest<DatabaseBackupInfoDto>('/api/v1/database/backup-info', {

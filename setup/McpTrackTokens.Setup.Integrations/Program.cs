@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 
 namespace McpTrackTokens.Setup.Integrations;
@@ -6,8 +5,8 @@ namespace McpTrackTokens.Setup.Integrations;
 /// <summary>
 /// Per-user post-install helper invoked by the MSI (impersonated).
 /// Always writes local-host / HTTP MCP example config for the tray-deployed
-/// API + MCP + dashboard stack. Optionally installs Cursor hooks scaffold
-/// and/or the VS Code/Cursor VSIX. Does not silently rewrite editor settings.
+/// API + MCP + dashboard stack. Optionally installs Cursor hooks scaffold.
+/// Does not silently rewrite editor settings.
 /// </summary>
 internal static class Program
 {
@@ -25,14 +24,14 @@ internal static class Program
             WriteHostDeployNotes(options.InstallDir);
             WriteHttpMcpExample(options.InstallDir);
 
+            if (!options.KeepDatabase)
+            {
+                PurgeUserData();
+            }
+
             if (options.InstallHooks)
             {
                 InstallHooks(options.InstallDir);
-            }
-
-            if (options.InstallExtension)
-            {
-                InstallExtension(options.InstallDir);
             }
 
             return 0;
@@ -60,6 +59,10 @@ internal static class Program
               • Web dashboard     http://127.0.0.1:5187/  (wwwroot)
               • Desktop shell     Desktop\mcp-track-tokens-desktop.exe
               • SQLite database   %USERPROFILE%\.mcp-track-tokens\mcp-track-tokens.db
+
+            Upgrades replace Program Files only. The SQLite database is kept by default
+            (Setup option “Upgrade / keep existing SQLite database”). Uncheck that option
+            only when you want a clean database. Uninstall leaves the database in place.
 
             Start "MCP Track Tokens Host" from the Start Menu (or enable Start with Windows).
             Open the dashboard from the tray menu or the Desktop shortcut.
@@ -140,7 +143,7 @@ internal static class Program
         CopyDirectory(source, hooksTarget);
 
         var exampleConfigPath = Path.Combine(cursorDir, "mcp-track-tokens-hooks.example.json");
-        File.WriteAllText(exampleConfigPath, """
+        var exampleJson = """
             {
               "version": 1,
               "hooks": {
@@ -164,118 +167,144 @@ internal static class Program
                 ]
               }
             }
-            """);
+            """;
+        File.WriteAllText(exampleConfigPath, exampleJson);
+
+        var hooksJsonPath = Path.Combine(cursorDir, "hooks.json");
+        var mergeNote = TryMergeHooksJson(hooksJsonPath, exampleJson);
 
         Console.WriteLine($"Installed Cursor hooks scaffold to {hooksTarget}");
         Console.WriteLine($"Wrote example config to {exampleConfigPath}");
+        if (!string.IsNullOrWhiteSpace(mergeNote))
+        {
+            Console.WriteLine(mergeNote);
+        }
+
         TryWriteNote(
             "cursor-hooks-installed.txt",
             $"Hooks installed to:{Environment.NewLine}{hooksTarget}{Environment.NewLine}{Environment.NewLine}" +
-            $"Merge {exampleConfigPath} into your Cursor hooks configuration manually.");
+            $"Example config:{Environment.NewLine}{exampleConfigPath}{Environment.NewLine}{Environment.NewLine}" +
+            (mergeNote ?? $"Merge {exampleConfigPath} into {hooksJsonPath} manually."));
     }
 
-    private static void InstallExtension(string installDir)
+    /// <summary>
+    /// Additive merge into ~/.cursor/hooks.json: ensure version=1 and append our hook
+    /// commands only when mcp-track-tokens-hooks is not already present for that event.
+    /// Never deletes user entries. Returns a short status note.
+    /// </summary>
+    private static string? TryMergeHooksJson(string hooksJsonPath, string exampleJson)
     {
-        var integrationsDir = Path.Combine(installDir, "integrations");
-        var vsix = Directory.Exists(integrationsDir)
-            ? Directory.GetFiles(integrationsDir, "*.vsix").OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault()
-            : null;
-
-        if (vsix is null)
+        try
         {
-            Console.Error.WriteLine("VSIX payload missing under integrations\\.");
-            return;
-        }
-
-        var editor = FindEditorCli();
-        if (editor is null)
-        {
-            var message =
-                $"VSIX is available at:{Environment.NewLine}{vsix}{Environment.NewLine}{Environment.NewLine}" +
-                "Install manually (Cursor or VS Code):{Environment.NewLine}" +
-                $"  cursor --install-extension \"{vsix}\"{Environment.NewLine}" +
-                $"  code --install-extension \"{vsix}\"";
-            Console.WriteLine(message);
-            TryWriteNote("extension-manual-install.txt", message);
-            return;
-        }
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = editor,
-            Arguments = $"--install-extension \"{vsix}\"",
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true
-        };
-
-        using var process = Process.Start(psi);
-        if (process is null)
-        {
-            Console.Error.WriteLine($"Failed to start {editor}");
-            return;
-        }
-
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
-        process.WaitForExit(120_000);
-        Console.WriteLine(stdout);
-        if (!string.IsNullOrWhiteSpace(stderr))
-        {
-            Console.Error.WriteLine(stderr);
-        }
-
-        Console.WriteLine($"Installed VSIX via {Path.GetFileName(editor)}");
-        TryWriteNote(
-            "extension-installed.txt",
-            $"Installed {vsix}{Environment.NewLine}via {editor}{Environment.NewLine}" +
-            "Extension settings were not modified.");
-    }
-
-    private static string? FindEditorCli()
-    {
-        foreach (var name in new[] { "cursor.cmd", "cursor.exe", "cursor", "code.cmd", "code.exe", "code" })
-        {
-            var onPath = FindOnPath(name);
-            if (onPath is not null)
+            using var exampleDoc = System.Text.Json.JsonDocument.Parse(exampleJson);
+            var exampleRoot = exampleDoc.RootElement;
+            if (!exampleRoot.TryGetProperty("hooks", out var exampleHooks) ||
+                exampleHooks.ValueKind != System.Text.Json.JsonValueKind.Object)
             {
-                return onPath;
+                return null;
             }
-        }
 
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var candidates = new[]
-        {
-            Path.Combine(localAppData, "Programs", "cursor", "resources", "app", "bin", "cursor.cmd"),
-            Path.Combine(localAppData, "Programs", "cursor", "resources", "app", "bin", "cursor"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "bin", "code.cmd"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "bin", "code.cmd"),
-        };
-
-        return candidates.FirstOrDefault(File.Exists);
-    }
-
-    private static string? FindOnPath(string fileName)
-    {
-        var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-        foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-        {
-            try
+            System.Text.Json.Nodes.JsonObject root;
+            if (File.Exists(hooksJsonPath))
             {
-                var candidate = Path.Combine(dir.Trim('"'), fileName);
-                if (File.Exists(candidate))
+                var backup = hooksJsonPath + $".bak-{DateTime.UtcNow:yyyyMMddHHmmss}";
+                File.Copy(hooksJsonPath, backup, overwrite: false);
+                var existingText = File.ReadAllText(hooksJsonPath);
+                var parsed = System.Text.Json.Nodes.JsonNode.Parse(existingText) as System.Text.Json.Nodes.JsonObject;
+                root = parsed ?? new System.Text.Json.Nodes.JsonObject();
+            }
+            else
+            {
+                root = new System.Text.Json.Nodes.JsonObject();
+            }
+
+            root["version"] = 1;
+            var hooksNode = root["hooks"] as System.Text.Json.Nodes.JsonObject
+                ?? new System.Text.Json.Nodes.JsonObject();
+            root["hooks"] = hooksNode;
+
+            var addedEvents = new List<string>();
+            foreach (var property in exampleHooks.EnumerateObject())
+            {
+                var eventName = property.Name;
+                var existingArray = hooksNode[eventName] as System.Text.Json.Nodes.JsonArray
+                    ?? new System.Text.Json.Nodes.JsonArray();
+                hooksNode[eventName] = existingArray;
+
+                var alreadyPresent = existingArray.Any(entry =>
                 {
-                    return candidate;
+                    var command = entry?["command"]?.GetValue<string>();
+                    return !string.IsNullOrWhiteSpace(command) &&
+                           command.Contains("mcp-track-tokens-hooks", StringComparison.OrdinalIgnoreCase);
+                });
+                if (alreadyPresent)
+                {
+                    continue;
                 }
+
+                foreach (var entry in property.Value.EnumerateArray())
+                {
+                    var command = entry.TryGetProperty("command", out var cmdEl)
+                        ? cmdEl.GetString()
+                        : null;
+                    if (string.IsNullOrWhiteSpace(command))
+                    {
+                        continue;
+                    }
+
+                    var timeout = entry.TryGetProperty("timeout", out var timeoutEl) &&
+                                  timeoutEl.TryGetInt32(out var t)
+                        ? t
+                        : 5;
+                    existingArray.Add(new System.Text.Json.Nodes.JsonObject
+                    {
+                        ["command"] = command,
+                        ["timeout"] = timeout
+                    });
+                }
+
+                addedEvents.Add(eventName);
             }
-            catch
-            {
-                // ignore malformed PATH segments
-            }
+
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(hooksJsonPath, root.ToJsonString(options) + Environment.NewLine);
+
+            return addedEvents.Count == 0
+                ? $"hooks.json already contains MCP Track Tokens bindings ({hooksJsonPath})."
+                : $"Merged MCP Track Tokens hooks into {hooksJsonPath} for: {string.Join(", ", addedEvents)}.";
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"hooks.json merge skipped: {ex.Message}");
+            return $"hooks.json merge skipped ({ex.Message}). Merge the example config manually.";
+        }
+    }
+
+    private static void PurgeUserData()
+    {
+        var dataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".mcp-track-tokens");
+
+        if (!Directory.Exists(dataDir))
+        {
+            Console.WriteLine($"No user data folder to purge at {dataDir}");
+            return;
         }
 
-        return null;
+        try
+        {
+            Directory.Delete(dataDir, recursive: true);
+            Console.WriteLine($"Purged user data folder {dataDir}");
+            TryWriteNote(
+                "database-purged.txt",
+                $"Deleted {dataDir} because Setup option “Upgrade / keep existing SQLite database” was unchecked.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to purge {dataDir}: {ex.Message}");
+            TryWriteNote("database-purge-error.txt", ex.ToString());
+        }
     }
 
     private static void CopyDirectory(string sourceDir, string destinationDir)
@@ -310,13 +339,13 @@ internal static class Program
     {
         public string InstallDir { get; init; } = "";
         public bool InstallHooks { get; init; }
-        public bool InstallExtension { get; init; }
+        public bool KeepDatabase { get; init; } = true;
 
         public static Options Parse(string[] args)
         {
             var installDir = "";
             var hooks = false;
-            var extension = false;
+            var keepDatabase = true;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -331,7 +360,12 @@ internal static class Program
                         hooks = ReadFlag(args, ref i, defaultValue: false);
                         break;
                     case "--extension":
-                        extension = ReadFlag(args, ref i, defaultValue: false);
+                        // Legacy MSI argument; ignored (extension packaging removed).
+                        _ = ReadFlag(args, ref i, defaultValue: false);
+                        break;
+                    case "--keep-database":
+                        // Present without "1" (unchecked MSI checkbox) means purge.
+                        keepDatabase = ReadFlag(args, ref i, defaultValue: false);
                         break;
                 }
             }
@@ -340,7 +374,7 @@ internal static class Program
             {
                 InstallDir = installDir,
                 InstallHooks = hooks,
-                InstallExtension = extension
+                KeepDatabase = keepDatabase
             };
         }
 
@@ -352,6 +386,12 @@ internal static class Program
             }
 
             var value = args[++index];
+            // Unchecked WiX checkbox leaves an empty token after the switch.
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
             return value is "1" or "true" or "yes" or "TRUE" or "Yes";
         }
     }

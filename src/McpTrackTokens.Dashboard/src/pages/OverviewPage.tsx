@@ -1,27 +1,32 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   useActiveSessionQuery,
   useHealthQuery,
+  useReplayOfflineQueueMutation,
   useReportsSummaryQuery,
   useStatusQuery,
   useUnallocatedQuery,
 } from '../api/hooks';
 import { useAggregatedOverviewCharts } from '../api/useAggregatedOverviewCharts';
-import {
-  ChartCard,
-  DailyLineChart,
-  NamedBarChart,
-  NamedPieChart,
-} from '../components/Charts';
+import { ChartCard, DailyLineChart, NamedBarChart, NamedPieChart } from '../components/Charts';
 import { DateRangeFilters } from '../components/DateRangeFilters';
-import { MetricCard } from '../components/MetricCard';
+import { MetricCard, Panel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { overviewChartPath, type OverviewChartKey } from '../data/overviewCharts';
 import { Page } from '../layout/AppLayout';
 import {
+  buildDaySeries,
+  buildModelCalculatedSeries,
+  buildModelCostSeries,
+  resolveDisplayCost,
+} from '../utils/chartDetail';
+import {
+  currentUtcYearMonth,
+  parseMonthParam,
   parseRangePreset,
+  parseYearParam,
   resolveRange,
   toDateInputValue,
   type RangePreset,
@@ -29,7 +34,6 @@ import {
 import {
   formatCurrency,
   formatDateTime,
-  formatDay,
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
@@ -46,14 +50,18 @@ export function OverviewPage() {
   const preset = parseRangePreset(searchParams.get('range'));
   const fromDate = searchParams.get('from') ?? '';
   const toDate = searchParams.get('to') ?? '';
+  const rangeYear = parseYearParam(searchParams.get('year'));
+  const rangeMonth = parseMonthParam(searchParams.get('month'));
   const chartRange = useMemo(
     () =>
       resolveRange(
         preset === 'custom' || (fromDate && toDate) ? 'custom' : preset,
         fromDate,
         toDate,
+        rangeYear,
+        rangeMonth,
       ),
-    [preset, fromDate, toDate],
+    [preset, fromDate, toDate, rangeYear, rangeMonth],
   );
 
   const health = useHealthQuery();
@@ -61,6 +69,8 @@ export function OverviewPage() {
   const summary = useReportsSummaryQuery(year, month);
   const session = useActiveSessionQuery();
   const unallocated = useUnallocatedQuery(unallocatedRange.fromUtc, unallocatedRange.toUtc);
+  const replayQueue = useReplayOfflineQueueMutation();
+  const [queueMessage, setQueueMessage] = useState<string | null>(null);
   const {
     projectIds,
     aggregatedActivity,
@@ -91,10 +101,33 @@ export function OverviewPage() {
         range: 'custom',
         from: toDateInputValue(defaults.fromUtc),
         to: toDateInputValue(defaults.toUtc),
+        year: null,
+        month: null,
       });
       return;
     }
-    updateParams({ range: next, from: null, to: null });
+    if (next === 'month') {
+      const defaults = currentUtcYearMonth();
+      updateParams({
+        range: 'month',
+        year: String(defaults.year),
+        month: String(defaults.month),
+        from: null,
+        to: null,
+      });
+      return;
+    }
+    updateParams({ range: next, from: null, to: null, year: null, month: null });
+  };
+
+  const onYearMonthChange = (nextYear: number, nextMonth: number) => {
+    updateParams({
+      range: 'month',
+      year: String(nextYear),
+      month: String(nextMonth),
+      from: null,
+      to: null,
+    });
   };
 
   const chartLink = (key: OverviewChartKey) =>
@@ -110,45 +143,16 @@ export function OverviewPage() {
 
   const reportedTotalCost = aggregatedCost.totalAiCost;
   const calculatedTotalCost = aggregatedCost.calculatedTokenCost;
-  const displayTotalCost = reportedTotalCost > 0 ? reportedTotalCost : calculatedTotalCost;
-  const usingCalculatedCost = reportedTotalCost <= 0 && calculatedTotalCost > 0;
-
-  const daySeries = byDayChronological.map((row) => ({
-    day: formatDay(row.day),
-    prompts: row.promptCount,
-    activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentMinutes: Math.round(row.agentDurationMilliseconds / 60000),
-    tokens: row.totalTokens ?? 0,
-  }));
-
-  const tokenTotalForDays = byDayChronological.reduce(
-    (sum, row) => sum + (row.totalTokens ?? 0),
-    0,
+  const { displayTotalCost, usingCalculatedCost } = resolveDisplayCost(
+    reportedTotalCost,
+    calculatedTotalCost,
   );
-  const costByDay = byDayChronological.map((row) => {
-    const share =
-      tokenTotalForDays > 0
-        ? ((row.totalTokens ?? 0) / tokenTotalForDays) * displayTotalCost
-        : displayTotalCost / Math.max(byDayChronological.length, 1);
-    return {
-      day: formatDay(row.day),
-      cost: Number(share.toFixed(2)),
-    };
-  });
 
-  const modelCostSeries = aggregatedCost.byModel
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.usageBasedCost + m.subscriptionAllocation,
-    }))
-    .filter((m) => m.cost > 0);
-
-  const modelCalculatedSeries = aggregatedCost.byModel
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.calculatedTokenCost ?? 0,
-    }))
-    .filter((m) => m.cost > 0);
+  const chartDaySeries = buildDaySeries(byDayChronological, displayTotalCost);
+  const daySeries = chartDaySeries;
+  const costByDay = chartDaySeries;
+  const modelCostSeries = buildModelCostSeries(aggregatedCost.byModel, '');
+  const modelCalculatedSeries = buildModelCalculatedSeries(aggregatedCost.byModel, '');
 
   const loading = status.isLoading || summary.isLoading;
   const error = status.error || summary.error;
@@ -234,16 +238,16 @@ export function OverviewPage() {
             hint={`Usage ${formatCurrency(cost?.usageBasedCost, cost?.currency)} · Sub ${formatCurrency(cost?.subscriptionAllocation, cost?.currency)} · Token ${formatCurrency(cost?.calculatedTokenCost ?? 0, cost?.currency)}`}
           />
           <MetricCard
-            label="Unallocated activity"
+            label="Unallocated prompts"
             value={formatNumber(unallocatedActivityCount)}
-            hint="Click to assign events to projects"
-            to="/unallocated"
+            hint="Click to assign or delete prompts"
+            to="/imported-usage?tab=unallocated-prompts"
           />
           <MetricCard
             label="Unallocated usage"
             value={formatNumber(unallocatedUsageCount)}
             hint={formatCurrency(cost?.unallocatedCost, cost?.currency)}
-            to="/imported-usage"
+            to="/imported-usage?tab=imported-usage"
           />
         </div>
       </section>
@@ -253,8 +257,8 @@ export function OverviewPage() {
           <div>
             <h2 id="overview-all-projects">Across all projects</h2>
             <p>
-              Same overview charts as project details, aggregated for the selected range
-              ({chartRange.label}).
+              Same overview charts as project details, aggregated for the selected range (
+              {chartRange.label}).
             </p>
           </div>
         </div>
@@ -269,6 +273,8 @@ export function OverviewPage() {
               range: 'custom',
               from: value,
               to: toDate || toDateInputValue(chartRange.toUtc),
+              year: null,
+              month: null,
             })
           }
           onToDateChange={(value) =>
@@ -276,8 +282,13 @@ export function OverviewPage() {
               range: 'custom',
               from: fromDate || toDateInputValue(chartRange.fromUtc),
               to: value,
+              year: null,
+              month: null,
             })
           }
+          year={rangeYear ?? currentUtcYearMonth().year}
+          month={rangeMonth ?? currentUtcYearMonth().month}
+          onYearMonthChange={onYearMonthChange}
           idPrefix="overview-range"
         />
 
@@ -395,7 +406,7 @@ export function OverviewPage() {
             <p>Database path, queue depth, and latest ingest.</p>
           </div>
         </div>
-        <div className="panel stack">
+        <Panel className="stack">
           <div className="row">
             <StatusBadge
               label={status.data?.isHealthy ? 'Tracker OK' : 'Tracker issue'}
@@ -411,6 +422,35 @@ export function OverviewPage() {
             <div>
               <div className="label">Queued events</div>
               <strong>{formatNumber(status.data?.queuedEventCount)}</strong>
+              {(status.data?.queuedEventCount ?? 0) > 0 ? (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-compact"
+                    disabled={replayQueue.isPending}
+                    onClick={() => {
+                      setQueueMessage(null);
+                      replayQueue.mutate(undefined, {
+                        onSuccess: (result) => {
+                          setQueueMessage(
+                            `Replayed ${formatNumber(result.flushed)} of ${formatNumber(result.attempted)}; ` +
+                              `${formatNumber(result.remaining)} remaining` +
+                              (result.failed > 0 ? `, ${formatNumber(result.failed)} failed` : '') +
+                              '.',
+                          );
+                        },
+                        onError: (err) => {
+                          setQueueMessage(
+                            err instanceof Error ? err.message : 'Offline queue replay failed',
+                          );
+                        },
+                      });
+                    }}
+                  >
+                    {replayQueue.isPending ? 'Replaying…' : 'Replay queue'}
+                  </button>
+                </div>
+              ) : null}
             </div>
             <div>
               <div className="label">Last event</div>
@@ -426,7 +466,17 @@ export function OverviewPage() {
               </strong>
             </div>
           </div>
-        </div>
+          {queueMessage ? <p className="hint">{queueMessage}</p> : null}
+          {replayQueue.isError && !queueMessage ? (
+            <ErrorState
+              message={
+                replayQueue.error instanceof Error
+                  ? replayQueue.error.message
+                  : 'Offline queue replay failed'
+              }
+            />
+          ) : null}
+        </Panel>
       </section>
     </Page>
   );

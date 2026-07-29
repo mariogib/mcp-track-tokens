@@ -35,6 +35,23 @@ public sealed class CursorDocsPricingMarkdownParserTests
         Pro plan details here.
         """;
 
+    private const string CurrentDocsMarkdown = """
+        # Models & Pricing
+
+        ## API pool
+
+        ### Model pricing
+
+        All prices are per million tokens:
+
+        | Model | Provider | Input | Cache write | Cache read | Output | Notes |
+        | ----- | -------- | ----- | ----------- | ---------- | ------ | ----- |
+        | Auto Cost | Cursor | $1.25 | $1.25 | $0.25 | $6 | Hidden by default |
+        | [Composer 2.5](https://cursor.com) | Cursor | $0.5 | - | $0.2 | $2.5 | - |
+
+        ## Plans
+        """;
+
     [Fact]
     public void ParseWithWarnings_reads_auto_and_model_table()
     {
@@ -63,6 +80,27 @@ public sealed class CursorDocsPricingMarkdownParserTests
         sonnet.OutputPerMillion.Should().Be(15m);
 
         rates.Should().Contain(r => r.Model == "Grok 4.5" && r.InputPerMillion == 2m);
+    }
+
+    [Fact]
+    public void ParseWithWarnings_maps_auto_cost_row_from_current_docs()
+    {
+        var (rates, warnings) = CursorDocsPricingMarkdownParser.ParseWithWarnings(CurrentDocsMarkdown);
+
+        warnings.Should().BeEmpty();
+        rates.Should().Contain(r => r.Model == "Auto");
+        rates.Should().Contain(r => r.Model == "*");
+        rates.Should().NotContain(r => r.Model == "Auto Cost");
+
+        var auto = rates.Single(r => r.Model == "Auto");
+        auto.InputPerMillion.Should().Be(1.25m);
+        auto.OutputPerMillion.Should().Be(6m);
+        auto.CacheReadPerMillion.Should().Be(0.25m);
+        auto.CacheWritePerMillion.Should().Be(1.25m);
+
+        var fallback = rates.Single(r => r.Model == "*");
+        fallback.InputPerMillion.Should().Be(auto.InputPerMillion);
+        fallback.OutputPerMillion.Should().Be(auto.OutputPerMillion);
     }
 
     [Fact]

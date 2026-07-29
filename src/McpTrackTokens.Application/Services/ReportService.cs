@@ -5,6 +5,7 @@ using McpTrackTokens.Application.Options;
 using McpTrackTokens.Domain.Entities;
 using McpTrackTokens.Domain.Enums;
 using McpTrackTokens.Domain.Exceptions;
+using McpTrackTokens.Domain.Services;
 
 namespace McpTrackTokens.Application.Services;
 
@@ -24,6 +25,7 @@ public sealed class ReportService : IReportService
     private readonly IImportBatchRepository _imports;
     private readonly ISubscriptionAllocationService _subscription;
     private readonly TrackingOptions _options;
+    private readonly TimeZoneInfo _calendarTimeZone;
 
     public ReportService(
         IProjectRepository projects,
@@ -35,7 +37,8 @@ public sealed class ReportService : IReportService
         IUsageAttributionRepository attributions,
         IImportBatchRepository imports,
         ISubscriptionAllocationService subscription,
-        IOptions<TrackingOptions> options)
+        IOptions<TrackingOptions> options,
+        TimeZoneInfo? calendarTimeZone = null)
     {
         _projects = projects;
         _sessions = sessions;
@@ -47,6 +50,8 @@ public sealed class ReportService : IReportService
         _imports = imports;
         _subscription = subscription;
         _options = options.Value;
+        // Match timesheet / dashboard local calendar days (not UTC).
+        _calendarTimeZone = calendarTimeZone ?? TimeZoneInfo.Local;
     }
 
     /// <inheritdoc />
@@ -65,7 +70,7 @@ public sealed class ReportService : IReportService
         var now = DateTimeOffset.UtcNow;
 
         var dayKeys = events
-            .Select(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime))
+            .Select(e => ToCalendarDay(e.TimestampUtc))
             .Concat(tokensByDay.Keys)
             .Concat(sessions.SelectMany(SessionDayKeys))
             .Distinct()
@@ -75,9 +80,8 @@ public sealed class ReportService : IReportService
         var rows = dayKeys
             .Select(day =>
             {
-                var dayEvents = events.Where(e => DateOnly.FromDateTime(e.TimestampUtc.UtcDateTime) == day);
-                var dayStart = new DateTimeOffset(day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
-                var dayEnd = new DateTimeOffset(day.ToDateTime(TimeOnly.MaxValue, DateTimeKind.Utc));
+                var dayEvents = events.Where(e => ToCalendarDay(e.TimestampUtc) == day);
+                var (dayStart, dayEnd) = GetCalendarDayBoundsUtc(day);
                 return new DailyActivityRow
                 {
                     Day = day,
@@ -85,9 +89,16 @@ public sealed class ReportService : IReportService
                     PromptCount = dayEvents.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
                     AgentRuns = dayEvents.Count(e => e.EventType == ActivityEventType.AgentStarted),
                     AgentDurationMilliseconds = SumAgentDuration(dayEvents),
-                    ActiveProjectTimeSeconds = sessions.Sum(s =>
-                        IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, dayStart, dayEnd, now)),
-                    SessionCount = dayEvents.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
+                    ActiveProjectTimeSeconds = IntervalOverlap.UnionSeconds(
+                        sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                        dayStart,
+                        dayEnd,
+                        now),
+                    SessionCount = IntervalOverlap.CountOverlapping(
+                        sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                        dayStart,
+                        dayEnd,
+                        now),
                     TotalTokens = tokensByDay.GetValueOrDefault(day)
                 };
             })
@@ -272,9 +283,7 @@ public sealed class ReportService : IReportService
             .Where(a => a.AttributionMethod != AttributionMethod.Unallocated)
             .ToList();
 
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
         var usageById = await LoadUsageByIdsAsync(
                 allocated.Select(a => a.ExternalUsageRecordId),
@@ -302,22 +311,14 @@ public sealed class ReportService : IReportService
                 aggregates[modelName] = agg;
             }
 
-            var input = ScaleByAllocation(usage.InputTokens ?? 0, attribution.AllocationPercentage);
-            var output = ScaleByAllocation(usage.OutputTokens ?? 0, attribution.AllocationPercentage);
-            var cached = ScaleByAllocation(usage.CachedInputTokens ?? 0, attribution.AllocationPercentage);
-            var reasoning = ScaleByAllocation(usage.ReasoningTokens ?? 0, attribution.AllocationPercentage);
-            var total = ScaleByAllocation(usage.TotalTokens ?? 0, attribution.AllocationPercentage);
-            var accounted = input + output + cached + reasoning;
-            if (total > accounted)
-            {
-                input += total - accounted;
-            }
+            var tokens = CursorTokenCostCalculator.ScaleTokens(usage, attribution.AllocationPercentage);
 
-            agg.InputTokens += input;
-            agg.OutputTokens += output;
-            agg.CachedInputTokens += cached;
-            agg.ReasoningTokens += reasoning;
-            agg.TotalTokens += total > 0 ? total : accounted;
+            agg.InputTokens += tokens.InputTokens;
+            agg.OutputTokens += tokens.OutputTokens;
+            agg.CachedInputTokens += tokens.CachedInputTokens;
+            agg.CacheWriteTokens += tokens.CacheWriteTokens;
+            agg.ReasoningTokens += tokens.ReasoningTokens;
+            agg.TotalTokens += tokens.TotalTokens;
             agg.ReportedCost += attribution.AllocatedCost;
             agg.EstimatedCost += CursorTokenCostCalculator.Estimate(
                 usage,
@@ -333,6 +334,7 @@ public sealed class ReportService : IReportService
                 InputTokens = a.InputTokens,
                 OutputTokens = a.OutputTokens,
                 CachedInputTokens = a.CachedInputTokens,
+                CacheWriteTokens = a.CacheWriteTokens,
                 ReasoningTokens = a.ReasoningTokens,
                 TotalTokens = a.TotalTokens,
                 EstimatedCost = Math.Round(a.EstimatedCost, 4, MidpointRounding.AwayFromZero),
@@ -340,6 +342,7 @@ public sealed class ReportService : IReportService
                 InputPerMillion = a.Rate.InputPerMillion,
                 OutputPerMillion = a.Rate.OutputPerMillion,
                 CacheReadPerMillion = a.Rate.CacheReadPerMillion,
+                CacheWritePerMillion = a.Rate.CacheWritePerMillion,
                 ReasoningPerMillion = a.Rate.ReasoningPerMillion
             })
             .OrderByDescending(r => r.EstimatedCost)
@@ -356,6 +359,7 @@ public sealed class ReportService : IReportService
             InputTokens = byModel.Sum(r => r.InputTokens),
             OutputTokens = byModel.Sum(r => r.OutputTokens),
             CachedInputTokens = byModel.Sum(r => r.CachedInputTokens),
+            CacheWriteTokens = byModel.Sum(r => r.CacheWriteTokens),
             ReasoningTokens = byModel.Sum(r => r.ReasoningTokens),
             TotalTokens = byModel.Sum(r => r.TotalTokens),
             EstimatedCost = Math.Round(byModel.Sum(r => r.EstimatedCost), 4, MidpointRounding.AwayFromZero),
@@ -382,33 +386,81 @@ public sealed class ReportService : IReportService
             .Where(a => a.AttributionMethod != AttributionMethod.Unallocated && a.ProjectId == projectId)
             .ToList();
 
+        var usageById = await LoadUsageByIdsAsync(
+                allocated.Select(a => a.ExternalUsageRecordId),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
+
         long cachedInputTokens = 0;
+        long cacheWriteTokens = 0;
         long reasoningTokens = 0;
+        var items = new List<ProjectUsageEntryDto>(allocated.Count);
         foreach (var attribution in allocated)
         {
-            var usage = await _usage.GetByIdAsync(attribution.ExternalUsageRecordId, cancellationToken)
-                .ConfigureAwait(false);
-            if (usage is null)
+            if (!usageById.TryGetValue(attribution.ExternalUsageRecordId, out var usage))
             {
                 continue;
             }
 
-            cachedInputTokens += ScaleByAllocation(usage.CachedInputTokens ?? 0, attribution.AllocationPercentage);
-            reasoningTokens += ScaleByAllocation(usage.ReasoningTokens ?? 0, attribution.AllocationPercentage);
+            var scaled = CursorTokenCostCalculator.ScaleTokens(usage, attribution.AllocationPercentage);
+            var input = attribution.AllocatedInputTokens;
+            var output = attribution.AllocatedOutputTokens;
+            var cached = scaled.CachedInputTokens;
+            var cacheWrite = scaled.CacheWriteTokens;
+            var reasoning = scaled.ReasoningTokens;
+            var total = attribution.AllocatedTotalTokens > 0
+                ? attribution.AllocatedTotalTokens
+                : scaled.TotalTokens;
+
+            cachedInputTokens += cached;
+            cacheWriteTokens += cacheWrite;
+            reasoningTokens += reasoning;
+
+            var calculated = CursorTokenCostCalculator.EstimateOrZero(
+                usage,
+                attribution.AllocationPercentage,
+                rates);
+
+            items.Add(new ProjectUsageEntryDto
+            {
+                UsageRecordId = usage.Id,
+                TimestampUtc = usage.TimestampUtc,
+                Model = string.IsNullOrWhiteSpace(usage.Model) ? "unknown" : usage.Model.Trim(),
+                InputTokens = input,
+                OutputTokens = output,
+                CachedInputTokens = cached,
+                CacheWriteTokens = cacheWrite,
+                ReasoningTokens = reasoning,
+                TotalTokens = total,
+                CalculatedTokenCost = Math.Round(calculated, 4, MidpointRounding.AwayFromZero)
+            });
         }
+
+        items = items
+            .OrderByDescending(i => i.TimestampUtc)
+            .ThenBy(i => i.Model, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         return new UsageSummaryDto
         {
             InputTokens = allocated.Sum(a => a.AllocatedInputTokens),
             OutputTokens = allocated.Sum(a => a.AllocatedOutputTokens),
             CachedInputTokens = cachedInputTokens,
+            CacheWriteTokens = cacheWriteTokens,
             ReasoningTokens = reasoningTokens,
             TotalTokens = allocated.Sum(a => a.AllocatedTotalTokens),
             RequestCount = allocated.Select(a => a.ExternalUsageRecordId).Distinct().Count(),
             ReportedCost = allocated.Sum(a => a.AllocatedCost),
+            CalculatedTokenCost = Math.Round(
+                items.Sum(i => i.CalculatedTokenCost),
+                4,
+                MidpointRounding.AwayFromZero),
             Currency = project.Currency,
             FromUtc = fromUtc,
-            ToUtc = toUtc
+            ToUtc = toUtc,
+            Items = items
         };
     }
 
@@ -473,9 +525,7 @@ public sealed class ReportService : IReportService
         }
 
         var byModel = MergeTokenCostModelRows(projectReports.SelectMany(p => p.ByModel));
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
         return new ClientTokenCostEstimate
         {
@@ -487,6 +537,7 @@ public sealed class ReportService : IReportService
             InputTokens = projectReports.Sum(p => p.InputTokens),
             OutputTokens = projectReports.Sum(p => p.OutputTokens),
             CachedInputTokens = projectReports.Sum(p => p.CachedInputTokens),
+            CacheWriteTokens = projectReports.Sum(p => p.CacheWriteTokens),
             ReasoningTokens = projectReports.Sum(p => p.ReasoningTokens),
             TotalTokens = projectReports.Sum(p => p.TotalTokens),
             EstimatedCost = Math.Round(projectReports.Sum(p => p.EstimatedCost), 4, MidpointRounding.AwayFromZero),
@@ -514,9 +565,7 @@ public sealed class ReportService : IReportService
         var projects = (await _projects.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false))
             .ToDictionary(p => p.Id);
 
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
         var rows = new List<UsageAttributionRow>();
         decimal calculatedTokenCost = 0m;
         foreach (var attribution in attributions)
@@ -586,15 +635,10 @@ public sealed class ReportService : IReportService
     {
         var records = await _usage.ListUnallocatedAsync(fromUtc, toUtc, limit, cancellationToken)
             .ConfigureAwait(false);
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
         var items = records.Select(r =>
         {
-            var rate = CursorTokenCostCalculator.ResolveRate(rates, r.Model);
-            var calculated = rate is null
-                ? 0m
-                : CursorTokenCostCalculator.Estimate(r, 100m, rate);
+            var calculated = CursorTokenCostCalculator.EstimateOrZero(r, 100m, rates);
             return new UnallocatedItemDto
             {
                 Id = r.Id,
@@ -602,7 +646,7 @@ public sealed class ReportService : IReportService
                 TimestampUtc = r.TimestampUtc,
                 Model = r.Model,
                 Provider = r.Provider?.ToString(),
-                TotalTokens = AttributionEngine.ResolveTotalTokens(r),
+                TotalTokens = CursorTokenCostCalculator.ResolveTotalTokens(r),
                 ReportedCost = r.ReportedCost ?? 0m,
                 CalculatedTokenCost = calculated,
                 Currency = r.Currency ?? _options.DefaultCurrency,
@@ -653,18 +697,13 @@ public sealed class ReportService : IReportService
             ordered = ordered.Take(limit.Value);
         }
 
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
         var items = ordered.Select(r =>
         {
             attributionByUsage.TryGetValue(r.Id, out var attribution);
             projects.TryGetValue(attribution?.ProjectId ?? Guid.Empty, out var project);
-            var rate = CursorTokenCostCalculator.ResolveRate(rates, r.Model);
-            var calculated = rate is null
-                ? 0m
-                : CursorTokenCostCalculator.Estimate(r, 100m, rate);
+            var calculated = CursorTokenCostCalculator.EstimateOrZero(r, 100m, rates);
             return new ImportedUsageItemDto
             {
                 Id = r.Id,
@@ -676,7 +715,8 @@ public sealed class ReportService : IReportService
                 InputTokens = r.InputTokens,
                 OutputTokens = r.OutputTokens,
                 CachedInputTokens = r.CachedInputTokens,
-                TotalTokens = AttributionEngine.ResolveTotalTokens(r),
+                CacheWriteTokens = r.CacheWriteTokens,
+                TotalTokens = CursorTokenCostCalculator.ResolveTotalTokens(r),
                 ReportedCost = r.ReportedCost ?? 0m,
                 CalculatedTokenCost = calculated,
                 Currency = r.Currency ?? _options.DefaultCurrency,
@@ -739,8 +779,9 @@ public sealed class ReportService : IReportService
                 InputTokens = usageRecords.Sum(u => u.InputTokens ?? 0),
                 OutputTokens = usageRecords.Sum(u => u.OutputTokens ?? 0),
                 CachedInputTokens = usageRecords.Sum(u => u.CachedInputTokens ?? 0),
+                CacheWriteTokens = usageRecords.Sum(u => u.CacheWriteTokens ?? 0),
                 ReasoningTokens = usageRecords.Sum(u => u.ReasoningTokens ?? 0),
-                TotalTokens = usageRecords.Sum(u => u.TotalTokens ?? 0),
+                TotalTokens = usageRecords.Sum(CursorTokenCostCalculator.ResolveTotalTokens),
                 RequestCount = usageRecords.Sum(u => u.RequestCount ?? 0),
                 ReportedCost = usageRecords.Sum(u => u.ReportedCost ?? 0),
                 Currency = _options.DefaultCurrency,
@@ -809,9 +850,7 @@ public sealed class ReportService : IReportService
             .Where(a => a.ProjectId is not null)
             .Select(a => a.ExternalUsageRecordId)
             .ToHashSet();
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
         var models = usage
             .GroupBy(u => u.Model ?? "unknown")
@@ -823,14 +862,13 @@ public sealed class ReportService : IReportService
                 var unallocated = g.Where(u => !attributedIds.Contains(u.Id)).Sum(u => u.ReportedCost ?? 0m);
                 var calculated = g.Sum(u =>
                 {
-                    var rate = CursorTokenCostCalculator.ResolveRate(rates, u.Model);
-                    return rate is null ? 0m : CursorTokenCostCalculator.Estimate(u, 100m, rate);
+                    return CursorTokenCostCalculator.EstimateOrZero(u, 100m, rates);
                 });
                 return new ModelCostRow
                 {
                     Model = g.Key,
                     Provider = g.Select(x => x.Provider?.ToString()).FirstOrDefault(p => p is not null),
-                    TotalTokens = g.Sum(u => u.TotalTokens ?? 0),
+                    TotalTokens = g.Sum(CursorTokenCostCalculator.ResolveTotalTokens),
                     RequestCount = g.Sum(u => u.RequestCount ?? 0),
                     UsageBasedCost = g.Sum(u => u.ReportedCost ?? 0m),
                     AllocatedCost = allocated,
@@ -870,11 +908,11 @@ public sealed class ReportService : IReportService
 
         var now = DateTimeOffset.UtcNow;
         var todayStart = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
-        var lastEvents = await _events.ListAsync(todayStart.AddDays(-7), now, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        var last = lastEvents.OrderByDescending(e => e.TimestampUtc).FirstOrDefault();
+        var last = await _events.GetLatestAsync(cancellationToken).ConfigureAwait(false);
         var latestImport = await _imports.GetLatestAsync(UsageSource.CursorCsv, cancellationToken).ConfigureAwait(false)
             ?? await _imports.GetLatestAsync(UsageSource.CursorJson, cancellationToken).ConfigureAwait(false);
+
+        var queuePath = TrackingOptions.ExpandPath(_options.QueuePath);
 
         return new TrackingStatusDto
         {
@@ -886,12 +924,12 @@ public sealed class ReportService : IReportService
             ActiveSessionEditor = active?.Editor.ToString(),
             LastEventAtUtc = last?.TimestampUtc,
             LastEventType = last?.EventType.ToString(),
-            QueuedEventCount = 0,
+            QueuedEventCount = OfflineQueueDisk.CountEvents(queuePath),
             UnallocatedEventCount = await _events.CountUnallocatedAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false),
-            UnallocatedUsageCount = (await _usage
-                .ListUnallocatedAsync(todayStart.AddDays(-30), now, cancellationToken: cancellationToken)
-                .ConfigureAwait(false)).Count,
+            UnallocatedUsageCount = await _usage
+                .CountUnallocatedAsync(todayStart.AddDays(-30), now, cancellationToken)
+                .ConfigureAwait(false),
             LastCursorImportAtUtc = latestImport?.CompletedAtUtc ?? latestImport?.StartedAtUtc,
             LastCursorImportStatus = latestImport?.Status.ToString()
         };
@@ -981,7 +1019,7 @@ public sealed class ReportService : IReportService
             var tokens = dayAttrs.Sum(a => a.AllocatedTotalTokens);
             if (tokens <= 0)
             {
-                tokens = AttributionEngine.ResolveTotalTokens(record);
+                tokens = CursorTokenCostCalculator.ResolveTotalTokens(record);
             }
 
             if (tokens <= 0)
@@ -989,7 +1027,7 @@ public sealed class ReportService : IReportService
                 continue;
             }
 
-            var day = DateOnly.FromDateTime(record.TimestampUtc.UtcDateTime);
+            var day = ToCalendarDay(record.TimestampUtc);
             result[day] = result.GetValueOrDefault(day) + tokens;
         }
 
@@ -1095,7 +1133,9 @@ public sealed class ReportService : IReportService
             {
                 usageById.TryGetValue(a.ExternalUsageRecordId, out var usage);
                 var requests = usage?.RequestCount ?? 1;
-                return Math.Max(1, ScaleByAllocation(requests, a.AllocationPercentage));
+                return Math.Max(
+                    1,
+                    CursorTokenCostCalculator.ScaleTokenCount(requests, a.AllocationPercentage));
             });
 
             rows.Add(new NamedMetricRow
@@ -1139,6 +1179,7 @@ public sealed class ReportService : IReportService
                 InputTokens = existing.InputTokens + row.InputTokens,
                 OutputTokens = existing.OutputTokens + row.OutputTokens,
                 CachedInputTokens = existing.CachedInputTokens + row.CachedInputTokens,
+                CacheWriteTokens = existing.CacheWriteTokens + row.CacheWriteTokens,
                 ReasoningTokens = existing.ReasoningTokens + row.ReasoningTokens,
                 TotalTokens = existing.TotalTokens + row.TotalTokens,
                 EstimatedCost = Math.Round(
@@ -1158,21 +1199,6 @@ public sealed class ReportService : IReportService
             .ToList();
     }
 
-    private static long ScaleByAllocation(long value, decimal allocationPercentage)
-    {
-        if (value <= 0 || allocationPercentage <= 0m)
-        {
-            return 0;
-        }
-
-        if (allocationPercentage >= 100m)
-        {
-            return value;
-        }
-
-        return (long)Math.Round(value * (allocationPercentage / 100m), MidpointRounding.AwayFromZero);
-    }
-
     private async Task<IReadOnlyList<EditorSession>> ListProjectSessionsAsync(
         Guid? projectId,
         DateTimeOffset fromUtc,
@@ -1184,14 +1210,30 @@ public sealed class ReportService : IReportService
         return sessions.Where(s => s.ProjectId is not null).ToList();
     }
 
-    private static IEnumerable<DateOnly> SessionDayKeys(EditorSession session)
+    private IEnumerable<DateOnly> SessionDayKeys(EditorSession session)
     {
-        var start = DateOnly.FromDateTime(session.StartedAtUtc.UtcDateTime);
-        var end = DateOnly.FromDateTime((session.EndedAtUtc ?? DateTimeOffset.UtcNow).UtcDateTime);
+        var start = ToCalendarDay(session.StartedAtUtc);
+        var end = ToCalendarDay(session.EndedAtUtc ?? DateTimeOffset.UtcNow);
         for (var day = start; day <= end; day = day.AddDays(1))
         {
             yield return day;
         }
+    }
+
+    private DateOnly ToCalendarDay(DateTimeOffset instant)
+    {
+        var local = TimeZoneInfo.ConvertTime(instant.ToUniversalTime(), _calendarTimeZone);
+        return DateOnly.FromDateTime(local.DateTime);
+    }
+
+    private (DateTimeOffset DayStartUtc, DateTimeOffset DayEndUtc) GetCalendarDayBoundsUtc(DateOnly day)
+    {
+        var localMidnight = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        var startUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight, _calendarTimeZone);
+        var endUtc = TimeZoneInfo.ConvertTimeToUtc(localMidnight.AddDays(1), _calendarTimeZone);
+        return (
+            new DateTimeOffset(startUtc, TimeSpan.Zero),
+            new DateTimeOffset(endUtc, TimeSpan.Zero).AddTicks(-1));
     }
 
     private static ActivitySummaryDto BuildActivitySummary(
@@ -1206,9 +1248,16 @@ public sealed class ReportService : IReportService
             PromptCount = events.Count(e => e.EventType == ActivityEventType.PromptSubmitted),
             AgentRuns = events.Count(e => e.EventType == ActivityEventType.AgentStarted),
             AgentDurationMilliseconds = SumAgentDuration(events),
-            ActiveProjectTimeSeconds = sessions.Sum(s =>
-                IntervalOverlap.Seconds(s.StartedAtUtc, s.EndedAtUtc, fromUtc, toUtc, now)),
-            SessionCount = events.Select(e => e.EditorSessionId).Where(id => id is not null).Distinct().Count(),
+            ActiveProjectTimeSeconds = IntervalOverlap.UnionSeconds(
+                sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                fromUtc,
+                toUtc,
+                now),
+            SessionCount = IntervalOverlap.CountOverlapping(
+                sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                fromUtc,
+                toUtc,
+                now),
             FailureCount = events.Count(e => e.EventType == ActivityEventType.AgentFailed),
             CancellationCount = events.Count(e => e.EventType == ActivityEventType.AgentCancelled),
             FromUtc = fromUtc,
@@ -1217,11 +1266,7 @@ public sealed class ReportService : IReportService
     }
 
     private static long SumAgentDuration(IEnumerable<PromptActivityEvent> events)
-        => events
-            .Where(e => e.EventType is ActivityEventType.AgentCompleted
-                or ActivityEventType.AgentFailed
-                or ActivityEventType.AgentCancelled)
-            .Sum(e => e.DurationMilliseconds ?? 0);
+        => AgentDurationCalculator.SumMilliseconds(events);
 
     private static ProjectDto MapProject(Project project) => new()
     {
@@ -1255,6 +1300,8 @@ public sealed class ReportService : IReportService
         public long OutputTokens { get; set; }
 
         public long CachedInputTokens { get; set; }
+
+        public long CacheWriteTokens { get; set; }
 
         public long ReasoningTokens { get; set; }
 

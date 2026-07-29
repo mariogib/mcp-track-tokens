@@ -1,4 +1,7 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Services;
 using McpTrackTokens.Domain.Entities;
@@ -60,25 +63,227 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     {
         var from = fromUtc.ToUniversalTime();
         var to = toUtc.ToUniversalTime();
-        var query = _db.PromptActivityEvents.AsNoTracking().AsQueryable();
 
-        if (projectId is Guid pid)
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(e => e.ProjectId == pid);
+            var query = _db.PromptActivityEvents.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(e => e.ProjectId == pid);
+            }
+
+            if (unallocatedOnly == true)
+            {
+                query = query.Where(e =>
+                    e.ProjectId == null ||
+                    e.AttributionMethod == AttributionMethod.Unallocated);
+            }
+
+            return await query
+                .Where(e => e.TimestampUtc >= from && e.TimestampUtc <= to)
+                .OrderByDescending(e => e.TimestampUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
         }
 
         if (unallocatedOnly == true)
         {
-            query = query.Where(e =>
-                e.ProjectId == null ||
-                e.AttributionMethod == AttributionMethod.Unallocated);
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (ProjectId IS NULL OR AttributionMethod = {{{args.Count}}})");
+            args.Add(nameof(AttributionMethod.Unallocated));
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            e => e.TimestampUtc >= from && e.TimestampUtc <= to,
-            items => items.OrderByDescending(e => e.TimestampUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        var sql = "SELECT * FROM PromptActivityEvents " + where + " ORDER BY TimestampUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<PromptActivityEvent?> GetLatestAsync(CancellationToken cancellationToken = default)
+    {
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            return await _db.PromptActivityEvents.AsNoTracking()
+                .OrderByDescending(e => e.TimestampUtc)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var items = await SqliteDateTimeQuery
+            .FromSqlAsync(
+                _db.PromptActivityEvents,
+                "SELECT * FROM PromptActivityEvents ORDER BY TimestampUtc DESC LIMIT 1",
+                Array.Empty<object>(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        return items.FirstOrDefault();
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountAsync(
+        ActivityEventPageFilter filter,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = "SELECT COUNT(*) AS \"Value\" FROM PromptActivityEvents " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PromptActivityEvent>> ListPagedAsync(
+        ActivityEventPageFilter filter,
+        int pageIndex,
+        int pageSize,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
+        var (where, args) = BuildBrowseWhere(filter);
+        var sql = new StringBuilder()
+            .Append("SELECT * FROM PromptActivityEvents ")
+            .Append(where)
+            .Append(CultureInfo.InvariantCulture, $" ORDER BY TimestampUtc DESC, Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+        args.Add(take);
+        args.Add(skip);
+
+        return await _db.PromptActivityEvents
+            .FromSqlRaw(sql.ToString(), args.ToArray())
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<PromptFacetsDto> GetPromptFacetsAsync(
+        Guid projectId,
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var filter = new ActivityEventPageFilter
+        {
+            ProjectId = projectId,
+            FromUtc = fromUtc,
+            ToUtc = toUtc,
+            PromptSubmittedOnly = true
+        };
+        var (where, args) = BuildBrowseWhere(filter);
+        var argsArray = args.ToArray();
+
+        var models = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT Model AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND Model IS NOT NULL AND TRIM(Model) <> '' ORDER BY Model",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var branches = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT Branch AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND Branch IS NOT NULL AND TRIM(Branch) <> '' ORDER BY Branch",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var eventTypes = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT EventType AS \"Value\" FROM PromptActivityEvents " + where
+                + " AND EventType IS NOT NULL AND TRIM(EventType) <> '' ORDER BY EventType",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var days = await _db.Database
+            .SqlQueryRaw<string>(
+                "SELECT DISTINCT substr(TimestampUtc, 1, 10) AS \"Value\" FROM PromptActivityEvents "
+                + where + " ORDER BY 1 DESC",
+                argsArray)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PromptFacetsDto
+        {
+            Models = models,
+            Branches = branches,
+            EventTypes = eventTypes,
+            Days = days
+        };
+    }
+
+    private static (string WhereSql, List<object> Args) BuildBrowseWhere(ActivityEventPageFilter filter)
+    {
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+
+        if (filter.ProjectId is Guid projectId)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(projectId);
+        }
+
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", filter.FromUtc, filter.ToUtc);
+
+        if (filter.PromptSubmittedOnly)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+            args.Add(nameof(ActivityEventType.PromptSubmitted));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.EventType) && !filter.PromptSubmittedOnly)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+            args.Add(filter.EventType.Trim());
+        }
+        else if (!string.IsNullOrWhiteSpace(filter.EventType) && filter.PromptSubmittedOnly
+                 && !string.Equals(filter.EventType.Trim(), nameof(ActivityEventType.PromptSubmitted), StringComparison.Ordinal))
+        {
+            // Prompt list is PromptSubmitted-only; a different type filter matches nothing.
+            where.Append(" AND 1=0");
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Status = {{{args.Count}}}");
+            args.Add(filter.Status.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Model))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Model = {{{args.Count}}}");
+            args.Add(filter.Model.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Branch))
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Branch = {{{args.Count}}}");
+            args.Add(filter.Branch.Trim());
+        }
+
+        var search = filter.Search?.Trim();
+        if (!string.IsNullOrEmpty(search))
+        {
+            var pattern = "%" + SqliteDateTimePaging.EscapeLike(search) + "%";
+            where.Append(CultureInfo.InvariantCulture,
+                $" AND (IFNULL(Model,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Branch,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(RepositoryPath,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(EventType,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Editor,'') LIKE {{{args.Count}}} ESCAPE '\\' OR IFNULL(Status,'') LIKE {{{args.Count}}} ESCAPE '\\')");
+            args.Add(pattern);
+        }
+
+        return (where.ToString(), args);
     }
 
     /// <inheritdoc />
@@ -95,14 +300,28 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         Guid editorSessionId,
         CancellationToken cancellationToken = default)
     {
-        var matches = await SqliteDateTimeQuery.MaterializeAsync(
-            _db.PromptActivityEvents.AsNoTracking()
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            return await _db.PromptActivityEvents.AsNoTracking()
                 .Where(e =>
                     e.EditorSessionId == editorSessionId &&
-                    e.EventType == ActivityEventType.PromptSubmitted),
-            orderBy: items => items.OrderByDescending(e => e.TimestampUtc),
-            take: 1,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+                    e.EventType == ActivityEventType.PromptSubmitted)
+                .OrderByDescending(e => e.TimestampUtc)
+                .Select(e => (DateTimeOffset?)e.TimestampUtc)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        where.Append(CultureInfo.InvariantCulture, $" AND EditorSessionId = {{{args.Count}}}");
+        args.Add(editorSessionId);
+        where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+        args.Add(nameof(ActivityEventType.PromptSubmitted));
+        var sql = "SELECT * FROM PromptActivityEvents " + where + " ORDER BY TimestampUtc DESC LIMIT 1";
+        var matches = await SqliteDateTimeQuery
+            .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
+            .ConfigureAwait(false);
         return matches.FirstOrDefault()?.TimestampUtc;
     }
 
@@ -115,15 +334,32 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     {
         var from = fromUtcInclusive.ToUniversalTime();
         var to = toUtcExclusive.ToUniversalTime();
-        var matches = await SqliteDateTimeQuery.MaterializeAsync(
-            _db.PromptActivityEvents.AsNoTracking()
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            return await _db.PromptActivityEvents.AsNoTracking()
                 .Where(e =>
                     e.ProjectId == projectId &&
-                    e.EventType == ActivityEventType.PromptSubmitted),
-            e => e.TimestampUtc >= from && e.TimestampUtc < to,
-            items => items.OrderByDescending(e => e.TimestampUtc),
-            take: 1,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+                    e.EventType == ActivityEventType.PromptSubmitted &&
+                    e.TimestampUtc >= from &&
+                    e.TimestampUtc < to)
+                .OrderByDescending(e => e.TimestampUtc)
+                .Select(e => (DateTimeOffset?)e.TimestampUtc)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+        args.Add(projectId);
+        where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+        args.Add(nameof(ActivityEventType.PromptSubmitted));
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to, toInclusive: false);
+        var sql = "SELECT * FROM PromptActivityEvents " + where + " ORDER BY TimestampUtc DESC LIMIT 1";
+        var matches = await SqliteDateTimeQuery
+            .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
+            .ConfigureAwait(false);
         return matches.FirstOrDefault()?.TimestampUtc;
     }
 
@@ -163,13 +399,31 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         var from = at - PromptActiveWindow.MaxLookback;
         var to = at.AddSeconds(1);
 
-        var candidates = await SqliteDateTimeQuery.MaterializeAsync(
-            _db.PromptActivityEvents.AsNoTracking()
+        IReadOnlyList<PromptActivityEvent> candidates;
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            candidates = await _db.PromptActivityEvents.AsNoTracking()
                 .Where(e =>
                     e.EventType == ActivityEventType.PromptSubmitted &&
-                    e.ProjectId != null),
-            e => e.TimestampUtc >= from && e.TimestampUtc <= to,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+                    e.ProjectId != null &&
+                    e.TimestampUtc >= from &&
+                    e.TimestampUtc <= to)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            var where = new StringBuilder("WHERE 1=1");
+            var args = new List<object>();
+            where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
+            args.Add(nameof(ActivityEventType.PromptSubmitted));
+            where.Append(" AND ProjectId IS NOT NULL");
+            SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+            var sql = "SELECT * FROM PromptActivityEvents " + where;
+            candidates = await SqliteDateTimeQuery
+                .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return candidates
             .Select(e => (Event: e, Second: TimestampPrecision.RoundToSecond(e.TimestampUtc)))
@@ -208,12 +462,32 @@ public sealed class ActivityEventRepository : IActivityEventRepository
     {
         var from = fromUtc?.ToUniversalTime();
         var to = toUtc?.ToUniversalTime();
-        var items = await SqliteDateTimeQuery.MaterializeAsync(
-            _db.PromptActivityEvents.AsNoTracking()
-                .Where(e => e.ProjectId == null || e.AttributionMethod == AttributionMethod.Unallocated),
-            e => (from is null || e.TimestampUtc >= from) && (to is null || e.TimestampUtc <= to),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-        return items.Count;
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            var query = _db.PromptActivityEvents.AsNoTracking()
+                .Where(e => e.ProjectId == null || e.AttributionMethod == AttributionMethod.Unallocated);
+            if (from is DateTimeOffset fromValue)
+            {
+                query = query.Where(e => e.TimestampUtc >= fromValue);
+            }
+
+            if (to is DateTimeOffset toValue)
+            {
+                query = query.Where(e => e.TimestampUtc <= toValue);
+            }
+
+            return await query.CountAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder("WHERE (ProjectId IS NULL OR AttributionMethod = {0})");
+        var args = new List<object> { nameof(AttributionMethod.Unallocated) };
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        var sql = "SELECT COUNT(*) AS \"Value\" FROM PromptActivityEvents " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -240,5 +514,43 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             activityEvent.AttributionMethod = method;
             activityEvent.AttributionConfidence = confidence;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> DeleteUnallocatedByIdsAsync(
+        IReadOnlyList<Guid> eventIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (eventIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var ids = eventIds as HashSet<Guid> ?? eventIds.ToHashSet();
+        var deletableIds = await _db.PromptActivityEvents.AsNoTracking()
+            .Where(e =>
+                ids.Contains(e.Id) &&
+                (e.ProjectId == null || e.AttributionMethod == AttributionMethod.Unallocated))
+            .Select(e => e.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (deletableIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var deletable = deletableIds.ToHashSet();
+        await _db.UsageAttributions
+            .Where(a => a.ActivityEventId != null && deletable.Contains(a.ActivityEventId.Value))
+            .ExecuteUpdateAsync(
+                setters => setters.SetProperty(a => a.ActivityEventId, (Guid?)null),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await _db.PromptActivityEvents
+            .Where(e => deletable.Contains(e.Id))
+            .ExecuteDeleteAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 }

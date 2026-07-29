@@ -37,7 +37,9 @@ Headers are normalized (case, spaces, underscores, hyphens). Examples:
 | InputTokens | `Input Tokens`, `Prompt Tokens` |
 | OutputTokens | `Output Tokens`, `Completion Tokens` |
 | TotalTokens | `Total Tokens`, `Tokens`, `Token Count` |
-| CachedInputTokens | `Cached Input Tokens`, `Cache Tokens` |
+| CachedInputTokens | `Cached Input Tokens`, `Cache Tokens`, `Cache Read` |
+| CacheWriteTokens | `Cache Write Tokens`, `Input (w/ Cache Write)` |
+| ReasoningTokens | `Reasoning Tokens` |
 | ReportedCost | `Cost`, `Amount`, `Usage Cost`, `Price` |
 | Currency | `Currency`, `CCY` |
 | RequestCount | `Requests`, `Request Count`, `Qty` |

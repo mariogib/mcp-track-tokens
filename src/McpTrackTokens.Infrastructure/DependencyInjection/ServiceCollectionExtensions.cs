@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ICursorUsageFormatDetector, CursorUsageFormatDetector>();
         services.TryAddSingleton<ICursorUsageColumnMapper, CursorUsageColumnMapper>();
         services.TryAddSingleton<ICursorTokenRateStore, CursorTokenRateStore>();
+        services.TryAddScoped<ITrackingSettingsStore, TrackingSettingsStore>();
         services.AddHttpClient<ICursorDocsPricingClient, CursorDocsPricingClient>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(30);

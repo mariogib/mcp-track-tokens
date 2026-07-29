@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<IExportService, ExportService>();
         services.TryAddScoped<IApiKeyService, ApiKeyService>();
         services.TryAddScoped<ICursorHooksCompatibilityService, CursorHooksCompatibilityService>();
+        services.TryAddScoped<IOfflineQueueReplayService, OfflineQueueReplayService>();
 
         services.AddValidatorsFromAssemblyContaining<Validators.IngestEventDtoValidator>();
 

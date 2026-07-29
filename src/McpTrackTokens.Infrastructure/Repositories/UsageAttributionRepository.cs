@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
@@ -89,17 +91,35 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
     {
         var from = fromUtc.ToUniversalTime();
         var to = toUtc.ToUniversalTime();
-        var query = _db.UsageAttributions.AsNoTracking().AsQueryable();
-        if (projectId is Guid pid)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(a => a.ProjectId == pid);
+            var query = _db.UsageAttributions.AsNoTracking().AsQueryable();
+            if (projectId is Guid pid)
+            {
+                query = query.Where(a => a.ProjectId == pid);
+            }
+
+            return await query
+                .Where(a => a.CreatedAtUtc >= from && a.CreatedAtUtc <= to)
+                .OrderByDescending(a => a.CreatedAtUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            a => a.CreatedAtUtc >= from && a.CreatedAtUtc <= to,
-            items => items.OrderByDescending(a => a.CreatedAtUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (projectId is Guid project)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            args.Add(project);
+        }
+
+        SqliteDateTimePaging.AppendUnixRange(where, args, "CreatedAtUtc", from, to);
+        var sql = "SELECT * FROM UsageAttributions " + where + " ORDER BY CreatedAtUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.UsageAttributions, sql, args, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

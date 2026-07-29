@@ -68,7 +68,7 @@ public sealed class EventIngestionService : IEventIngestionService
                 {
                     var refined = await TryCompletePromptSubmittedAsync(dto, editor, eventType, cancellationToken)
                         .ConfigureAwait(false);
-                    if (refined)
+                    if (refined is not null)
                     {
                         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                     }
@@ -116,9 +116,14 @@ public sealed class EventIngestionService : IEventIngestionService
         var session = await ResolveSessionAsync(dto, editor, project?.Id, eventType, cancellationToken)
             .ConfigureAwait(false);
 
+        long? completedPromptDurationMs = null;
         if (EnumParsing.IsTerminalAgentEvent(eventType))
         {
-            await TryCompletePromptSubmittedAsync(dto, editor, eventType, cancellationToken)
+            completedPromptDurationMs = await TryCompletePromptSubmittedAsync(
+                    dto,
+                    editor,
+                    eventType,
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -167,8 +172,9 @@ public sealed class EventIngestionService : IEventIngestionService
             promptHash: promptHash,
             promptContentStored: storeContent,
             promptContentEncrypted: encryptedContent,
-            responseCompletedAtUtc: dto.ResponseCompletedAtUtc,
-            durationMilliseconds: dto.DurationMilliseconds,
+            responseCompletedAtUtc: dto.ResponseCompletedAtUtc
+                ?? (EnumParsing.IsTerminalAgentEvent(eventType) ? dto.TimestampUtc : null),
+            durationMilliseconds: dto.DurationMilliseconds ?? completedPromptDurationMs,
             model: CursorTokenCostCalculator.NormalizeModelName(dto.Model),
             provider: EnumParsing.ParseProvider(dto.Provider),
             status: ResolveStatus(dto, eventType),
@@ -542,8 +548,9 @@ public sealed class EventIngestionService : IEventIngestionService
 
     /// <summary>
     /// Updates the matching PromptSubmitted row with status and duration from a terminal agent event.
+    /// Returns the resolved duration in milliseconds when a prompt was completed.
     /// </summary>
-    private async Task<bool> TryCompletePromptSubmittedAsync(
+    private async Task<long?> TryCompletePromptSubmittedAsync(
         IngestEventDto dto,
         EditorType editor,
         ActivityEventType eventType,
@@ -552,7 +559,7 @@ public sealed class EventIngestionService : IEventIngestionService
         var generationKey = ResolveGenerationKey(dto);
         if (string.IsNullOrWhiteSpace(generationKey))
         {
-            return false;
+            return null;
         }
 
         var prompt = await _events
@@ -576,10 +583,19 @@ public sealed class EventIngestionService : IEventIngestionService
 
         if (prompt is null || prompt.EventType != ActivityEventType.PromptSubmitted)
         {
-            return false;
+            return null;
         }
 
+        // Prefer wall-clock completion; if the hook sent ResponseCompletedAtUtc before TimestampUtc
+        // (double new Date()), use TimestampUtc so derived duration stays non-negative.
         var completedAt = dto.ResponseCompletedAtUtc ?? dto.TimestampUtc;
+        if (completedAt < prompt.TimestampUtc)
+        {
+            completedAt = dto.TimestampUtc >= prompt.TimestampUtc
+                ? dto.TimestampUtc
+                : prompt.TimestampUtc;
+        }
+
         var status = ResolveStatus(dto, eventType);
         prompt.ApplyCompletion(
             status,
@@ -587,7 +603,7 @@ public sealed class EventIngestionService : IEventIngestionService
             dto.DurationMilliseconds,
             CursorTokenCostCalculator.NormalizeModelName(dto.Model));
         await _events.UpdateAsync(prompt, cancellationToken).ConfigureAwait(false);
-        return true;
+        return AgentDurationCalculator.ResolveMilliseconds(prompt);
     }
 
     private static string? ResolveGenerationKey(IngestEventDto dto)

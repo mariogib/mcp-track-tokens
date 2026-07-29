@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
@@ -49,17 +51,35 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
     {
         var from = fromUtc.ToUniversalTime();
         var to = toUtc.ToUniversalTime();
-        var query = _db.ExternalUsageRecords.AsNoTracking().AsQueryable();
-        if (source is not null)
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            query = query.Where(r => r.Source == source.Value);
+            var query = _db.ExternalUsageRecords.AsNoTracking().AsQueryable();
+            if (source is not null)
+            {
+                query = query.Where(r => r.Source == source.Value);
+            }
+
+            return await query
+                .Where(r => r.TimestampUtc >= from && r.TimestampUtc <= to)
+                .OrderByDescending(r => r.TimestampUtc)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            query,
-            r => r.TimestampUtc >= from && r.TimestampUtc <= to,
-            items => items.OrderByDescending(r => r.TimestampUtc),
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var where = new StringBuilder("WHERE 1=1");
+        var args = new List<object>();
+        if (source is UsageSource usageSource)
+        {
+            where.Append(CultureInfo.InvariantCulture, $" AND Source = {{{args.Count}}}");
+            args.Add(usageSource.ToString());
+        }
+
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        var sql = "SELECT * FROM ExternalUsageRecords " + where + " ORDER BY TimestampUtc DESC";
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.ExternalUsageRecords, sql, args, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -77,22 +97,78 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
         var from = fromUtc.ToUniversalTime();
         var to = toUtc.ToUniversalTime();
 
-        // Allocated = has at least one attribution row with a project id.
-        // Unallocated placeholder rows (method Unallocated, ProjectId null) do not count.
-        var allocatedIds = await _db.UsageAttributions.AsNoTracking()
-            .Where(a => a.ProjectId != null)
-            .Select(a => a.ExternalUsageRecordId)
-            .Distinct()
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var allocated = allocatedIds.ToHashSet();
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            var allocatedIds = _db.UsageAttributions.AsNoTracking()
+                .Where(a => a.ProjectId != null)
+                .Select(a => a.ExternalUsageRecordId);
 
-        return await SqliteDateTimeQuery.MaterializeAsync(
-            _db.ExternalUsageRecords.AsNoTracking(),
-            r => r.TimestampUtc >= from && r.TimestampUtc <= to && !allocated.Contains(r.Id),
-            items => items.OrderByDescending(r => r.TimestampUtc),
-            take: limit,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            var query = _db.ExternalUsageRecords.AsNoTracking()
+                .Where(r =>
+                    r.TimestampUtc >= from &&
+                    r.TimestampUtc <= to &&
+                    !allocatedIds.Contains(r.Id))
+                .OrderByDescending(r => r.TimestampUtc);
+
+            if (limit is int take and > 0)
+            {
+                return await query.Take(take).ToListAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder(
+            "WHERE NOT EXISTS (SELECT 1 FROM UsageAttributions a WHERE a.ExternalUsageRecordId = ExternalUsageRecords.Id AND a.ProjectId IS NOT NULL)");
+        var args = new List<object>();
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        var sql = new StringBuilder("SELECT * FROM ExternalUsageRecords ")
+            .Append(where)
+            .Append(" ORDER BY TimestampUtc DESC");
+        if (limit is int lim and > 0)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" LIMIT {{{args.Count}}}");
+            args.Add(lim);
+        }
+
+        return await SqliteDateTimeQuery
+            .FromSqlAsync(_db.ExternalUsageRecords, sql.ToString(), args, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<int> CountUnallocatedAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var from = fromUtc.ToUniversalTime();
+        var to = toUtc.ToUniversalTime();
+
+        if (!SqliteDateTimeQuery.IsSqlite(_db))
+        {
+            var allocatedIds = _db.UsageAttributions.AsNoTracking()
+                .Where(a => a.ProjectId != null)
+                .Select(a => a.ExternalUsageRecordId);
+
+            return await _db.ExternalUsageRecords.AsNoTracking()
+                .Where(r =>
+                    r.TimestampUtc >= from &&
+                    r.TimestampUtc <= to &&
+                    !allocatedIds.Contains(r.Id))
+                .CountAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var where = new StringBuilder(
+            "WHERE NOT EXISTS (SELECT 1 FROM UsageAttributions a WHERE a.ExternalUsageRecordId = ExternalUsageRecords.Id AND a.ProjectId IS NOT NULL)");
+        var args = new List<object>();
+        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        var sql = "SELECT COUNT(*) AS \"Value\" FROM ExternalUsageRecords " + where;
+        return await _db.Database
+            .SqlQueryRaw<int>(sql, args.ToArray())
+            .FirstAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc />

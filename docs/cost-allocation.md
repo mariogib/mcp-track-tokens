@@ -65,7 +65,7 @@ Proportional math (`CostAllocationCalculator`): weights normalize to 100%; remai
 ## Practical workflow
 
 1. Register projects with accurate repo paths / remotes.
-2. Run hooks + extension so editor sessions are recorded.
+2. Run Cursor hooks so editor sessions are recorded.
 3. Import Cursor exports regularly.
 4. Review unallocated usage/activity.
 5. Reconcile; set subscription method if you need plan cost distribution.

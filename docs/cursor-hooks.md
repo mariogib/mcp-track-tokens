@@ -32,6 +32,9 @@ Install copies the hooks package (including `dist/`) into `~/.cursor/mcp-track-t
 | `dist/session-started.js` | `sessionStart` |
 | `dist/session-ended.js` | `sessionEnd` |
 | `dist/diagnostics.js` | Local diagnostics helper (not a Cursor hook) |
+| `run.cmd` | Windows launcher used by `~/.cursor/hooks.json` (`run.cmd <entrypoint>`) |
+
+On Windows, prefer `cmd /c "mcp-track-tokens-hooks\run.cmd prompt-submitted --allow-prompt"` (cwd = `~/.cursor`). The launcher must capture `%~dp0` into a variable **before** `shift`, or Node resolves scripts under `~/.cursor\dist\` and prompts never ingest.
 
 Example mapping for `~/.cursor/hooks.json`: `integrations/cursor-hooks/example-hooks-config.json`.
 

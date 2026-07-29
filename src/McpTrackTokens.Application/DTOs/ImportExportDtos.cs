@@ -93,6 +93,8 @@ public sealed record NormalizedUsageRecordDto
 
     public long? CachedInputTokens { get; init; }
 
+    public long? CacheWriteTokens { get; init; }
+
     public long? ReasoningTokens { get; init; }
 
     public long? TotalTokens { get; init; }
@@ -318,4 +320,20 @@ public sealed record RecalculateWindowsResultDto
     public long TotalActiveSeconds { get; init; }
 
     public string CalculationVersion { get; init; } = "1.0";
+}
+
+/// <summary>
+/// Request to recalculate activity windows (prompt/session active-time links).
+/// </summary>
+public sealed record RecalculateWindowsRequestDto
+{
+    public Guid? ProjectId { get; init; }
+
+    public DateTimeOffset FromUtc { get; init; }
+
+    public DateTimeOffset ToUtc { get; init; }
+
+    public int? InactivityThresholdMinutes { get; init; }
+
+    public bool DryRun { get; init; }
 }
