@@ -27,6 +27,7 @@ import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { EmptyState, ErrorState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { PopupForm, TextLink } from '../shared/adminUi';
+import { sessionDurationMs, timesheetEntryDurationMs } from '../utils/duration';
 import {
   currentUtcYearMonth,
   monthDateInputs,
@@ -133,7 +134,7 @@ function buildLocalDailyBreakdown(
     const bucket = buckets.get(day);
     if (!bucket) continue;
     bucket.entryIds.add(entry.id);
-    const durationMs = entryDurationMs(entry);
+    const durationMs = timesheetEntryDurationMs(entry);
     if (durationMs != null && durationMs > 0) {
       bucket.durationSeconds += Math.floor(durationMs / 1000);
     }
@@ -157,24 +158,6 @@ function buildLocalDailyBreakdown(
       sessionCount: bucket.sessionIds.size,
     }))
     .sort((a, b) => b.day.localeCompare(a.day));
-}
-
-function sessionDurationMs(session: SessionDto): number | null {
-  const started = new Date(session.startedAtUtc).getTime();
-  if (Number.isNaN(started)) return null;
-  const ended = session.endedAtUtc
-    ? new Date(session.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(ended) || ended < started) return null;
-  return ended - started;
-}
-
-function entryDurationMs(entry: TimesheetEntryDto): number | null {
-  const start = new Date(entry.startedAtUtc).getTime();
-  if (Number.isNaN(start)) return null;
-  const end = entry.endedAtUtc ? new Date(entry.endedAtUtc).getTime() : Date.now();
-  if (Number.isNaN(end) || end < start) return null;
-  return end - start;
 }
 
 function EntryCountLink({
@@ -973,7 +956,7 @@ function TimesheetEntriesDialog({
             </thead>
             <tbody>
               {visibleEntries.map((entry) => {
-                const duration = entryDurationMs(entry);
+                const duration = timesheetEntryDurationMs(entry);
                 return (
                   <tr key={entry.id}>
                     <td>

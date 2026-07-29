@@ -1136,9 +1136,8 @@ public static class ApiEndpoints
             }
         }
 
-        var rates = trackingOptions.Value.CursorTokenRates.Count > 0
-            ? trackingOptions.Value.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(
+            trackingOptions.Value.CursorTokenRates);
 
         var usageByPrompt = linked
             .Where(a => a.ActivityEventId is Guid)
@@ -1159,19 +1158,17 @@ public static class ApiEndpoints
                         }
                         else if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var fallback))
                         {
-                            tokens += fallback.TotalTokens
-                                ?? ((fallback.InputTokens ?? 0) + (fallback.OutputTokens ?? 0)
-                                    + (fallback.CachedInputTokens ?? 0) + (fallback.ReasoningTokens ?? 0));
+                            tokens += CursorTokenCostCalculator.ResolveTotalTokens(fallback);
                             cost += fallback.ReportedCost ?? 0m;
                         }
 
-                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record) &&
-                            CursorTokenCostCalculator.ResolveRate(rates, record.Model) is { } rate)
+                        if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record))
                         {
-                            calculated += CursorTokenCostCalculator.Estimate(
+                            calculated += CursorTokenCostCalculator.EstimateOrZero(
                                 record,
-                                attr.AllocationPercentage > 0m ? attr.AllocationPercentage : 100m,
-                                rate);
+                                CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
+                                    attr.AllocationPercentage),
+                                rates);
                         }
                     }
 

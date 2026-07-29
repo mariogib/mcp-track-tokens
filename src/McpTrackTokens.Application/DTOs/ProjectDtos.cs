@@ -177,6 +177,33 @@ public sealed record ActivitySummaryDto
 }
 
 /// <summary>
+/// One attributed usage entry for a project in a date range.
+/// </summary>
+public sealed record ProjectUsageEntryDto
+{
+    public Guid UsageRecordId { get; init; }
+
+    public DateTimeOffset TimestampUtc { get; init; }
+
+    public string? Model { get; init; }
+
+    public long InputTokens { get; init; }
+
+    public long OutputTokens { get; init; }
+
+    public long CachedInputTokens { get; init; }
+
+    public long CacheWriteTokens { get; init; }
+
+    public long ReasoningTokens { get; init; }
+
+    public long TotalTokens { get; init; }
+
+    /// <summary>Rate-card calculated cost for the attributed share.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+}
+
+/// <summary>
 /// Imported usage metrics.
 /// </summary>
 public sealed record UsageSummaryDto
@@ -187,6 +214,8 @@ public sealed record UsageSummaryDto
 
     public long CachedInputTokens { get; init; }
 
+    public long CacheWriteTokens { get; init; }
+
     public long ReasoningTokens { get; init; }
 
     public long TotalTokens { get; init; }
@@ -195,11 +224,17 @@ public sealed record UsageSummaryDto
 
     public decimal ReportedCost { get; init; }
 
+    /// <summary>Rate-card calculated cost across attributed usage entries.</summary>
+    public decimal CalculatedTokenCost { get; init; }
+
     public string Currency { get; init; } = "USD";
 
     public DateTimeOffset? FromUtc { get; init; }
 
     public DateTimeOffset? ToUtc { get; init; }
+
+    /// <summary>Attributed usage rows for the project in the range.</summary>
+    public IReadOnlyList<ProjectUsageEntryDto> Items { get; init; } = [];
 }
 
 /// <summary>

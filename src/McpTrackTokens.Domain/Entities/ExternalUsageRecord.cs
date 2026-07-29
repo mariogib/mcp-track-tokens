@@ -59,9 +59,14 @@ public sealed class ExternalUsageRecord : EntityBase
     public long? OutputTokens { get; set; }
 
     /// <summary>
-    /// Gets or sets cached input token count.
+    /// Gets or sets cached input token count (cache read).
     /// </summary>
     public long? CachedInputTokens { get; set; }
+
+    /// <summary>
+    /// Gets or sets cache-write token count (new prompt/context written into the provider cache).
+    /// </summary>
+    public long? CacheWriteTokens { get; set; }
 
     /// <summary>
     /// Gets or sets reasoning token count.
@@ -118,6 +123,7 @@ public sealed class ExternalUsageRecord : EntityBase
         long? inputTokens = null,
         long? outputTokens = null,
         long? cachedInputTokens = null,
+        long? cacheWriteTokens = null,
         long? reasoningTokens = null,
         long? totalTokens = null,
         decimal? reportedCost = null,
@@ -132,6 +138,7 @@ public sealed class ExternalUsageRecord : EntityBase
         AgainstOptionalNegative(inputTokens);
         AgainstOptionalNegative(outputTokens);
         AgainstOptionalNegative(cachedInputTokens);
+        AgainstOptionalNegative(cacheWriteTokens);
         AgainstOptionalNegative(reasoningTokens);
         AgainstOptionalNegative(totalTokens);
         if (reportedCost is not null)
@@ -158,6 +165,7 @@ public sealed class ExternalUsageRecord : EntityBase
             InputTokens = inputTokens,
             OutputTokens = outputTokens,
             CachedInputTokens = cachedInputTokens,
+            CacheWriteTokens = cacheWriteTokens,
             ReasoningTokens = reasoningTokens,
             TotalTokens = totalTokens,
             ReportedCost = reportedCost,

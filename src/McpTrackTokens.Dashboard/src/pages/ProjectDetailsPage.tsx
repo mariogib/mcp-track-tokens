@@ -40,6 +40,13 @@ import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
 import { Breadcrumb, PopupForm, TextLink } from '../shared/adminUi';
 import {
+  buildDaySeries,
+  buildModelCalculatedSeries,
+  buildModelCostSeries,
+  resolveDisplayCost,
+} from '../utils/chartDetail';
+import { sessionDurationMs, timesheetEntryDurationMs } from '../utils/duration';
+import {
   currentUtcYearMonth,
   monthDateInputs,
   parseMonthParam,
@@ -56,7 +63,6 @@ import {
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
-  millisecondsToMinutesExact,
 } from '../utils/format';
 import { exportProjectDetailsWorkbook } from '../utils/projectDetailsExcelExport';
 
@@ -95,12 +101,17 @@ const TABS = [
   'Sessions',
   'Timesheet',
   'Usage',
-  'Cost',
-  'Token Costs',
+  'Costs',
   'Repositories',
   'Exports',
   'Settings',
 ] as const;
+
+/** Old Cost / Token Costs tab URLs map onto the combined Costs tab. */
+const TAB_ALIASES = {
+  cost: 'Costs',
+  'token-costs': 'Costs',
+} as const satisfies Readonly<Record<string, (typeof TABS)[number]>>;
 
 const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
 const SESSION_EDITORS = ['Cursor', 'VisualStudioCode', 'Other'] as const;
@@ -169,26 +180,6 @@ function draftFromSession(session: SessionDto): SessionDraft {
   };
 }
 
-function sessionDurationMs(session: SessionDto): number | null {
-  const started = new Date(session.startedAtUtc).getTime();
-  if (Number.isNaN(started)) return null;
-  const ended = session.endedAtUtc
-    ? new Date(session.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(ended) || ended < started) return null;
-  return ended - started;
-}
-
-function timesheetDurationMs(entry: TimesheetEntryDto): number | null {
-  const start = new Date(entry.startedAtUtc).getTime();
-  if (Number.isNaN(start)) return null;
-  const end = entry.endedAtUtc
-    ? new Date(entry.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(end) || end < start) return null;
-  return end - start;
-}
-
 type TimesheetDraft = {
   categoryId: string;
   startedAtLocal: string;
@@ -218,7 +209,7 @@ export function ProjectDetailsPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useTabSearchParam(TABS, 'Overview');
+  const [tab, setTab] = useTabSearchParam(TABS, 'Overview', 'tab', TAB_ALIASES);
   const rangePreset = parseRangePreset(searchParams.get('range'));
   const fromDate = searchParams.get('from') ?? '';
   const toDate = searchParams.get('to') ?? '';
@@ -403,50 +394,102 @@ export function ProjectDetailsPage() {
   const byDay = activity.data?.byDay ?? [];
   // Charts stay chronological (oldest → newest); grids use byDay as returned (newest first).
   const byDayChronological = [...byDay].sort((a, b) => a.day.localeCompare(b.day));
-  const daySeries = byDayChronological.map((row) => ({
-    day: formatDay(row.day),
-    prompts: row.promptCount,
-    activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentDurationMilliseconds: row.agentDurationMilliseconds,
-    agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
-    tokens: row.totalTokens ?? 0,
-  }));
-
   // When Cursor exports are Included/Free, reported totalAiCost is $0 — use rate-card
   // calculatedTokenCost so overview charts stay meaningful.
   const reportedTotalCost = cost.data?.totalAiCost ?? 0;
   const calculatedTotalCost = cost.data?.calculatedTokenCost ?? 0;
-  const displayTotalCost = reportedTotalCost > 0 ? reportedTotalCost : calculatedTotalCost;
-  const usingCalculatedCost = reportedTotalCost <= 0 && calculatedTotalCost > 0;
-
-  const tokenTotalForDays = byDayChronological.reduce(
-    (sum, row) => sum + (row.totalTokens ?? 0),
-    0,
+  const { displayTotalCost, usingCalculatedCost } = resolveDisplayCost(
+    reportedTotalCost,
+    calculatedTotalCost,
   );
-  const costByDay = byDayChronological.map((row) => {
-    const share =
-      tokenTotalForDays > 0
-        ? ((row.totalTokens ?? 0) / tokenTotalForDays) * displayTotalCost
-        : displayTotalCost / Math.max(byDayChronological.length, 1);
-    return {
-      day: formatDay(row.day),
-      cost: Number(share.toFixed(2)),
-    };
-  });
+  const chartDaySeries = buildDaySeries(byDayChronological, displayTotalCost);
+  const daySeries = chartDaySeries;
+  const costByDay = chartDaySeries;
+  const modelCostSeries = buildModelCostSeries(cost.data?.byModel ?? [], '');
+  const modelCalculatedSeries = buildModelCalculatedSeries(cost.data?.byModel ?? [], '');
 
-  const modelCostSeries = (cost.data?.byModel ?? [])
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.usageBasedCost + m.subscriptionAllocation,
-    }))
-    .filter((m) => m.cost > 0);
+  const combinedModelCostRows = (() => {
+    const byKey = new Map<
+      string,
+      {
+        model: string;
+        promptCount: number;
+        usageBasedCost: number;
+        subscriptionAllocation: number;
+        calculatedTokenCost: number;
+        rateSource: string;
+        inputTokens: number;
+        outputTokens: number;
+        cachedInputTokens: number;
+        cacheWriteTokens: number;
+        reasoningTokens: number;
+        totalTokens: number;
+        estimatedCost: number;
+        reportedCost: number;
+      }
+    >();
 
-  const modelCalculatedSeries = (cost.data?.byModel ?? [])
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.calculatedTokenCost ?? 0,
-    }))
-    .filter((m) => m.cost > 0);
+    const keyFor = (name: string) => name.trim().toLowerCase() || 'unknown';
+
+    for (const row of cost.data?.byModel ?? []) {
+      const model = row.name || 'Unknown';
+      byKey.set(keyFor(model), {
+        model,
+        promptCount: row.promptCount,
+        usageBasedCost: row.usageBasedCost,
+        subscriptionAllocation: row.subscriptionAllocation,
+        calculatedTokenCost: row.calculatedTokenCost ?? 0,
+        rateSource: '—',
+        inputTokens: 0,
+        outputTokens: 0,
+        cachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        estimatedCost: row.calculatedTokenCost ?? 0,
+        reportedCost: 0,
+      });
+    }
+
+    for (const row of tokenCost.data?.byModel ?? []) {
+      const model = row.model || 'Unknown';
+      const key = keyFor(model);
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.rateSource = row.rateSource;
+        existing.inputTokens = row.inputTokens;
+        existing.outputTokens = row.outputTokens;
+        existing.cachedInputTokens = row.cachedInputTokens;
+        existing.cacheWriteTokens = row.cacheWriteTokens ?? 0;
+        existing.reasoningTokens = row.reasoningTokens;
+        existing.totalTokens = row.totalTokens;
+        existing.estimatedCost = row.estimatedCost;
+        existing.reportedCost = row.reportedCost;
+        if (!existing.calculatedTokenCost) {
+          existing.calculatedTokenCost = row.estimatedCost;
+        }
+      } else {
+        byKey.set(key, {
+          model,
+          promptCount: 0,
+          usageBasedCost: 0,
+          subscriptionAllocation: 0,
+          calculatedTokenCost: row.estimatedCost,
+          rateSource: row.rateSource,
+          inputTokens: row.inputTokens,
+          outputTokens: row.outputTokens,
+          cachedInputTokens: row.cachedInputTokens,
+          cacheWriteTokens: row.cacheWriteTokens ?? 0,
+          reasoningTokens: row.reasoningTokens,
+          totalTokens: row.totalTokens,
+          estimatedCost: row.estimatedCost,
+          reportedCost: row.reportedCost,
+        });
+      }
+    }
+
+    return [...byKey.values()].sort((a, b) => a.model.localeCompare(b.model));
+  })();
 
   const branchSeries = (activity.data?.byBranch ?? []).map((b) => ({
     name: b.name || '(none)',
@@ -1677,7 +1720,7 @@ export function ProjectDetailsPage() {
               categoryName: entry.categoryName ?? '',
               startedAtUtc: formatDateTime(entry.startedAtUtc),
               endedAtUtc: formatDateTime(entry.endedAtUtc),
-              durationMilliseconds: timesheetDurationMs(entry) ?? '',
+              durationMilliseconds: timesheetEntryDurationMs(entry) ?? '',
               notes: entry.notes ?? '',
               status: entry.isOpen ? 'Open' : 'Closed',
             })}
@@ -1697,7 +1740,7 @@ export function ProjectDetailsPage() {
                 </thead>
                 <tbody>
                   {rows.map((entry) => {
-                    const duration = timesheetDurationMs(entry);
+                    const duration = timesheetEntryDurationMs(entry);
                     return (
                       <tr key={entry.id}>
                         <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
@@ -1761,7 +1804,7 @@ export function ProjectDetailsPage() {
             )}
             renderGrid={(rows) =>
               rows.map((entry) => {
-                const duration = timesheetDurationMs(entry);
+                const duration = timesheetEntryDurationMs(entry);
                 return (
                 <article key={entry.id} className="analysis-browse-tile">
                   <strong>
@@ -1820,34 +1863,154 @@ export function ProjectDetailsPage() {
       )}
 
       {tab === 'Usage' && (
-        <section className="page-section">
+        <section className="page-section stack">
           {usage.isLoading ? (
             <LoadingState />
           ) : usage.error ? (
             <ErrorState message={usage.error instanceof Error ? usage.error.message : 'Failed'} />
           ) : (
-            <div className="metric-grid">
-              <MetricCard label="Total tokens" value={formatNumber(usage.data?.totalTokens)} />
-              <MetricCard label="Input tokens" value={formatNumber(usage.data?.inputTokens)} />
-              <MetricCard label="Output tokens" value={formatNumber(usage.data?.outputTokens)} />
-              <MetricCard label="Cached input" value={formatNumber(usage.data?.cachedInputTokens)} />
-              <MetricCard label="Reasoning" value={formatNumber(usage.data?.reasoningTokens)} />
-              <MetricCard
-                label="Reported cost"
-                value={formatCurrency(usage.data?.reportedCost, usage.data?.currency)}
+            <>
+              <div className="metric-grid">
+                <MetricCard label="Total tokens" value={formatNumber(usage.data?.totalTokens)} />
+                <MetricCard label="Input tokens" value={formatNumber(usage.data?.inputTokens)} />
+                <MetricCard label="Output tokens" value={formatNumber(usage.data?.outputTokens)} />
+                <MetricCard label="Cached input" value={formatNumber(usage.data?.cachedInputTokens)} />
+                <MetricCard
+                  label="Cache write"
+                  value={formatNumber(usage.data?.cacheWriteTokens ?? 0)}
+                />
+                <MetricCard label="Reasoning" value={formatNumber(usage.data?.reasoningTokens)} />
+                <MetricCard label="Requests" value={formatNumber(usage.data?.requestCount)} />
+                <MetricCard
+                  label="Total calculated cost"
+                  value={formatCurrency(
+                    usage.data?.calculatedTokenCost ?? 0,
+                    usage.data?.currency ?? detail.currency,
+                  )}
+                  hint="Settings rate card × attributed tokens"
+                />
+              </div>
+              <AnalysisDetailBrowse
+                embedded
+                heading="Usage entries"
+                searchPlaceholder="Search models..."
+                rows={usage.data?.items ?? []}
+                getSearchText={(row) =>
+                  [
+                    row.model,
+                    row.timestampUtc,
+                    row.inputTokens,
+                    row.outputTokens,
+                    row.cachedInputTokens,
+                    row.cacheWriteTokens,
+                    row.reasoningTokens,
+                    row.totalTokens,
+                    row.calculatedTokenCost,
+                  ]
+                    .map(String)
+                    .join(' ')
+                }
+                exportFilename={`project-${detail.id}-usage-entries.xlsx`}
+                exportTitle={`${detail.name} · Usage entries`}
+                exportColumns={[
+                  { header: 'When', key: 'timestampUtc' },
+                  { header: 'Model', key: 'model' },
+                  { header: 'Input', key: 'inputTokens' },
+                  { header: 'Output', key: 'outputTokens' },
+                  { header: 'Cached', key: 'cachedInputTokens' },
+                  { header: 'Cache write', key: 'cacheWriteTokens' },
+                  { header: 'Reasoning', key: 'reasoningTokens' },
+                  { header: 'Total tokens', key: 'totalTokens' },
+                  { header: 'Calculated cost', key: 'calculatedTokenCost' },
+                ]}
+                toExportRow={(row) => ({
+                  timestampUtc: formatDateTime(row.timestampUtc),
+                  model: row.model ?? '',
+                  inputTokens: row.inputTokens,
+                  outputTokens: row.outputTokens,
+                  cachedInputTokens: row.cachedInputTokens,
+                  cacheWriteTokens: row.cacheWriteTokens ?? 0,
+                  reasoningTokens: row.reasoningTokens,
+                  totalTokens: row.totalTokens,
+                  calculatedTokenCost: row.calculatedTokenCost,
+                })}
+                emptySourceMessage="No attributed usage entries in this range."
+                renderTable={(rows) => {
+                  const currency = usage.data?.currency ?? detail.currency;
+                  return (
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Model</th>
+                          <th>Input</th>
+                          <th>Output</th>
+                          <th>Cached</th>
+                          <th>Cache write</th>
+                          <th>Reasoning</th>
+                          <th>Total tokens</th>
+                          <th>Calculated cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.usageRecordId}>
+                            <td>{formatDateTime(row.timestampUtc)}</td>
+                            <td>{row.model ?? '—'}</td>
+                            <td>{formatNumber(row.inputTokens)}</td>
+                            <td>{formatNumber(row.outputTokens)}</td>
+                            <td>{formatNumber(row.cachedInputTokens)}</td>
+                            <td>{formatNumber(row.cacheWriteTokens ?? 0)}</td>
+                            <td>{formatNumber(row.reasoningTokens)}</td>
+                            <td>{formatNumber(row.totalTokens)}</td>
+                            <td>{formatCurrency(row.calculatedTokenCost, currency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                }}
+                renderGrid={(rows) => {
+                  const currency = usage.data?.currency ?? detail.currency;
+                  return rows.map((row) => (
+                    <article key={row.usageRecordId} className="analysis-browse-tile">
+                      <strong>{row.model ?? 'Unknown model'}</strong>
+                      <span>{formatDateTime(row.timestampUtc)}</span>
+                      <span>
+                        In {formatNumber(row.inputTokens)} · Out {formatNumber(row.outputTokens)}
+                      </span>
+                      <span>
+                        Cached {formatNumber(row.cachedInputTokens)} · Write{' '}
+                        {formatNumber(row.cacheWriteTokens ?? 0)} · Reasoning{' '}
+                        {formatNumber(row.reasoningTokens)}
+                      </span>
+                      <span>Total {formatNumber(row.totalTokens)}</span>
+                      <span>{formatCurrency(row.calculatedTokenCost, currency)}</span>
+                    </article>
+                  ));
+                }}
               />
-              <MetricCard label="Requests" value={formatNumber(usage.data?.requestCount)} />
-            </div>
+            </>
           )}
         </section>
       )}
 
-      {tab === 'Cost' && (
-        <section className="page-section">
-          {cost.isLoading ? (
-            <LoadingState />
-          ) : cost.error ? (
-            <ErrorState message={cost.error instanceof Error ? cost.error.message : 'Failed'} />
+      {tab === 'Costs' && (
+        <section className="page-section stack">
+          {cost.isLoading || tokenCost.isLoading ? (
+            <LoadingState label="Loading costs…" />
+          ) : cost.error || tokenCost.error ? (
+            <ErrorState
+              message={
+                (cost.error instanceof Error
+                  ? cost.error.message
+                  : null) ??
+                (tokenCost.error instanceof Error
+                  ? tokenCost.error.message
+                  : null) ??
+                'Failed to load costs'
+              }
+            />
           ) : (
             <>
               <div className="metric-grid">
@@ -1876,115 +2039,18 @@ export function ProjectDetailsPage() {
                   value={formatCurrency(cost.data?.calculatedTokenCost ?? 0, cost.data?.currency)}
                   hint="Settings rate card × attributed tokens"
                 />
-              </div>
-              <AnalysisDetailBrowse
-                embedded
-                heading="Cost by model"
-                searchPlaceholder="Search models..."
-                rows={cost.data?.byModel ?? []}
-                getSearchText={(m) =>
-                  [m.name, m.promptCount, m.usageBasedCost, m.calculatedTokenCost]
-                    .map(String)
-                    .join(' ')
-                }
-                exportFilename={`project-${detail.id}-cost-by-model.xlsx`}
-                exportTitle={`${detail.name} · Cost by model`}
-                exportColumns={[
-                  { header: 'Model', key: 'name' },
-                  { header: 'Usage cost', key: 'usageBasedCost' },
-                  { header: 'Subscription', key: 'subscriptionAllocation' },
-                  { header: 'Token cost', key: 'calculatedTokenCost' },
-                  { header: 'Prompts', key: 'promptCount' },
-                ]}
-                toExportRow={(m) => ({
-                  name: m.name,
-                  usageBasedCost: m.usageBasedCost,
-                  subscriptionAllocation: m.subscriptionAllocation,
-                  calculatedTokenCost: m.calculatedTokenCost ?? 0,
-                  promptCount: m.promptCount,
-                })}
-                emptySourceMessage="No model cost breakdown in this range."
-                renderTable={(rows) => (
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Usage cost</th>
-                        <th>Subscription</th>
-                        <th>Token cost</th>
-                        <th>Prompts</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((m) => (
-                        <tr key={m.name}>
-                          <td>{m.name}</td>
-                          <td>{formatCurrency(m.usageBasedCost, cost.data?.currency)}</td>
-                          <td>
-                            {formatCurrency(m.subscriptionAllocation, cost.data?.currency)}
-                          </td>
-                          <td>
-                            {formatCurrency(m.calculatedTokenCost ?? 0, cost.data?.currency)}
-                          </td>
-                          <td>{formatNumber(m.promptCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                renderGrid={(rows) =>
-                  rows.map((m) => (
-                    <article key={m.name} className="analysis-browse-tile">
-                      <strong>{m.name}</strong>
-                      <span>
-                        Usage {formatCurrency(m.usageBasedCost, cost.data?.currency)}
-                      </span>
-                      <span>
-                        Token{' '}
-                        {formatCurrency(m.calculatedTokenCost ?? 0, cost.data?.currency)}
-                      </span>
-                      <span>Prompts {formatNumber(m.promptCount)}</span>
-                    </article>
-                  ))
-                }
-              />
-            </>
-          )}
-        </section>
-      )}
-
-      {tab === 'Token Costs' && (
-        <section className="page-section">
-          {tokenCost.isLoading ? (
-            <LoadingState label="Calculating token costs…" />
-          ) : tokenCost.error ? (
-            <ErrorState
-              message={
-                tokenCost.error instanceof Error
-                  ? tokenCost.error.message
-                  : 'Failed to load token costs'
-              }
-            />
-          ) : (
-            <>
-              <p className="muted" style={{ marginBottom: '1rem' }}>
-                Estimated from attributed tokens using the Cursor rate card in Settings. Cached
-                tokens use the cache-read rate. Reported cost is the imported dollar amount when
-                present.
-              </p>
-              <div className="metric-grid">
                 <MetricCard
                   label="Estimated cost"
                   value={formatCurrency(
                     tokenCost.data?.estimatedCost,
-                    tokenCost.data?.currency,
+                    tokenCost.data?.currency ?? cost.data?.currency,
                   )}
                 />
                 <MetricCard
                   label="Reported cost"
                   value={formatCurrency(
                     tokenCost.data?.reportedCost,
-                    tokenCost.data?.currency,
+                    tokenCost.data?.currency ?? cost.data?.currency,
                   )}
                 />
                 <MetricCard
@@ -2004,6 +2070,10 @@ export function ProjectDetailsPage() {
                   value={formatNumber(tokenCost.data?.cachedInputTokens)}
                 />
                 <MetricCard
+                  label="Cache write"
+                  value={formatNumber(tokenCost.data?.cacheWriteTokens ?? 0)}
+                />
+                <MetricCard
                   label="Reasoning"
                   value={formatNumber(tokenCost.data?.reasoningTokens)}
                 />
@@ -2012,89 +2082,120 @@ export function ProjectDetailsPage() {
                   value={formatNumber(tokenCost.data?.rateCardModelCount)}
                 />
               </div>
+              <p className="muted">
+                Estimated from attributed tokens using the Cursor rate card in Settings. Cached
+                input uses the cache-read rate; cache-write tokens use the cache-write rate.
+                Reported cost is the imported dollar amount when present.
+              </p>
               <AnalysisDetailBrowse
                 embedded
-                heading="Token cost by model"
+                heading="Cost by model"
                 searchPlaceholder="Search models..."
-                rows={tokenCost.data?.byModel ?? []}
+                rows={combinedModelCostRows}
                 getSearchText={(row) =>
-                  [row.model, row.rateSource, row.totalTokens, row.estimatedCost]
+                  [
+                    row.model,
+                    row.rateSource,
+                    row.promptCount,
+                    row.totalTokens,
+                    row.usageBasedCost,
+                    row.estimatedCost,
+                    row.reportedCost,
+                  ]
                     .map(String)
                     .join(' ')
                 }
-                exportFilename={`project-${detail.id}-token-costs.xlsx`}
-                exportTitle={`${detail.name} · Token costs`}
+                exportFilename={`project-${detail.id}-costs-by-model.xlsx`}
+                exportTitle={`${detail.name} · Costs by model`}
                 exportColumns={[
                   { header: 'Model', key: 'model' },
                   { header: 'Rate used', key: 'rateSource' },
+                  { header: 'Prompts', key: 'promptCount' },
                   { header: 'Input', key: 'inputTokens' },
                   { header: 'Output', key: 'outputTokens' },
                   { header: 'Cached', key: 'cachedInputTokens' },
+                  { header: 'Cache write', key: 'cacheWriteTokens' },
                   { header: 'Reasoning', key: 'reasoningTokens' },
                   { header: 'Total tokens', key: 'totalTokens' },
+                  { header: 'Usage cost', key: 'usageBasedCost' },
+                  { header: 'Subscription', key: 'subscriptionAllocation' },
                   { header: 'Estimated', key: 'estimatedCost' },
                   { header: 'Reported', key: 'reportedCost' },
                 ]}
                 toExportRow={(row) => ({
                   model: row.model,
-                  rateSource: row.rateSource,
+                  rateSource: row.rateSource === '—' ? '' : row.rateSource,
+                  promptCount: row.promptCount,
                   inputTokens: row.inputTokens,
                   outputTokens: row.outputTokens,
                   cachedInputTokens: row.cachedInputTokens,
+                  cacheWriteTokens: row.cacheWriteTokens,
                   reasoningTokens: row.reasoningTokens,
                   totalTokens: row.totalTokens,
+                  usageBasedCost: row.usageBasedCost,
+                  subscriptionAllocation: row.subscriptionAllocation,
                   estimatedCost: row.estimatedCost,
                   reportedCost: row.reportedCost,
                 })}
-                emptySourceMessage="No attributed usage in this range to price."
-                renderTable={(rows) => (
-                  <table className="data">
-                    <thead>
-                      <tr>
-                        <th>Model</th>
-                        <th>Rate used</th>
-                        <th>Input</th>
-                        <th>Output</th>
-                        <th>Cached</th>
-                        <th>Reasoning</th>
-                        <th>Total tokens</th>
-                        <th>Estimated</th>
-                        <th>Reported</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row) => (
-                        <tr key={row.model}>
-                          <td>{row.model}</td>
-                          <td className="mono">{row.rateSource}</td>
-                          <td>{formatNumber(row.inputTokens)}</td>
-                          <td>{formatNumber(row.outputTokens)}</td>
-                          <td>{formatNumber(row.cachedInputTokens)}</td>
-                          <td>{formatNumber(row.reasoningTokens)}</td>
-                          <td>{formatNumber(row.totalTokens)}</td>
-                          <td>
-                            {formatCurrency(row.estimatedCost, tokenCost.data?.currency)}
-                          </td>
-                          <td>
-                            {formatCurrency(row.reportedCost, tokenCost.data?.currency)}
-                          </td>
+                emptySourceMessage="No model cost breakdown in this range."
+                renderTable={(rows) => {
+                  const currency =
+                    cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency;
+                  return (
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>Model</th>
+                          <th>Rate used</th>
+                          <th>Prompts</th>
+                          <th>Input</th>
+                          <th>Output</th>
+                          <th>Cached</th>
+                          <th>Cache write</th>
+                          <th>Reasoning</th>
+                          <th>Total tokens</th>
+                          <th>Usage cost</th>
+                          <th>Subscription</th>
+                          <th>Estimated</th>
+                          <th>Reported</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-                renderGrid={(rows) =>
-                  rows.map((row) => (
+                      </thead>
+                      <tbody>
+                        {rows.map((row) => (
+                          <tr key={row.model}>
+                            <td>{row.model}</td>
+                            <td className="mono">{row.rateSource}</td>
+                            <td>{formatNumber(row.promptCount)}</td>
+                            <td>{formatNumber(row.inputTokens)}</td>
+                            <td>{formatNumber(row.outputTokens)}</td>
+                            <td>{formatNumber(row.cachedInputTokens)}</td>
+                            <td>{formatNumber(row.cacheWriteTokens)}</td>
+                            <td>{formatNumber(row.reasoningTokens)}</td>
+                            <td>{formatNumber(row.totalTokens)}</td>
+                            <td>{formatCurrency(row.usageBasedCost, currency)}</td>
+                            <td>{formatCurrency(row.subscriptionAllocation, currency)}</td>
+                            <td>{formatCurrency(row.estimatedCost, currency)}</td>
+                            <td>{formatCurrency(row.reportedCost, currency)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                }}
+                renderGrid={(rows) => {
+                  const currency =
+                    cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency;
+                  return rows.map((row) => (
                     <article key={row.model} className="analysis-browse-tile">
                       <strong>{row.model}</strong>
                       <span className="mono">{row.rateSource}</span>
+                      <span>Prompts {formatNumber(row.promptCount)}</span>
                       <span>Tokens {formatNumber(row.totalTokens)}</span>
-                      <span>
-                        Est. {formatCurrency(row.estimatedCost, tokenCost.data?.currency)}
-                      </span>
+                      <span>Usage {formatCurrency(row.usageBasedCost, currency)}</span>
+                      <span>Est. {formatCurrency(row.estimatedCost, currency)}</span>
                     </article>
-                  ))
-                }
+                  ));
+                }}
               />
               <p className="muted" style={{ marginTop: '0.75rem' }}>
                 <TextLink to="/settings?tab=cursor-token-costs">

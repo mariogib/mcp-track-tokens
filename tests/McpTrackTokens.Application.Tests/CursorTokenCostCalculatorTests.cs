@@ -27,13 +27,42 @@ public sealed class CursorTokenCostCalculatorTests
             InputPerMillion = 3m,
             OutputPerMillion = 15m,
             CacheReadPerMillion = 0.3m,
+            CacheWritePerMillion = 1.25m,
             ReasoningPerMillion = 15m
         };
 
         var cost = CursorTokenCostCalculator.Estimate(usage, 100m, rate);
 
-        // 1*3 + 0.5*15 + 2*0.3 + 0.1*15 = 3 + 7.5 + 0.6 + 1.5 = 12.6
+        // 1*3 + 0.5*15 + 2*0.3 + 0.1*15 = 3 + 7.5 + 0.6 + 1.5 = 12.6 (no cache write)
         cost.Should().Be(12.6m);
+    }
+
+    [Fact]
+    public void Estimate_prices_cache_write_separately_from_input()
+    {
+        var usage = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            DateTimeOffset.Parse("2026-07-18T00:00:00Z"),
+            model: "claude-4.5-sonnet",
+            inputTokens: 1_000_000,
+            cacheWriteTokens: 2_000_000,
+            cachedInputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 3_000_000);
+
+        var rate = new CursorModelTokenRate
+        {
+            Model = "claude-4.5-sonnet",
+            InputPerMillion = 3m,
+            OutputPerMillion = 15m,
+            CacheReadPerMillion = 0.3m,
+            CacheWritePerMillion = 1.25m
+        };
+
+        var cost = CursorTokenCostCalculator.Estimate(usage, 100m, rate);
+
+        // 1*3 + 2*1.25 = 3 + 2.5 = 5.5
+        cost.Should().Be(5.5m);
     }
 
     [Fact]

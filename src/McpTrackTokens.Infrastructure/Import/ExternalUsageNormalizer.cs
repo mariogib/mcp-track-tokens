@@ -28,12 +28,13 @@ public sealed class ExternalUsageNormalizer : IExternalUsageNormalizer
             cancellationToken.ThrowIfCancellationRequested();
 
             var provider = ParseProvider(record.Provider);
-            var totalTokens = record.TotalTokens;
-            if (totalTokens is null && (record.InputTokens is not null || record.OutputTokens is not null))
-            {
-                totalTokens = (record.InputTokens ?? 0) + (record.OutputTokens ?? 0)
-                    + (record.CachedInputTokens ?? 0) + (record.ReasoningTokens ?? 0);
-            }
+            var totalTokens = UsageTokenTotals.DeriveTotalIfMissing(
+                record.TotalTokens,
+                record.InputTokens,
+                record.OutputTokens,
+                record.CachedInputTokens,
+                record.CacheWriteTokens,
+                record.ReasoningTokens);
 
             result.Add(ExternalUsageRecord.Create(
                 source,
@@ -44,17 +45,18 @@ public sealed class ExternalUsageNormalizer : IExternalUsageNormalizer
                 record.UserIdentifier,
                 record.Model,
                 provider,
-                record.InputTokens,
-                record.OutputTokens,
-                record.CachedInputTokens,
-                record.ReasoningTokens,
-                totalTokens,
-                record.ReportedCost ?? 0m,
-                record.Currency,
-                record.RequestCount,
-                record.MetadataJson,
-                importBatchId,
-                importedAt));
+                inputTokens: record.InputTokens,
+                outputTokens: record.OutputTokens,
+                cachedInputTokens: record.CachedInputTokens,
+                cacheWriteTokens: record.CacheWriteTokens,
+                reasoningTokens: record.ReasoningTokens,
+                totalTokens: totalTokens,
+                reportedCost: record.ReportedCost ?? 0m,
+                currency: record.Currency,
+                requestCount: record.RequestCount,
+                metadataJson: record.MetadataJson,
+                importBatchId: importBatchId,
+                importedAtUtc: importedAt));
         }
 
         return Task.FromResult<IReadOnlyList<ExternalUsageRecord>>(result);

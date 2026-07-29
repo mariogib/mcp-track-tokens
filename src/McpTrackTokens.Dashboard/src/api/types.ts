@@ -75,17 +75,33 @@ export interface ActivitySummaryDto {
   toUtc?: string | null;
 }
 
+export interface ProjectUsageEntryDto {
+  usageRecordId: string;
+  timestampUtc: string;
+  model?: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens?: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  calculatedTokenCost: number;
+}
+
 export interface UsageSummaryDto {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   requestCount: number;
   reportedCost: number;
+  calculatedTokenCost?: number;
   currency: string;
   fromUtc?: string | null;
   toUtc?: string | null;
+  items?: ProjectUsageEntryDto[];
 }
 
 export interface CostSummaryDto {
@@ -188,6 +204,7 @@ export interface TokenCostModelRow {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;
@@ -195,6 +212,7 @@ export interface TokenCostModelRow {
   inputPerMillion: number;
   outputPerMillion: number;
   cacheReadPerMillion: number;
+  cacheWritePerMillion?: number;
   reasoningPerMillion?: number | null;
 }
 
@@ -207,6 +225,7 @@ export interface ProjectTokenCostEstimate {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;
@@ -283,6 +302,7 @@ export interface ImportedUsageItemDto {
   inputTokens?: number | null;
   outputTokens?: number | null;
   cachedInputTokens?: number | null;
+  cacheWriteTokens?: number | null;
   totalTokens: number;
   reportedCost: number;
   calculatedTokenCost?: number;
@@ -391,6 +411,7 @@ export interface ClientTokenCostEstimate {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
+  cacheWriteTokens?: number;
   reasoningTokens: number;
   totalTokens: number;
   estimatedCost: number;

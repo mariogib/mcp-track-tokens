@@ -166,18 +166,7 @@ public sealed class AttributionEngine : IAttributionEngine
     /// Resolves total tokens for eligibility and allocation (prefers reported total, else sum of parts).
     /// </summary>
     internal static long ResolveTotalTokens(ExternalUsageRecord usage)
-    {
-        if (usage.TotalTokens is > 0)
-        {
-            return usage.TotalTokens.Value;
-        }
-
-        var derived = (usage.InputTokens ?? 0)
-            + (usage.OutputTokens ?? 0)
-            + (usage.CachedInputTokens ?? 0)
-            + (usage.ReasoningTokens ?? 0);
-        return usage.TotalTokens ?? derived;
-    }
+        => CursorTokenCostCalculator.ResolveTotalTokens(usage);
 
     private static UsageAttribution CreateSingle(
         ExternalUsageRecord usage,

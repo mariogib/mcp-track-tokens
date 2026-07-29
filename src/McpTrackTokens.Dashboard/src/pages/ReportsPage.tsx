@@ -27,13 +27,10 @@ import {
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
-  lastDaysRange,
-  monthBoundsUtc,
 } from '../utils/format';
+import { resolveRange, type RangePreset } from '../utils/dateRange';
 
 const SECTIONS = ['Clients', 'Projects'] as const;
-
-type RangePreset = '7d' | '30d' | '90d' | 'month';
 
 type ClientReportId =
   | 'client-billing'
@@ -99,22 +96,6 @@ const PROJECT_REPORTS: { id: ProjectReportId; title: string; description: string
     description: 'Compare prompt and agent activity across editors.',
   },
 ];
-
-function resolveRange(preset: RangePreset): { fromUtc: string; toUtc: string; label: string } {
-  const now = new Date();
-  if (preset === 'month') {
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
-    const bounds = monthBoundsUtc(year, month);
-    return {
-      ...bounds,
-      label: `${year}-${String(month).padStart(2, '0')}`,
-    };
-  }
-
-  const days = preset === '7d' ? 7 : preset === '90d' ? 90 : 30;
-  return { ...lastDaysRange(days), label: `Last ${days} days` };
-}
 
 export function ReportsPage() {
   const [section, setSection] = useTabSearchParam(SECTIONS, 'Clients');
@@ -572,6 +553,7 @@ function ClientTokenCostReportView({
         <MetricCard label="Input tokens" value={formatNumber(data.inputTokens)} />
         <MetricCard label="Output tokens" value={formatNumber(data.outputTokens)} />
         <MetricCard label="Cached tokens" value={formatNumber(data.cachedInputTokens)} />
+        <MetricCard label="Cache write" value={formatNumber(data.cacheWriteTokens ?? 0)} />
         <MetricCard label="Projects" value={formatNumber(data.projectCount)} />
       </div>
       {data.projects.length === 0 ? (
@@ -1021,6 +1003,7 @@ function ProjectTokenCostReportView({
         <MetricCard label="Input tokens" value={formatNumber(data.inputTokens)} />
         <MetricCard label="Output tokens" value={formatNumber(data.outputTokens)} />
         <MetricCard label="Cached tokens" value={formatNumber(data.cachedInputTokens)} />
+        <MetricCard label="Cache write" value={formatNumber(data.cacheWriteTokens ?? 0)} />
       </div>
       {data.byModel.length > 0 ? (
         <>

@@ -93,6 +93,8 @@ public sealed record NormalizedUsageRecordDto
 
     public long? CachedInputTokens { get; init; }
 
+    public long? CacheWriteTokens { get; init; }
+
     public long? ReasoningTokens { get; init; }
 
     public long? TotalTokens { get; init; }

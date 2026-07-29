@@ -14,6 +14,7 @@ function resolveTab<T extends string>(
   tabs: readonly T[],
   raw: string | null,
   defaultTab: T,
+  aliases?: Readonly<Record<string, T>>,
 ): T {
   if (!raw) {
     return defaultTab;
@@ -26,7 +27,16 @@ function resolveTab<T extends string>(
 
   const slug = slugifyTab(raw);
   const bySlug = tabs.find((tab) => slugifyTab(tab) === slug);
-  return bySlug ?? defaultTab;
+  if (bySlug) {
+    return bySlug;
+  }
+
+  const aliased = aliases?.[slug] ?? aliases?.[raw];
+  if (aliased && tabs.includes(aliased)) {
+    return aliased;
+  }
+
+  return defaultTab;
 }
 
 /**
@@ -36,12 +46,13 @@ export function useTabSearchParam<T extends string>(
   tabs: readonly T[],
   defaultTab: T,
   paramName = 'tab',
+  aliases?: Readonly<Record<string, T>>,
 ): [T, (next: T) => void] {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const tab = useMemo(
-    () => resolveTab(tabs, searchParams.get(paramName), defaultTab),
-    [tabs, searchParams, paramName, defaultTab],
+    () => resolveTab(tabs, searchParams.get(paramName), defaultTab, aliases),
+    [tabs, searchParams, paramName, defaultTab, aliases],
   );
 
   const setTab = useCallback(

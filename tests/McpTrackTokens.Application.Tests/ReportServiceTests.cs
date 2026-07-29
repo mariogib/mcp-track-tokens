@@ -243,6 +243,18 @@ public sealed class ReportServiceTests
         summary.Currency.Should().Be("USD");
         summary.FromUtc.Should().Be(from);
         summary.ToUtc.Should().Be(to);
+        summary.Items.Should().HaveCount(2);
+        summary.Items[0].UsageRecordId.Should().Be(usagePartial.Id);
+        summary.Items[0].InputTokens.Should().Be(400);
+        summary.Items[0].OutputTokens.Should().Be(50);
+        summary.Items[0].CachedInputTokens.Should().Be(100);
+        summary.Items[0].ReasoningTokens.Should().Be(20);
+        summary.Items[0].TotalTokens.Should().Be(570);
+        summary.Items[1].UsageRecordId.Should().Be(usageFull.Id);
+        summary.Items[1].InputTokens.Should().Be(1000);
+        summary.Items[1].CachedInputTokens.Should().Be(400);
+        summary.Items[1].ReasoningTokens.Should().Be(50);
+        summary.CalculatedTokenCost.Should().Be(summary.Items.Sum(i => i.CalculatedTokenCost));
     }
 
     [Fact]

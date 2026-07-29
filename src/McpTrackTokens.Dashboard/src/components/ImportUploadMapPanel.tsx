@@ -16,6 +16,8 @@ const TARGET_FIELDS = [
   'OutputTokens',
   'TotalTokens',
   'CachedInputTokens',
+  'CacheWriteTokens',
+  'ReasoningTokens',
   'ReportedCost',
   'Currency',
   'ExternalRequestId',

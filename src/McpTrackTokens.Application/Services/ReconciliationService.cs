@@ -39,9 +39,7 @@ public sealed class ReconciliationService : IReconciliationService
             .ListAsync(request.FromUtc, request.ToUtc, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        var rates = _options.CursorTokenRates.Count > 0
-            ? _options.CursorTokenRates
-            : CursorTokenCostCalculator.CreateDefaultRates();
+        var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
         var attributions = new List<UsageAttributionRow>();
         var allocated = 0;
@@ -51,7 +49,7 @@ public sealed class ReconciliationService : IReconciliationService
         foreach (var record in records)
         {
             // Only reconcile rows with Total Tokens > 0 (Included/Free cost may be 0).
-            if (AttributionEngine.ResolveTotalTokens(record) <= 0)
+            if (CursorTokenCostCalculator.ResolveTotalTokens(record) <= 0)
             {
                 skipped++;
                 continue;
@@ -81,7 +79,7 @@ public sealed class ReconciliationService : IReconciliationService
                     AttributionConfidence.Unallocated,
                     0m,
                     allocatedCost: 0m,
-                    allocatedTotalTokens: AttributionEngine.ResolveTotalTokens(record),
+                    allocatedTotalTokens: CursorTokenCostCalculator.ResolveTotalTokens(record),
                     reason: "Low-confidence attributions excluded by reconciliation settings."));
             }
 
@@ -105,7 +103,7 @@ public sealed class ReconciliationService : IReconciliationService
             }
         }
 
-        var eligible = records.Count(r => AttributionEngine.ResolveTotalTokens(r) > 0);
+        var eligible = records.Count(r => CursorTokenCostCalculator.ResolveTotalTokens(r) > 0);
         var stillUnallocated = attributions
             .Where(a =>
                 a.ProjectId is null ||
@@ -132,13 +130,9 @@ public sealed class ReconciliationService : IReconciliationService
         ExternalUsageRecord record,
         IReadOnlyList<CursorModelTokenRate> rates)
     {
-        var rate = CursorTokenCostCalculator.ResolveRate(rates, record.Model);
-        var percentage = attribution.AllocationPercentage > 0m
-            ? attribution.AllocationPercentage
-            : 100m;
-        var calculated = rate is null
-            ? 0m
-            : CursorTokenCostCalculator.Estimate(record, percentage, rate);
+        var percentage = CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
+            attribution.AllocationPercentage);
+        var calculated = CursorTokenCostCalculator.EstimateOrZero(record, percentage, rates);
 
         return new()
         {

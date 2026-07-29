@@ -17,6 +17,12 @@ import { StatusBadge } from '../components/StatusBadge';
 import { overviewChartPath, type OverviewChartKey } from '../data/overviewCharts';
 import { Page } from '../layout/AppLayout';
 import {
+  buildDaySeries,
+  buildModelCalculatedSeries,
+  buildModelCostSeries,
+  resolveDisplayCost,
+} from '../utils/chartDetail';
+import {
   currentUtcYearMonth,
   parseMonthParam,
   parseRangePreset,
@@ -28,12 +34,10 @@ import {
 import {
   formatCurrency,
   formatDateTime,
-  formatDay,
   formatDurationMs,
   formatDurationSeconds,
   formatNumber,
   lastDaysRange,
-  millisecondsToMinutesExact,
 } from '../utils/format';
 
 export function OverviewPage() {
@@ -139,46 +143,16 @@ export function OverviewPage() {
 
   const reportedTotalCost = aggregatedCost.totalAiCost;
   const calculatedTotalCost = aggregatedCost.calculatedTokenCost;
-  const displayTotalCost = reportedTotalCost > 0 ? reportedTotalCost : calculatedTotalCost;
-  const usingCalculatedCost = reportedTotalCost <= 0 && calculatedTotalCost > 0;
-
-  const daySeries = byDayChronological.map((row) => ({
-    day: formatDay(row.day),
-    prompts: row.promptCount,
-    activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-    agentDurationMilliseconds: row.agentDurationMilliseconds,
-    agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
-    tokens: row.totalTokens ?? 0,
-  }));
-
-  const tokenTotalForDays = byDayChronological.reduce(
-    (sum, row) => sum + (row.totalTokens ?? 0),
-    0,
+  const { displayTotalCost, usingCalculatedCost } = resolveDisplayCost(
+    reportedTotalCost,
+    calculatedTotalCost,
   );
-  const costByDay = byDayChronological.map((row) => {
-    const share =
-      tokenTotalForDays > 0
-        ? ((row.totalTokens ?? 0) / tokenTotalForDays) * displayTotalCost
-        : displayTotalCost / Math.max(byDayChronological.length, 1);
-    return {
-      day: formatDay(row.day),
-      cost: Number(share.toFixed(2)),
-    };
-  });
 
-  const modelCostSeries = aggregatedCost.byModel
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.usageBasedCost + m.subscriptionAllocation,
-    }))
-    .filter((m) => m.cost > 0);
-
-  const modelCalculatedSeries = aggregatedCost.byModel
-    .map((m) => ({
-      name: m.name || 'Unknown',
-      cost: m.calculatedTokenCost ?? 0,
-    }))
-    .filter((m) => m.cost > 0);
+  const chartDaySeries = buildDaySeries(byDayChronological, displayTotalCost);
+  const daySeries = chartDaySeries;
+  const costByDay = chartDaySeries;
+  const modelCostSeries = buildModelCostSeries(aggregatedCost.byModel, '');
+  const modelCalculatedSeries = buildModelCalculatedSeries(aggregatedCost.byModel, '');
 
   const loading = status.isLoading || summary.isLoading;
   const error = status.error || summary.error;

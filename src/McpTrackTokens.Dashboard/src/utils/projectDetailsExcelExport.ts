@@ -19,6 +19,7 @@ import {
   formatNumber,
   millisecondsToMinutesExact,
 } from './format';
+import { sessionDurationMs, timesheetEntryDurationMs } from './duration';
 import { downloadMultiSheetExcel, type ExcelSheetSpec } from './multiSheetExcelExport';
 
 type PagedFetch<T> = (pageIndex: number, pageSize: number) => Promise<{
@@ -64,25 +65,10 @@ function metricSheet(
   };
 }
 
-function sessionDurationMs(session: SessionDto): number | null {
-  const started = new Date(session.startedAtUtc).getTime();
-  if (Number.isNaN(started)) return null;
-  const ended = session.endedAtUtc
-    ? new Date(session.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(ended) || ended < started) return null;
-  return ended - started;
-}
-
 /** Elapsed hours for a timesheet entry (ended − started). Open entries count through now. */
 function timesheetHours(entry: TimesheetEntryDto): number | '' {
-  const started = new Date(entry.startedAtUtc).getTime();
-  if (Number.isNaN(started)) return '';
-  const ended = entry.endedAtUtc
-    ? new Date(entry.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(ended) || ended < started) return '';
-  return Math.round(((ended - started) / 3_600_000) * 100) / 100;
+  const duration = timesheetEntryDurationMs(entry);
+  return duration == null ? '' : Math.round((duration / 3_600_000) * 100) / 100;
 }
 
 export type ProjectDetailsWorkbookArgs = {
@@ -377,6 +363,7 @@ export async function exportProjectDetailsWorkbook(
         { header: 'Input', key: 'inputTokens' },
         { header: 'Output', key: 'outputTokens' },
         { header: 'Cached', key: 'cachedInputTokens' },
+        { header: 'Cache write', key: 'cacheWriteTokens' },
         { header: 'Reasoning', key: 'reasoningTokens' },
         { header: 'Total tokens', key: 'totalTokens' },
         { header: 'Estimated', key: 'estimatedCost' },
@@ -389,6 +376,7 @@ export async function exportProjectDetailsWorkbook(
           inputTokens: tokenCost?.inputTokens ?? '',
           outputTokens: tokenCost?.outputTokens ?? '',
           cachedInputTokens: tokenCost?.cachedInputTokens ?? '',
+          cacheWriteTokens: tokenCost?.cacheWriteTokens ?? '',
           reasoningTokens: tokenCost?.reasoningTokens ?? '',
           totalTokens: tokenCost?.totalTokens ?? '',
           estimatedCost: tokenCost?.estimatedCost ?? '',
@@ -400,6 +388,7 @@ export async function exportProjectDetailsWorkbook(
           inputTokens: row.inputTokens,
           outputTokens: row.outputTokens,
           cachedInputTokens: row.cachedInputTokens,
+          cacheWriteTokens: row.cacheWriteTokens ?? 0,
           reasoningTokens: row.reasoningTokens,
           totalTokens: row.totalTokens,
           estimatedCost: row.estimatedCost,

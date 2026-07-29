@@ -22,6 +22,7 @@ import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { BrowseListControls, PopupForm, TextLink } from '../shared/adminUi';
 import { type RangePreset, resolveRange } from '../utils/dateRange';
+import { timesheetEntryDurationMs } from '../utils/duration';
 import { formatDateTime, formatDurationMs, formatNumber } from '../utils/format';
 
 type TimesheetDraft = {
@@ -65,16 +66,6 @@ function draftFromEntry(entry: TimesheetEntryDto): TimesheetDraft {
     endedAtLocal: toLocalInputValue(entry.endedAtUtc),
     notes: entry.notes ?? '',
   };
-}
-
-function entryDurationMs(entry: TimesheetEntryDto): number | null {
-  const start = new Date(entry.startedAtUtc).getTime();
-  if (Number.isNaN(start)) return null;
-  const end = entry.endedAtUtc
-    ? new Date(entry.endedAtUtc).getTime()
-    : Date.now();
-  if (Number.isNaN(end) || end < start) return null;
-  return end - start;
 }
 
 function defaultCategoryId(
@@ -346,7 +337,7 @@ export function TimesheetPage() {
         category: entry.categoryName?.trim() || '',
         started: entry.startedAtUtc,
         ended: entry.endedAtUtc ?? '',
-        durationMs: entryDurationMs(entry) ?? '',
+        durationMs: timesheetEntryDurationMs(entry) ?? '',
         notes: entry.notes?.trim() || '',
         status: entry.isOpen ? 'Open' : 'Closed',
       })),
@@ -361,7 +352,7 @@ export function TimesheetPage() {
   }
 
   function renderEntryCard(entry: TimesheetEntryDto) {
-    const duration = entryDurationMs(entry);
+    const duration = timesheetEntryDurationMs(entry);
     return (
       <article key={entry.id} className="timesheet-browse-tile">
         <div className="timesheet-browse-tile-header">
@@ -1134,7 +1125,7 @@ export function TimesheetPage() {
                 </thead>
                 <tbody>
                   {rows.map((entry) => {
-                    const duration = entryDurationMs(entry);
+                    const duration = timesheetEntryDurationMs(entry);
                     return (
                       <tr key={entry.id}>
                         <td>
