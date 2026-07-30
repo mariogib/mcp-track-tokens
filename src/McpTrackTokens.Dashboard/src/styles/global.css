@@ -900,6 +900,15 @@ table.data.token-rates td:last-child {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+.clickable-tile {
+  cursor: pointer;
+}
+
+.clickable-tile:hover {
+  outline: 1px solid var(--color-border, #d1d5db);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

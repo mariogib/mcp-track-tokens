@@ -38,6 +38,47 @@ public sealed class CursorTokenCostCalculatorTests
     }
 
     [Fact]
+    public void EstimateBreakdown_splits_cost_by_usage_type()
+    {
+        var usage = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            DateTimeOffset.Parse("2026-07-18T00:00:00Z"),
+            model: "claude-4.5-sonnet",
+            inputTokens: 1_000_000,
+            outputTokens: 500_000,
+            cachedInputTokens: 2_000_000,
+            cacheWriteTokens: 1_000_000,
+            reasoningTokens: 100_000,
+            totalTokens: 4_600_000);
+
+        var rate = new CursorModelTokenRate
+        {
+            Model = "claude-4.5-sonnet",
+            InputPerMillion = 3m,
+            OutputPerMillion = 15m,
+            CacheReadPerMillion = 0.3m,
+            CacheWritePerMillion = 1.25m,
+            ReasoningPerMillion = 15m
+        };
+
+        var breakdown = CursorTokenCostCalculator.EstimateBreakdown(
+            CursorTokenCostCalculator.ScaleTokens(usage, 100m),
+            rate);
+
+        breakdown.InputTokens.Should().Be(1_000_000);
+        breakdown.InputCost.Should().Be(3m);
+        breakdown.OutputTokens.Should().Be(500_000);
+        breakdown.OutputCost.Should().Be(7.5m);
+        breakdown.CachedInputTokens.Should().Be(2_000_000);
+        breakdown.CachedInputCost.Should().Be(0.6m);
+        breakdown.CacheWriteTokens.Should().Be(1_000_000);
+        breakdown.CacheWriteCost.Should().Be(1.25m);
+        breakdown.ReasoningTokens.Should().Be(100_000);
+        breakdown.ReasoningCost.Should().Be(1.5m);
+        breakdown.TotalCost.Should().Be(13.85m);
+    }
+
+    [Fact]
     public void Estimate_prices_cache_write_separately_from_input()
     {
         var usage = ExternalUsageRecord.Create(

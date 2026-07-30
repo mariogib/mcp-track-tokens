@@ -21,7 +21,7 @@ import {
   useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
 import { api } from '../api/client';
-import type { PromptEventDto, SessionDto, TimesheetEntryDto } from '../api/types';
+import type { PromptEventDto, PromptUsageTypeBreakdownDto, SessionDto, TimesheetEntryDto } from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
@@ -33,7 +33,7 @@ import { projectChartPath } from '../data/projectCharts';
 import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeField';
 import { AnalysisDetailBrowse } from '../components/AnalysisDetailBrowse';
 import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
-import { MetricCard, Panel } from '../components/MetricCard';
+import { MetricCard, Panel, TablePanel } from '../components/MetricCard';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
@@ -274,6 +274,7 @@ export function ProjectDetailsPage() {
   const [promptDayFilter, setPromptDayFilter] = useState('');
   const [promptFromDate, setPromptFromDate] = useState('');
   const [promptToDate, setPromptToDate] = useState('');
+  const [selectedPrompt, setSelectedPrompt] = useState<PromptEventDto | null>(null);
   const [overviewExporting, setOverviewExporting] = useState(false);
   const [overviewExportMessage, setOverviewExportMessage] = useState<string | null>(null);
   const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
@@ -1015,7 +1016,20 @@ export function ProjectDetailsPage() {
                 </thead>
                 <tbody>
                   {rows.map((p) => (
-                    <tr key={p.id}>
+                    <tr
+                      key={p.id}
+                      className="clickable-row"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
+                      onClick={() => setSelectedPrompt(p)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedPrompt(p);
+                        }
+                      }}
+                    >
                       <td>{formatDateTime(p.timestampUtc)}</td>
                       <td>{p.eventType}</td>
                       <td>{p.editor ?? '—'}</td>
@@ -1050,7 +1064,20 @@ export function ProjectDetailsPage() {
             )}
             renderGrid={(rows) =>
               rows.map((p) => (
-                <article key={p.id} className="analysis-browse-tile">
+                <article
+                  key={p.id}
+                  className="analysis-browse-tile clickable-tile"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
+                  onClick={() => setSelectedPrompt(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedPrompt(p);
+                    }
+                  }}
+                >
                   <strong>{formatDateTime(p.timestampUtc)}</strong>
                   <span>
                     {p.eventType}
@@ -1067,6 +1094,13 @@ export function ProjectDetailsPage() {
             }
           />
       )}
+
+      {selectedPrompt ? (
+        <PromptUsageBreakdownDialog
+          prompt={selectedPrompt}
+          onClose={() => setSelectedPrompt(null)}
+        />
+      ) : null}
 
       {tab === 'Sessions' && (
         <section className="page-section">
@@ -2453,5 +2487,121 @@ export function ProjectDetailsPage() {
         </section>
       )}
     </Page>
+  );
+}
+
+function PromptUsageBreakdownDialog({
+  prompt,
+  onClose,
+}: {
+  prompt: PromptEventDto;
+  onClose: () => void;
+}) {
+  const rows: PromptUsageTypeBreakdownDto[] = prompt.usageByType ?? [];
+  const hasLinked = Boolean(prompt.hasLinkedUsage) || rows.length > 0;
+
+  return (
+    <PopupForm
+      title="Prompt usage by type"
+      subtitle={`${formatDateTime(prompt.timestampUtc)}${prompt.model ? ` · ${prompt.model}` : ''}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {!hasLinked ? (
+        <EmptyState message="No imported usage is linked to this prompt yet. Run usage reconciliation first." />
+      ) : (
+        <div className="stack">
+          <div className="metric-grid">
+            <MetricCard
+              label="Linked usages"
+              value={formatNumber(prompt.linkedUsageCount ?? rows.length)}
+            />
+            <MetricCard label="Total tokens" value={formatNumber(prompt.totalTokens ?? 0)} />
+            <MetricCard label="Reported cost" value={formatCurrency(prompt.reportedCost ?? 0)} />
+            <MetricCard
+              label="Calculated cost"
+              value={formatCurrency(prompt.calculatedTokenCost ?? 0)}
+            />
+          </div>
+          <TablePanel>
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Usage type</th>
+                  <th>Tokens</th>
+                  <th>Calculated cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.type}>
+                    <td>
+                      <span className="setting-label">
+                        <span>{row.type}</span>
+                        <UsageTypeHelp type={row.type} />
+                      </span>
+                    </td>
+                    <td>{formatNumber(row.tokens)}</td>
+                    <td>{formatCurrency(row.calculatedCost)}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <td>
+                    <strong>Total</strong>
+                  </td>
+                  <td>
+                    <strong>{formatNumber(prompt.totalTokens ?? 0)}</strong>
+                  </td>
+                  <td>
+                    <strong>{formatCurrency(prompt.calculatedTokenCost ?? 0)}</strong>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </TablePanel>
+          <p className="hint">
+            Tokens and calculated cost come from linked Cursor usage (rate card). Reported cost is
+            the import total for those linked rows.
+          </p>
+        </div>
+      )}
+    </PopupForm>
+  );
+}
+
+const CURSOR_USAGE_TYPE_HELP: Record<string, string> = {
+  Input:
+    'Cursor Input tokens: the prompt and context sent to the model (your message, attached files, and conversation history).',
+  Output: 'Cursor Output tokens: the generated reply text streamed back to you.',
+  'Cache read':
+    'Cursor Cache read tokens: reused cached context from the provider prompt cache (usually cheaper than Input).',
+  'Cache write':
+    'Cursor Cache write tokens: new context written into the provider prompt cache for later reuse.',
+  Reasoning:
+    'Cursor Reasoning tokens: internal “thinking” tokens some models bill separately from the visible reply.',
+};
+
+function UsageTypeHelp({ type }: { type: string }) {
+  const detail = CURSOR_USAGE_TYPE_HELP[type];
+  if (!detail) {
+    return null;
+  }
+
+  return (
+    <span
+      className="setting-help"
+      data-tooltip={detail}
+      tabIndex={0}
+      role="img"
+      aria-label={detail}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      ?
+    </span>
   );
 }

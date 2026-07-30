@@ -1149,6 +1149,17 @@ public static class ApiEndpoints
                     long tokens = 0;
                     decimal cost = 0m;
                     decimal calculated = 0m;
+                    long inputTokens = 0;
+                    long outputTokens = 0;
+                    long cachedInputTokens = 0;
+                    long cacheWriteTokens = 0;
+                    long reasoningTokens = 0;
+                    decimal inputCost = 0m;
+                    decimal outputCost = 0m;
+                    decimal cachedInputCost = 0m;
+                    decimal cacheWriteCost = 0m;
+                    decimal reasoningCost = 0m;
+
                     foreach (var attr in g)
                     {
                         if (attr.AllocatedTotalTokens > 0 || attr.AllocatedCost > 0)
@@ -1164,11 +1175,23 @@ public static class ApiEndpoints
 
                         if (usageById.TryGetValue(attr.ExternalUsageRecordId, out var record))
                         {
-                            calculated += CursorTokenCostCalculator.EstimateOrZero(
+                            var pct = CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
+                                attr.AllocationPercentage);
+                            var breakdown = CursorTokenCostCalculator.EstimateBreakdownOrZero(
                                 record,
-                                CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
-                                    attr.AllocationPercentage),
+                                pct,
                                 rates);
+                            calculated += breakdown.TotalCost;
+                            inputTokens += breakdown.InputTokens;
+                            outputTokens += breakdown.OutputTokens;
+                            cachedInputTokens += breakdown.CachedInputTokens;
+                            cacheWriteTokens += breakdown.CacheWriteTokens;
+                            reasoningTokens += breakdown.ReasoningTokens;
+                            inputCost += breakdown.InputCost;
+                            outputCost += breakdown.OutputCost;
+                            cachedInputCost += breakdown.CachedInputCost;
+                            cacheWriteCost += breakdown.CacheWriteCost;
+                            reasoningCost += breakdown.ReasoningCost;
                         }
                     }
 
@@ -1176,6 +1199,16 @@ public static class ApiEndpoints
                         Tokens: tokens,
                         Cost: cost,
                         CalculatedTokenCost: Math.Round(calculated, 6, MidpointRounding.AwayFromZero),
+                        InputTokens: inputTokens,
+                        OutputTokens: outputTokens,
+                        CachedInputTokens: cachedInputTokens,
+                        CacheWriteTokens: cacheWriteTokens,
+                        ReasoningTokens: reasoningTokens,
+                        InputCalculatedCost: Math.Round(inputCost, 6, MidpointRounding.AwayFromZero),
+                        OutputCalculatedCost: Math.Round(outputCost, 6, MidpointRounding.AwayFromZero),
+                        CachedInputCalculatedCost: Math.Round(cachedInputCost, 6, MidpointRounding.AwayFromZero),
+                        CacheWriteCalculatedCost: Math.Round(cacheWriteCost, 6, MidpointRounding.AwayFromZero),
+                        ReasoningCalculatedCost: Math.Round(reasoningCost, 6, MidpointRounding.AwayFromZero),
                         Count: g.Count(),
                         Linked: true);
                 });
@@ -1198,7 +1231,42 @@ public static class ApiEndpoints
                 reportedCost = linkedUsage.Linked ? linkedUsage.Cost : (decimal?)null,
                 calculatedTokenCost = linkedUsage.Linked ? linkedUsage.CalculatedTokenCost : (decimal?)null,
                 linkedUsageCount = linkedUsage.Linked ? linkedUsage.Count : 0,
-                hasLinkedUsage = linkedUsage.Linked
+                hasLinkedUsage = linkedUsage.Linked,
+                usageByType = linkedUsage.Linked
+                    ? new object[]
+                    {
+                        new
+                        {
+                            type = "Input",
+                            tokens = linkedUsage.InputTokens,
+                            calculatedCost = linkedUsage.InputCalculatedCost
+                        },
+                        new
+                        {
+                            type = "Output",
+                            tokens = linkedUsage.OutputTokens,
+                            calculatedCost = linkedUsage.OutputCalculatedCost
+                        },
+                        new
+                        {
+                            type = "Cache read",
+                            tokens = linkedUsage.CachedInputTokens,
+                            calculatedCost = linkedUsage.CachedInputCalculatedCost
+                        },
+                        new
+                        {
+                            type = "Cache write",
+                            tokens = linkedUsage.CacheWriteTokens,
+                            calculatedCost = linkedUsage.CacheWriteCalculatedCost
+                        },
+                        new
+                        {
+                            type = "Reasoning",
+                            tokens = linkedUsage.ReasoningTokens,
+                            calculatedCost = linkedUsage.ReasoningCalculatedCost
+                        }
+                    }
+                    : Array.Empty<object>()
             };
         }).ToList();
     }
@@ -1217,7 +1285,8 @@ public static class ApiEndpoints
         totalTokens = (long?)null,
         reportedCost = (decimal?)null,
         linkedUsageCount = 0,
-        hasLinkedUsage = false
+        hasLinkedUsage = false,
+        usageByType = Array.Empty<object>()
     };
 
     private static async Task<IResult> GetActiveSessionsAsync(

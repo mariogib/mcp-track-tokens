@@ -664,6 +664,12 @@ export interface HealthDto {
   healthy?: boolean;
 }
 
+export interface PromptUsageTypeBreakdownDto {
+  type: string;
+  tokens: number;
+  calculatedCost: number;
+}
+
 export interface PromptEventDto {
   id: string;
   timestampUtc: string;
@@ -682,6 +688,8 @@ export interface PromptEventDto {
   /** Number of imported usage rows linked to this prompt (many-to-one). */
   linkedUsageCount?: number;
   hasLinkedUsage?: boolean;
+  /** Per usage-type token and calculated-cost breakdown for linked usage. */
+  usageByType?: PromptUsageTypeBreakdownDto[];
 }
 
 export interface PagedResult<T> {

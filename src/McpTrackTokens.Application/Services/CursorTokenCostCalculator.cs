@@ -230,6 +230,7 @@ public static class CursorTokenCostCalculator
 
     /// <summary>
     /// Estimates cost from already scaled token buckets.
+    /// Cached input uses the cache-read rate; cache-write tokens use the cache-write rate.
     /// </summary>
     public static decimal Estimate(ScaledTokenBuckets tokens, CursorModelTokenRate rate)
     {
@@ -245,6 +246,91 @@ public static class CursorTokenCostCalculator
 
         return Math.Round(cost, 6, MidpointRounding.AwayFromZero);
     }
+
+    /// <summary>
+    /// Token and rate-card cost by usage bucket for already scaled counts.
+    /// </summary>
+    public readonly record struct TokenCostBreakdown(
+        long InputTokens,
+        decimal InputCost,
+        long OutputTokens,
+        decimal OutputCost,
+        long CachedInputTokens,
+        decimal CachedInputCost,
+        long CacheWriteTokens,
+        decimal CacheWriteCost,
+        long ReasoningTokens,
+        decimal ReasoningCost,
+        long TotalTokens,
+        decimal TotalCost);
+
+    /// <summary>
+    /// Breaks estimated cost into per-bucket amounts using the rate card.
+    /// <see cref="TokenCostBreakdown.TotalCost"/> matches
+    /// <see cref="Estimate(ScaledTokenBuckets, CursorModelTokenRate)"/>.
+    /// </summary>
+    public static TokenCostBreakdown EstimateBreakdown(
+        ScaledTokenBuckets tokens,
+        CursorModelTokenRate rate)
+    {
+        ArgumentNullException.ThrowIfNull(rate);
+
+        var inputCost = RoundMoney((tokens.InputTokens / Million) * rate.InputPerMillion);
+        var outputCost = RoundMoney((tokens.OutputTokens / Million) * rate.OutputPerMillion);
+        var cachedCost = RoundMoney((tokens.CachedInputTokens / Million) * rate.CacheReadPerMillion);
+        var cacheWriteCost = RoundMoney((tokens.CacheWriteTokens / Million) * rate.CacheWritePerMillion);
+        var reasoningCost = RoundMoney(
+            (tokens.ReasoningTokens / Million) *
+            (rate.ReasoningPerMillion ?? rate.OutputPerMillion));
+
+        return new TokenCostBreakdown(
+            tokens.InputTokens,
+            inputCost,
+            tokens.OutputTokens,
+            outputCost,
+            tokens.CachedInputTokens,
+            cachedCost,
+            tokens.CacheWriteTokens,
+            cacheWriteCost,
+            tokens.ReasoningTokens,
+            reasoningCost,
+            tokens.TotalTokens,
+            Estimate(tokens, rate));
+    }
+
+    /// <summary>
+    /// Scales usage tokens and returns a per-bucket cost breakdown for the model rate.
+    /// Returns zeros when no rate matches.
+    /// </summary>
+    public static TokenCostBreakdown EstimateBreakdownOrZero(
+        ExternalUsageRecord usage,
+        decimal allocationPercentage,
+        IReadOnlyList<CursorModelTokenRate> rates)
+    {
+        var rate = ResolveRate(rates, usage.Model);
+        if (rate is null)
+        {
+            var scaled = ScaleTokens(usage, allocationPercentage);
+            return new TokenCostBreakdown(
+                scaled.InputTokens,
+                0m,
+                scaled.OutputTokens,
+                0m,
+                scaled.CachedInputTokens,
+                0m,
+                scaled.CacheWriteTokens,
+                0m,
+                scaled.ReasoningTokens,
+                0m,
+                scaled.TotalTokens,
+                0m);
+        }
+
+        return EstimateBreakdown(ScaleTokens(usage, allocationPercentage), rate);
+    }
+
+    private static decimal RoundMoney(decimal value)
+        => Math.Round(value, 6, MidpointRounding.AwayFromZero);
 
     /// <summary>
     /// Seeds Auto-mode Cursor rates (currency per 1M tokens) as a starting rate card.
