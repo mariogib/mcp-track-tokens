@@ -241,6 +241,8 @@ public sealed class DatabaseBackupService : IDatabaseBackupService
 
         DeleteSidecarFiles(destinationPath);
 
+        // Destination must not be pooled: Backup now opens the file immediately after copy,
+        // and a pooled handle leaves it locked ("used by another process") on Windows.
         using var source = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = sourcePath,
@@ -251,11 +253,15 @@ public sealed class DatabaseBackupService : IDatabaseBackupService
         using var destination = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = destinationPath,
-            Mode = SqliteOpenMode.ReadWriteCreate
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
         }.ToString());
         destination.Open();
 
         source.BackupDatabase(destination);
+
+        destination.Close();
+        SqliteConnection.ClearPool(destination);
     }
 
     private static void RestoreSqliteDatabase(string sourcePath, string livePath)
@@ -271,7 +277,8 @@ public sealed class DatabaseBackupService : IDatabaseBackupService
         using var source = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = sourcePath,
-            Mode = SqliteOpenMode.ReadOnly
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
         }.ToString());
         source.Open();
 

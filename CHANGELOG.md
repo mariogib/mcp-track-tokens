@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.28] — 2026-07-30
+
+### Fixed
+- Database backup download no longer fails on Windows with “file is being used by another process” (SQLite connection pool held the temp backup file open).
+
 ## [1.0.27] — 2026-07-30
 
 ### Added
