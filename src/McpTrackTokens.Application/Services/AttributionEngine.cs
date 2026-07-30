@@ -9,11 +9,14 @@ namespace McpTrackTokens.Application.Services;
 
 /// <summary>
 /// Attributes imported usage to a project by linking each row to the closest
-/// prior prompt that uses the same model (second precision).
+/// prior prompt that uses the same model (second precision). When no exact
+/// model match exists, falls back to the closest prior prompt with model Auto.
 /// Prompts are never consumed: several usage rows may share one prompt.
 /// </summary>
 public sealed class AttributionEngine : IAttributionEngine
 {
+    internal const string AutoModelFallback = "Auto";
+
     private readonly IActivityEventRepository _events;
     private readonly IUsageAttributionRepository _attributions;
     private readonly IExternalUsageRepository _usage;
@@ -42,6 +45,11 @@ public sealed class AttributionEngine : IAttributionEngine
     {
         ArgumentNullException.ThrowIfNull(usageRecord);
 
+        var usageSecond = TimestampPrecision.RoundToSecond(usageRecord.TimestampUtc);
+        var usageModelLabel = string.IsNullOrWhiteSpace(usageRecord.Model)
+            ? "(no model)"
+            : usageRecord.Model.Trim();
+
         var prompt = await _events
             .FindClosestPriorPromptWithProjectAsync(
                 usageRecord.TimestampUtc,
@@ -51,25 +59,40 @@ public sealed class AttributionEngine : IAttributionEngine
 
         if (prompt?.ProjectId is Guid projectId)
         {
-            var usageSecond = TimestampPrecision.RoundToSecond(usageRecord.TimestampUtc);
-            var promptSecond = TimestampPrecision.RoundToSecond(prompt.TimestampUtc);
-            var deltaSeconds = (usageSecond - promptSecond).TotalSeconds;
-            var modelLabel = string.IsNullOrWhiteSpace(usageRecord.Model)
-                ? "(no model)"
-                : usageRecord.Model.Trim();
-            return [CreateSingle(
+            return [CreateLinked(
                 usageRecord,
+                prompt,
                 projectId,
-                prompt.EditorSessionId,
-                prompt.Id,
-                AttributionMethod.ClosestPromptMatch,
                 AttributionConfidence.High,
-                $"Linked to closest prior prompt {prompt.Id:D} with matching model '{modelLabel}' at {promptSecond:yyyy-MM-dd HH:mm:ss}Z (usage {usageSecond:yyyy-MM-dd HH:mm:ss}Z, Δ {deltaSeconds:0} s); project from that prompt.")];
+                exactModelMatch: true,
+                usageModelLabel,
+                usageSecond)];
         }
 
-        var unmatchedModel = string.IsNullOrWhiteSpace(usageRecord.Model)
-            ? "(no model)"
-            : usageRecord.Model.Trim();
+        // Cursor often records prompts as Auto while the usage export names the
+        // resolved model — fall back to closest prior Auto prompt by timestamp.
+        if (!IsAutoModel(usageRecord.Model))
+        {
+            var autoPrompt = await _events
+                .FindClosestPriorPromptWithProjectAsync(
+                    usageRecord.TimestampUtc,
+                    AutoModelFallback,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (autoPrompt?.ProjectId is Guid autoProjectId)
+            {
+                return [CreateLinked(
+                    usageRecord,
+                    autoPrompt,
+                    autoProjectId,
+                    AttributionConfidence.Medium,
+                    exactModelMatch: false,
+                    usageModelLabel,
+                    usageSecond)];
+            }
+        }
+
         return [CreateSingle(
             usageRecord,
             projectId: null,
@@ -77,7 +100,38 @@ public sealed class AttributionEngine : IAttributionEngine
             activityEventId: null,
             AttributionMethod.Unallocated,
             AttributionConfidence.Unallocated,
-            $"No prompt with a project and matching model '{unmatchedModel}' found at or before this usage timestamp (second precision).")];
+            $"No prompt with a project and matching model '{usageModelLabel}' (or Auto fallback) found at or before this usage timestamp (second precision).")];
+    }
+
+    private static UsageAttribution CreateLinked(
+        ExternalUsageRecord usageRecord,
+        PromptActivityEvent prompt,
+        Guid projectId,
+        AttributionConfidence confidence,
+        bool exactModelMatch,
+        string usageModelLabel,
+        DateTimeOffset usageSecond)
+    {
+        var promptSecond = TimestampPrecision.RoundToSecond(prompt.TimestampUtc);
+        var deltaSeconds = (usageSecond - promptSecond).TotalSeconds;
+        var reason = exactModelMatch
+            ? $"Linked to closest prior prompt {prompt.Id:D} with matching model '{usageModelLabel}' at {promptSecond:yyyy-MM-dd HH:mm:ss}Z (usage {usageSecond:yyyy-MM-dd HH:mm:ss}Z, Δ {deltaSeconds:0} s); project from that prompt."
+            : $"No prompt with model '{usageModelLabel}'; linked to closest prior Auto prompt {prompt.Id:D} at {promptSecond:yyyy-MM-dd HH:mm:ss}Z (usage {usageSecond:yyyy-MM-dd HH:mm:ss}Z, Δ {deltaSeconds:0} s); project from that prompt.";
+
+        return CreateSingle(
+            usageRecord,
+            projectId,
+            prompt.EditorSessionId,
+            prompt.Id,
+            AttributionMethod.ClosestPromptMatch,
+            confidence,
+            reason);
+    }
+
+    private static bool IsAutoModel(string? model)
+    {
+        var normalized = CursorTokenCostCalculator.NormalizeModelName(model);
+        return string.Equals(normalized, "auto", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <inheritdoc />

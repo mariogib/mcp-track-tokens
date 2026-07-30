@@ -323,19 +323,9 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
             requireActive: false,
             cancellationToken).ConfigureAwait(false);
 
-        var newStart = activityAt;
-        if (crossedDay)
-        {
-            // Keep coverage continuous when work continues past midnight: start the new day
-            // entry at local calendar midnight rather than the first post-midnight prompt.
-            var (dayStart, _) = GetCalendarDayBoundsUtc(activityDay);
-            if (dayStart < activityAt)
-            {
-                newStart = dayStart;
-            }
-        }
-
-        var entry = TimesheetEntry.Start(projectId, category.Id, newStart, AutocreatedNotes);
+        // Start at the activity/creation instant (not local midnight) so day-boundary
+        // autocreate does not invent idle time from midnight until the first prompt.
+        var entry = TimesheetEntry.Start(projectId, category.Id, activityAt, AutocreatedNotes);
         await _timesheets.AddAsync(entry, cancellationToken).ConfigureAwait(false);
     }
 

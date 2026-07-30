@@ -69,6 +69,11 @@ public sealed class AttributionEngineTests
         var model = "claude-4.5-sonnet";
         _events.FindClosestPriorPromptWithProjectAsync(at, model, Arg.Any<CancellationToken>())
             .Returns((PromptActivityEvent?)null);
+        _events.FindClosestPriorPromptWithProjectAsync(
+                at,
+                "Auto",
+                Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
 
         var result = await CreateSut().ProposeAsync(CreateUsage(at: at, model: model));
 
@@ -77,6 +82,56 @@ public sealed class AttributionEngineTests
         result[0].ActivityEventId.Should().BeNull();
         result[0].AttributionMethod.Should().Be(AttributionMethod.Unallocated);
         result[0].Reason.Should().Contain(model);
+        result[0].Reason.Should().Contain("Auto");
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Falls_back_to_closest_Auto_prompt_when_model_missing()
+    {
+        var projectId = Guid.NewGuid();
+        var usageAt = DateTimeOffset.Parse("2026-07-17T10:00:30Z");
+        var usageModel = "claude-4.5-sonnet";
+        var autoPrompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            DateTimeOffset.Parse("2026-07-17T10:00:00Z"),
+            projectId: projectId,
+            model: "Auto");
+
+        _events.FindClosestPriorPromptWithProjectAsync(usageAt, usageModel, Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
+        _events.FindClosestPriorPromptWithProjectAsync(
+                usageAt,
+                "Auto",
+                Arg.Any<CancellationToken>())
+            .Returns(autoPrompt);
+
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: usageAt, model: usageModel));
+
+        result.Should().HaveCount(1);
+        result[0].ProjectId.Should().Be(projectId);
+        result[0].ActivityEventId.Should().Be(autoPrompt.Id);
+        result[0].AttributionMethod.Should().Be(AttributionMethod.ClosestPromptMatch);
+        result[0].Confidence.Should().Be(AttributionConfidence.Medium);
+        result[0].Reason.Should().Contain("Auto");
+        result[0].Reason.Should().Contain(usageModel);
+        result[0].AllocatedCost.Should().Be(10m);
+    }
+
+    [Fact]
+    public async Task ProposeAsync_Does_not_retry_Auto_when_usage_model_is_already_Auto()
+    {
+        var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
+        _events.FindClosestPriorPromptWithProjectAsync(at, "Auto", Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
+
+        var result = await CreateSut().ProposeAsync(CreateUsage(at: at, model: "Auto"));
+
+        result[0].AttributionMethod.Should().Be(AttributionMethod.Unallocated);
+        await _events.Received(1).FindClosestPriorPromptWithProjectAsync(
+            at,
+            "Auto",
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -145,11 +200,16 @@ public sealed class AttributionEngineTests
     }
 
     [Fact]
-    public async Task ProposeAsync_Passes_usage_model_to_prompt_lookup()
+    public async Task ProposeAsync_Passes_usage_model_then_Auto_fallback_to_prompt_lookup()
     {
         var at = DateTimeOffset.Parse("2026-07-17T10:00:00Z");
         var model = "composer-2";
         _events.FindClosestPriorPromptWithProjectAsync(at, model, Arg.Any<CancellationToken>())
+            .Returns((PromptActivityEvent?)null);
+        _events.FindClosestPriorPromptWithProjectAsync(
+                at,
+                "Auto",
+                Arg.Any<CancellationToken>())
             .Returns((PromptActivityEvent?)null);
 
         await CreateSut().ProposeAsync(CreateUsage(at: at, model: model));
@@ -157,6 +217,10 @@ public sealed class AttributionEngineTests
         await _events.Received(1).FindClosestPriorPromptWithProjectAsync(
             at,
             model,
+            Arg.Any<CancellationToken>());
+        await _events.Received(1).FindClosestPriorPromptWithProjectAsync(
+            at,
+            "Auto",
             Arg.Any<CancellationToken>());
     }
 }

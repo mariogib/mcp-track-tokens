@@ -105,8 +105,8 @@ public sealed class TimesheetManagementServiceTests
 
         added.Should().NotBeNull();
         added!.ProjectId.Should().Be(projectId);
-        // New day entry starts at calendar midnight so coverage stays continuous.
-        added.StartedAtUtc.Should().Be(DateTimeOffset.Parse("2026-07-21T00:00:00Z"));
+        // New day entry starts when created (activity time), not at calendar midnight.
+        added.StartedAtUtc.Should().Be(nextDayActivity);
         added.EndedAtUtc.Should().BeNull();
         added.Notes.Should().Be("autocreated");
     }
@@ -412,8 +412,8 @@ public sealed class TimesheetManagementServiceTests
         open.EndedAtUtc.Should().Be(sessionEnded);
         open.Notes.Should().Contain("day-boundary");
         added.Should().NotBeNull();
-        // Local Jul 28 midnight in UTC+2 is 2026-07-27T22:00:00Z.
-        added!.StartedAtUtc.Should().Be(DateTimeOffset.Parse("2026-07-27T22:00:00Z"));
+        // New day entry starts at the post-midnight activity instant, not local midnight.
+        added!.StartedAtUtc.Should().Be(nextLocalDayActivity);
         added.Notes.Should().Be("autocreated");
     }
 }
