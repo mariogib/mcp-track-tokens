@@ -114,6 +114,11 @@ public sealed class ProjectDetectionServiceTests
         detail.Slug.Should().Be("new-project");
         detail.Currency.Should().Be("USD");
         await _projects.Received(1).AddAsync(Arg.Any<Project>(), Arg.Any<CancellationToken>());
+        await _projects.Received(1).SetRepositoryAsync(
+            Arg.Any<Guid>(),
+            @"D:\code\new-project",
+            Arg.Any<string?>(),
+            Arg.Any<CancellationToken>());
         await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 
@@ -134,6 +139,8 @@ public sealed class ProjectDetectionServiceTests
             ClientName = "New Client",
             BillingCode = "B-1",
             Currency = "EUR",
+            RepositoryPath = @"D:\code\renamed",
+            RemoteUrl = "https://github.com/acme/renamed.git",
             IsActive = true
         });
 
@@ -141,7 +148,14 @@ public sealed class ProjectDetectionServiceTests
         detail.Slug.Should().Be("renamed");
         detail.ClientName.Should().Be("New Client");
         detail.Currency.Should().Be("EUR");
+        detail.PrimaryRepositoryPath.Should().Be(@"D:\code\renamed");
+        detail.PrimaryRemoteUrl.Should().Be("https://github.com/acme/renamed.git");
         await _projects.Received().UpdateAsync(existing, Arg.Any<CancellationToken>());
+        await _projects.Received(1).SetRepositoryAsync(
+            existing.Id,
+            @"D:\code\renamed",
+            "https://github.com/acme/renamed.git",
+            Arg.Any<CancellationToken>());
         await _unitOfWork.Received().SaveChangesAsync(Arg.Any<CancellationToken>());
     }
 

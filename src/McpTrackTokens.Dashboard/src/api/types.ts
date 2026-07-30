@@ -163,6 +163,8 @@ export interface DailyActivityRow {
   agentDurationMilliseconds: number;
   activeProjectTimeSeconds: number;
   sessionCount: number;
+  timesheetEntryCount?: number;
+  timesheetDurationSeconds?: number;
   totalTokens?: number;
 }
 

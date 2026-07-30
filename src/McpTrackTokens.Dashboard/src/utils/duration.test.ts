@@ -4,6 +4,7 @@ import {
   mergeIntervals,
   sessionsWithinTimesheetPeriods,
   sessionsWithinTimeRange,
+  timesheetsWithinTimeRange,
 } from './duration';
 
 function session(
@@ -121,5 +122,22 @@ describe('sessionsWithinTimeRange', () => {
     expect(rows[0].durationMs).toBe(
       Date.parse('2026-07-30T23:59:59.999Z') - Date.parse('2026-07-30T22:00:00.000Z'),
     );
+  });
+});
+
+describe('timesheetsWithinTimeRange', () => {
+  it('clips timesheet entries to the given day range', () => {
+    const rows = timesheetsWithinTimeRange(
+      [
+        timesheet('t1', '2026-07-30T22:00:00.000Z', '2026-07-31T02:00:00.000Z'),
+        timesheet('t2', '2026-07-29T10:00:00.000Z', '2026-07-29T11:00:00.000Z'),
+      ],
+      '2026-07-30T00:00:00.000Z',
+      '2026-07-30T23:59:59.999Z',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].entry.id).toBe('t1');
+    expect(rows[0].startUtc).toBe('2026-07-30T22:00:00.000Z');
+    expect(rows[0].endUtc).toBe('2026-07-30T23:59:59.999Z');
   });
 });

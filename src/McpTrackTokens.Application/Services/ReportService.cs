@@ -23,6 +23,7 @@ public sealed class ReportService : IReportService
     private readonly IExternalUsageRepository _usage;
     private readonly IUsageAttributionRepository _attributions;
     private readonly IImportBatchRepository _imports;
+    private readonly ITimesheetEntryRepository _timesheets;
     private readonly ISubscriptionAllocationService _subscription;
     private readonly TrackingOptions _options;
     private readonly TimeZoneInfo _calendarTimeZone;
@@ -36,6 +37,7 @@ public sealed class ReportService : IReportService
         IExternalUsageRepository usage,
         IUsageAttributionRepository attributions,
         IImportBatchRepository imports,
+        ITimesheetEntryRepository timesheets,
         ISubscriptionAllocationService subscription,
         IOptions<TrackingOptions> options,
         TimeZoneInfo? calendarTimeZone = null)
@@ -48,6 +50,7 @@ public sealed class ReportService : IReportService
         _usage = usage;
         _attributions = attributions;
         _imports = imports;
+        _timesheets = timesheets;
         _subscription = subscription;
         _options = options.Value;
         // Match timesheet / dashboard local calendar days (not UTC).
@@ -65,6 +68,9 @@ public sealed class ReportService : IReportService
             .ConfigureAwait(false);
         var sessions = await ListProjectSessionsAsync(projectId, fromUtc, toUtc, cancellationToken)
             .ConfigureAwait(false);
+        var timesheets = await _timesheets
+            .ListAsync(projectId, fromUtc, toUtc, cancellationToken)
+            .ConfigureAwait(false);
         var tokensByDay = await GetAttributedTokensByDayAsync(fromUtc, toUtc, projectId, cancellationToken)
             .ConfigureAwait(false);
         var now = DateTimeOffset.UtcNow;
@@ -73,6 +79,7 @@ public sealed class ReportService : IReportService
             .Select(e => ToCalendarDay(e.TimestampUtc))
             .Concat(tokensByDay.Keys)
             .Concat(sessions.SelectMany(SessionDayKeys))
+            .Concat(timesheets.SelectMany(TimesheetDayKeys))
             .Distinct()
             .OrderByDescending(d => d)
             .ToList();
@@ -82,6 +89,7 @@ public sealed class ReportService : IReportService
             {
                 var dayEvents = events.Where(e => ToCalendarDay(e.TimestampUtc) == day);
                 var (dayStart, dayEnd) = GetCalendarDayBoundsUtc(day);
+                var timesheetIntervals = timesheets.Select(t => (t.StartedAtUtc, t.EndedAtUtc));
                 return new DailyActivityRow
                 {
                     Day = day,
@@ -96,6 +104,16 @@ public sealed class ReportService : IReportService
                         now),
                     SessionCount = IntervalOverlap.CountOverlapping(
                         sessions.Select(s => (s.StartedAtUtc, s.EndedAtUtc)),
+                        dayStart,
+                        dayEnd,
+                        now),
+                    TimesheetEntryCount = IntervalOverlap.CountOverlapping(
+                        timesheetIntervals,
+                        dayStart,
+                        dayEnd,
+                        now),
+                    TimesheetDurationSeconds = IntervalOverlap.UnionSeconds(
+                        timesheetIntervals,
                         dayStart,
                         dayEnd,
                         now),
@@ -1290,6 +1308,16 @@ public sealed class ReportService : IReportService
     {
         var start = ToCalendarDay(session.StartedAtUtc);
         var end = ToCalendarDay(session.EndedAtUtc ?? DateTimeOffset.UtcNow);
+        for (var day = start; day <= end; day = day.AddDays(1))
+        {
+            yield return day;
+        }
+    }
+
+    private IEnumerable<DateOnly> TimesheetDayKeys(TimesheetEntry entry)
+    {
+        var start = ToCalendarDay(entry.StartedAtUtc);
+        var end = ToCalendarDay(entry.EndedAtUtc ?? DateTimeOffset.UtcNow);
         for (var day = start; day <= end; day = day.AddDays(1))
         {
             yield return day;

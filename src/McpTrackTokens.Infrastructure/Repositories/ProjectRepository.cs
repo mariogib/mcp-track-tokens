@@ -166,6 +166,33 @@ public sealed class ProjectRepository : IProjectRepository
     }
 
     /// <inheritdoc />
+    public async Task SetRepositoryAsync(
+        Guid projectId,
+        string? localPath,
+        string? remoteUrl = null,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _db.ProjectRepositories
+            .Where(r => r.ProjectId == projectId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing.Count > 0)
+        {
+            _db.ProjectRepositories.RemoveRange(existing);
+        }
+
+        if (string.IsNullOrWhiteSpace(localPath))
+        {
+            return;
+        }
+
+        await _db.ProjectRepositories
+            .AddAsync(DomainProjectRepository.Create(projectId, localPath, remoteUrl), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task AddAliasAsync(ProjectAlias alias, CancellationToken cancellationToken = default)
     {
         await _db.ProjectAliases.AddAsync(alias, cancellationToken).ConfigureAwait(false);

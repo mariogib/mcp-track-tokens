@@ -21,11 +21,10 @@ public sealed class ProjectRepositoryConfiguration : IEntityTypeConfiguration<Pr
         builder.Property(e => e.NormalizedRemoteUrl).HasMaxLength(2048);
         builder.Property(e => e.DefaultBranch).HasMaxLength(256);
 
-        builder.HasIndex(e => e.ProjectId);
+        builder.HasIndex(e => e.ProjectId).IsUnique();
         builder.HasIndex(e => e.NormalizedPath);
         builder.HasIndex(e => e.NormalizedRemoteUrl);
         builder.HasIndex(e => e.CreatedAtUtc);
-        builder.HasIndex(e => new { e.ProjectId, e.NormalizedPath }).IsUnique();
 
         builder.HasOne<Project>()
             .WithMany()

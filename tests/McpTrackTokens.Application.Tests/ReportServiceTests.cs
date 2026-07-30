@@ -20,10 +20,20 @@ public sealed class ReportServiceTests
     private readonly IExternalUsageRepository _usage = Substitute.For<IExternalUsageRepository>();
     private readonly IUsageAttributionRepository _attributions = Substitute.For<IUsageAttributionRepository>();
     private readonly IImportBatchRepository _imports = Substitute.For<IImportBatchRepository>();
+    private readonly ITimesheetEntryRepository _timesheets = Substitute.For<ITimesheetEntryRepository>();
     private readonly ISubscriptionAllocationService _subscription = Substitute.For<ISubscriptionAllocationService>();
 
     private ReportService CreateSut()
-        => new(
+    {
+        _timesheets
+            .ListAsync(
+                Arg.Any<Guid?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        return new(
             _projects,
             _sessions,
             _events,
@@ -32,8 +42,10 @@ public sealed class ReportServiceTests
             _usage,
             _attributions,
             _imports,
+            _timesheets,
             _subscription,
             Microsoft.Extensions.Options.Options.Create(new TrackingOptions { DefaultCurrency = "USD" }));
+    }
 
     [Fact]
     public async Task GetActivitySummaryAsync_separates_agent_duration_from_active_project_time()
@@ -160,6 +172,37 @@ public sealed class ReportServiceTests
         report.AgentDurationMilliseconds.Should().Be(45_000);
         report.ActiveProjectTimeSeconds.Should().Be(1200);
         report.AgentDurationMilliseconds.Should().NotBe(report.ActiveProjectTimeSeconds);
+    }
+
+    [Fact]
+    public async Task GetDailyActivityAsync_includes_timesheet_count_and_duration()
+    {
+        var project = Project.Create("Demo", "demo");
+        var from = DateTimeOffset.Parse("2026-07-17T08:00:00Z");
+        var to = DateTimeOffset.Parse("2026-07-17T12:00:00Z");
+        var categoryId = Guid.NewGuid();
+
+        var entry = TimesheetEntry.Start(project.Id, categoryId, from.AddMinutes(10));
+        entry.End(from.AddMinutes(40));
+
+        _events.ListAsync(from, to, project.Id, Arg.Any<bool?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+        _sessions.ListAsync(project.Id, from, to, Arg.Any<CancellationToken>())
+            .Returns([]);
+        _usage.ListAsync(from, to, Arg.Any<UsageSource?>(), Arg.Any<CancellationToken>())
+            .Returns([]);
+
+        var sut = CreateSut();
+        _timesheets.ListAsync(project.Id, from, to, Arg.Any<CancellationToken>())
+            .Returns([entry]);
+
+        var report = await sut.GetDailyActivityAsync(from, to, project.Id);
+
+        report.Rows.Should().ContainSingle();
+        var row = report.Rows[0];
+        row.TimesheetEntryCount.Should().Be(1);
+        row.TimesheetDurationSeconds.Should().Be(1800);
+        row.SessionCount.Should().Be(0);
     }
 
     [Fact]
@@ -380,6 +423,7 @@ public sealed class ReportServiceTests
             _usage,
             _attributions,
             _imports,
+            _timesheets,
             _subscription,
             Microsoft.Extensions.Options.Options.Create(new TrackingOptions
             {

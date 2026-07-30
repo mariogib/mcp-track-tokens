@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   useCreateProjectSessionMutation,
@@ -13,6 +13,7 @@ import {
   useProjectPromptFacetsQuery,
   useProjectQuery,
   useProjectSessionsQuery,
+  useProjectTimesheetQuery,
   useProjectUsageQuery,
   useRecalculateActivityWindowsMutation,
   useSessionPromptsQuery,
@@ -59,6 +60,7 @@ import {
   sessionDurationMs,
   sessionsWithinTimesheetPeriods,
   sessionsWithinTimeRange,
+  timesheetsWithinTimeRange,
   dayBoundsLocal,
   timesheetEntryDurationMs,
 } from '../utils/duration';
@@ -135,15 +137,15 @@ const TABS = [
   'Timesheet',
   'Usage',
   'Costs',
-  'Repositories',
-  'Exports',
   'Settings',
 ] as const;
 
-/** Old Cost / Token Costs tab URLs map onto the combined Costs tab. */
+/** Old Cost / Token Costs / Repositories / Exports tab URLs map onto current tabs. */
 const TAB_ALIASES = {
   cost: 'Costs',
   'token-costs': 'Costs',
+  repositories: 'Settings',
+  exports: 'Settings',
 } as const satisfies Readonly<Record<string, (typeof TABS)[number]>>;
 
 const SESSION_STATUSES = ['Active', 'Paused', 'Ended', 'Abandoned'] as const;
@@ -290,6 +292,8 @@ export function ProjectDetailsPage() {
     clientName: '',
     billingCode: '',
     currency: 'USD',
+    repositoryPath: '',
+    remoteUrl: '',
     isActive: true,
   });
   const [settingsMessage, setSettingsMessage] = useState<string | null>(null);
@@ -311,7 +315,10 @@ export function ProjectDetailsPage() {
   const [selectedSessionForPrompts, setSelectedSessionForPrompts] = useState<SessionDto | null>(
     null,
   );
-  const [selectedActivityDay, setSelectedActivityDay] = useState<DailyActivityRow | null>(null);
+  const [selectedActivityDayDrilldown, setSelectedActivityDayDrilldown] = useState<{
+    day: DailyActivityRow;
+    kind: 'sessions' | 'timesheets';
+  } | null>(null);
   const [selectedUsage, setSelectedUsage] = useState<ProjectUsageEntryDto | null>(null);
   const [selectedCostModel, setSelectedCostModel] = useState<CombinedModelCostRow | null>(null);
   const [selectedTimesheetEntry, setSelectedTimesheetEntry] = useState<TimesheetEntryDto | null>(
@@ -422,8 +429,38 @@ export function ProjectDetailsPage() {
     });
   };
 
+  const detail = project.data;
+
+  useEffect(() => {
+    if (tab !== 'Settings' || !detail) {
+      return;
+    }
+
+    setSettingsDraft({
+      name: detail.name,
+      slug: detail.slug,
+      clientName: detail.clientName ?? '',
+      billingCode: detail.billingCode ?? '',
+      currency: detail.currency || 'USD',
+      repositoryPath: detail.primaryRepositoryPath ?? '',
+      remoteUrl: detail.primaryRemoteUrl ?? '',
+      isActive: detail.isActive,
+    });
+  }, [
+    tab,
+    detail?.id,
+    detail?.name,
+    detail?.slug,
+    detail?.clientName,
+    detail?.billingCode,
+    detail?.currency,
+    detail?.primaryRepositoryPath,
+    detail?.primaryRemoteUrl,
+    detail?.isActive,
+  ]);
+
   if (project.isLoading) return <LoadingState label="Loading project…" />;
-  if (project.error || !project.data) {
+  if (project.error || !detail) {
     return (
       <ErrorState
         message={
@@ -433,7 +470,6 @@ export function ProjectDetailsPage() {
     );
   }
 
-  const detail = project.data;
   const byDay = activity.data?.byDay ?? [];
   // Charts stay chronological (oldest → newest); grids use byDay as returned (newest first).
   const byDayChronological = [...byDay].sort((a, b) => a.day.localeCompare(b.day));
@@ -604,16 +640,6 @@ export function ProjectDetailsPage() {
               className={`tab${tab === name ? ' active' : ''}`}
               onClick={() => {
                 setTab(name);
-                if (name === 'Settings') {
-                  setSettingsDraft({
-                    name: detail.name,
-                    slug: detail.slug,
-                    clientName: detail.clientName ?? '',
-                    billingCode: detail.billingCode ?? '',
-                    currency: detail.currency || 'USD',
-                    isActive: detail.isActive,
-                  });
-                }
               }}
             >
               {name}
@@ -818,6 +844,7 @@ export function ProjectDetailsPage() {
                   row.promptCount,
                   row.agentRuns,
                   row.sessionCount,
+                  row.timesheetEntryCount ?? 0,
                 ]
                   .map(String)
                   .join(' ')
@@ -831,6 +858,8 @@ export function ProjectDetailsPage() {
                 { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
                 { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
                 { header: 'Sessions', key: 'sessionCount' },
+                { header: 'Timesheets', key: 'timesheetEntryCount' },
+                { header: 'Timesheet duration (s)', key: 'timesheetDurationSeconds' },
               ]}
               toExportRow={(row) => ({
                 day: formatDay(row.day),
@@ -839,6 +868,8 @@ export function ProjectDetailsPage() {
                 agentDurationMilliseconds: row.agentDurationMilliseconds,
                 activeProjectTimeSeconds: row.activeProjectTimeSeconds,
                 sessionCount: row.sessionCount,
+                timesheetEntryCount: row.timesheetEntryCount ?? 0,
+                timesheetDurationSeconds: row.timesheetDurationSeconds ?? 0,
               })}
               emptySourceMessage="No activity in the selected range."
               renderTable={(rows) => (
@@ -851,30 +882,51 @@ export function ProjectDetailsPage() {
                       <th>Agent duration</th>
                       <th>Active time</th>
                       <th>Sessions</th>
+                      <th>Timesheets</th>
+                      <th>Timesheet duration</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
-                      <tr
-                        key={row.day}
-                        className="clickable-row"
-                        onClick={() => setSelectedActivityDay(row)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedActivityDay(row);
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Show sessions for ${formatDay(row.day)}`}
-                      >
+                      <tr key={row.day}>
                         <td>{formatDay(row.day)}</td>
                         <td>{formatNumber(row.promptCount)}</td>
                         <td>{formatNumber(row.agentRuns)}</td>
                         <td>{formatDurationMs(row.agentDurationMilliseconds)}</td>
                         <td>{formatDurationSeconds(row.activeProjectTimeSeconds)}</td>
-                        <td>{formatNumber(row.sessionCount)}</td>
+                        <td>
+                          <TextLink
+                            title={`Show sessions for ${formatDay(row.day)}`}
+                            ariaLabel={`Show sessions for ${formatDay(row.day)}`}
+                            onClick={() =>
+                              setSelectedActivityDayDrilldown({ day: row, kind: 'sessions' })
+                            }
+                          >
+                            {formatNumber(row.sessionCount)}
+                          </TextLink>
+                        </td>
+                        <td>
+                          <TextLink
+                            title={`Show timesheets for ${formatDay(row.day)}`}
+                            ariaLabel={`Show timesheets for ${formatDay(row.day)}`}
+                            onClick={() =>
+                              setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
+                            }
+                          >
+                            {formatNumber(row.timesheetEntryCount ?? 0)}
+                          </TextLink>
+                        </td>
+                        <td>
+                          <TextLink
+                            title={`Show timesheets for ${formatDay(row.day)}`}
+                            ariaLabel={`Show timesheet duration details for ${formatDay(row.day)}`}
+                            onClick={() =>
+                              setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
+                            }
+                          >
+                            {formatDurationSeconds(row.timesheetDurationSeconds ?? 0)}
+                          </TextLink>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -882,37 +934,58 @@ export function ProjectDetailsPage() {
               )}
               renderGrid={(rows) =>
                 rows.map((row) => (
-                  <article
-                    key={row.day}
-                    className="analysis-browse-tile clickable-row"
-                    onClick={() => setSelectedActivityDay(row)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        setSelectedActivityDay(row);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Show sessions for ${formatDay(row.day)}`}
-                  >
+                  <article key={row.day} className="analysis-browse-tile">
                     <strong>{formatDay(row.day)}</strong>
                     <span>Prompts {formatNumber(row.promptCount)}</span>
                     <span>Agent runs {formatNumber(row.agentRuns)}</span>
                     <span>
                       Active {formatDurationSeconds(row.activeProjectTimeSeconds)}
                     </span>
-                    <span>Sessions {formatNumber(row.sessionCount)}</span>
+                    <TextLink
+                      title={`Show sessions for ${formatDay(row.day)}`}
+                      ariaLabel={`Show sessions for ${formatDay(row.day)}`}
+                      onClick={() =>
+                        setSelectedActivityDayDrilldown({ day: row, kind: 'sessions' })
+                      }
+                    >
+                      Sessions {formatNumber(row.sessionCount)}
+                    </TextLink>
+                    <TextLink
+                      title={`Show timesheets for ${formatDay(row.day)}`}
+                      ariaLabel={`Show timesheets for ${formatDay(row.day)}`}
+                      onClick={() =>
+                        setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
+                      }
+                    >
+                      Timesheets {formatNumber(row.timesheetEntryCount ?? 0)}
+                    </TextLink>
+                    <TextLink
+                      title={`Show timesheets for ${formatDay(row.day)}`}
+                      ariaLabel={`Show timesheet duration details for ${formatDay(row.day)}`}
+                      onClick={() =>
+                        setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
+                      }
+                    >
+                      Timesheet {formatDurationSeconds(row.timesheetDurationSeconds ?? 0)}
+                    </TextLink>
                   </article>
                 ))
               }
             />
-            {selectedActivityDay && projectId ? (
-              <ActivityDaySessionsDialog
-                day={selectedActivityDay.day}
-                projectId={projectId}
-                onClose={() => setSelectedActivityDay(null)}
-              />
+            {selectedActivityDayDrilldown && projectId ? (
+              selectedActivityDayDrilldown.kind === 'sessions' ? (
+                <ActivityDaySessionsDialog
+                  day={selectedActivityDayDrilldown.day.day}
+                  projectId={projectId}
+                  onClose={() => setSelectedActivityDayDrilldown(null)}
+                />
+              ) : (
+                <ActivityDayTimesheetsDialog
+                  day={selectedActivityDayDrilldown.day.day}
+                  projectId={projectId}
+                  onClose={() => setSelectedActivityDayDrilldown(null)}
+                />
+              )
             ) : null}
           </>
         ))}
@@ -2436,85 +2509,147 @@ export function ProjectDetailsPage() {
         />
       ) : null}
 
-      {tab === 'Repositories' && (
-        <AnalysisDetailBrowse
-          heading="Repositories"
-          searchPlaceholder="Search repositories..."
-          rows={detail.repositories ?? []}
-          getStatusValue={(repo) => (repo.isActive ? 'Active' : 'Inactive')}
-          statusOptions={[
-            { value: 'Active', label: 'Active' },
-            { value: 'Inactive', label: 'Inactive' },
-          ]}
-          getSearchText={(repo) =>
-            [
-              repo.localPath,
-              repo.remoteUrl,
-              repo.defaultBranch,
-              repo.isActive ? 'Active' : 'Inactive',
-            ]
-              .filter(Boolean)
-              .join(' ')
-          }
-          exportFilename={`project-${detail.id}-repositories.xlsx`}
-          exportTitle={`${detail.name} · Repositories`}
-          exportColumns={[
-            { header: 'Local path', key: 'localPath' },
-            { header: 'Remote', key: 'remoteUrl' },
-            { header: 'Default branch', key: 'defaultBranch' },
-            { header: 'Status', key: 'status' },
-          ]}
-          toExportRow={(repo) => ({
-            localPath: repo.localPath,
-            remoteUrl: repo.remoteUrl ?? '',
-            defaultBranch: repo.defaultBranch ?? '',
-            status: repo.isActive ? 'Active' : 'Inactive',
-          })}
-          emptySourceMessage="No repositories mapped to this project."
-          renderTable={(rows) => (
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Local path</th>
-                  <th>Remote</th>
-                  <th>Default branch</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((repo) => (
-                  <tr key={repo.id}>
-                    <td className="mono">{repo.localPath}</td>
-                    <td className="mono">{repo.remoteUrl ?? '—'}</td>
-                    <td>{repo.defaultBranch ?? '—'}</td>
-                    <td>
-                      <StatusBadge
-                        label={repo.isActive ? 'Active' : 'Inactive'}
-                        tone={repo.isActive ? 'success' : 'neutral'}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          renderGrid={(rows) =>
-            rows.map((repo) => (
-              <article key={repo.id} className="analysis-browse-tile">
-                <strong className="mono">{repo.localPath}</strong>
-                <span className="mono">{repo.remoteUrl ?? 'No remote'}</span>
-                <span>{repo.defaultBranch ?? 'No default branch'}</span>
-                <span>{repo.isActive ? 'Active' : 'Inactive'}</span>
-              </article>
-            ))
-          }
-        />
-      )}
-
-      {tab === 'Exports' && (
-        <section className="page-section">
+      {tab === 'Settings' && (
+        <section className="page-section stack">
           <Panel className="stack">
-            <p>Download a project report as JSON or CSV.</p>
+            <form
+              className="stack"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                setSettingsMessage(null);
+                try {
+                  await updateMutation.mutateAsync({
+                    id: detail.id,
+                    body: {
+                      name: settingsDraft.name.trim(),
+                      slug: settingsDraft.slug.trim() || null,
+                      clientName: settingsDraft.clientName || null,
+                      billingCode: settingsDraft.billingCode || null,
+                      currency: settingsDraft.currency,
+                      repositoryPath: settingsDraft.repositoryPath.trim(),
+                      remoteUrl: settingsDraft.remoteUrl.trim(),
+                      isActive: settingsDraft.isActive,
+                    },
+                  });
+                  setSettingsMessage('Project settings saved.');
+                  await project.refetch();
+                } catch (err) {
+                  setSettingsMessage(err instanceof Error ? err.message : 'Save failed');
+                }
+              }}
+            >
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="name">Name</label>
+                  <input
+                    id="name"
+                    required
+                    value={settingsDraft.name}
+                    onChange={(e) => setSettingsDraft((s) => ({ ...s, name: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="slug">Slug</label>
+                  <input
+                    id="slug"
+                    value={settingsDraft.slug}
+                    onChange={(e) => setSettingsDraft((s) => ({ ...s, slug: e.target.value }))}
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="clientName">Client</label>
+                  <input
+                    id="clientName"
+                    value={settingsDraft.clientName}
+                    onChange={(e) =>
+                      setSettingsDraft((s) => ({ ...s, clientName: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="billingCode">Billing code</label>
+                  <input
+                    id="billingCode"
+                    value={settingsDraft.billingCode}
+                    onChange={(e) =>
+                      setSettingsDraft((s) => ({ ...s, billingCode: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="currency">Currency</label>
+                  <input
+                    id="currency"
+                    value={settingsDraft.currency}
+                    onChange={(e) => setSettingsDraft((s) => ({ ...s, currency: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label htmlFor="repositoryPath">Local repository path</label>
+                  <input
+                    id="repositoryPath"
+                    className="mono"
+                    value={settingsDraft.repositoryPath}
+                    onChange={(e) =>
+                      setSettingsDraft((s) => ({ ...s, repositoryPath: e.target.value }))
+                    }
+                    placeholder="D:\Work\acme-website"
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="remoteUrl">Remote URL</label>
+                  <input
+                    id="remoteUrl"
+                    className="mono"
+                    value={settingsDraft.remoteUrl}
+                    onChange={(e) => setSettingsDraft((s) => ({ ...s, remoteUrl: e.target.value }))}
+                    placeholder="https://github.com/acme/website.git"
+                  />
+                </div>
+              </div>
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={settingsDraft.isActive}
+                  onChange={(e) => setSettingsDraft((s) => ({ ...s, isActive: e.target.checked }))}
+                />
+                Project is active
+              </label>
+              <div className="row-actions">
+                <button type="submit" className="btn" disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? 'Saving…' : 'Save project settings'}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  disabled={deleteMutation.isPending}
+                  onClick={() => {
+                    const ok = window.confirm(
+                      `Delete project “${detail.name}”? It will be deactivated and removed from the active list.`,
+                    );
+                    if (!ok) {
+                      return;
+                    }
+                    void deleteMutation
+                      .mutateAsync(detail.id)
+                      .then(() => navigate('/projects'))
+                      .catch((err: unknown) => {
+                        setSettingsMessage(err instanceof Error ? err.message : 'Delete failed');
+                      });
+                  }}
+                >
+                  Delete project
+                </button>
+                {settingsMessage ? <span>{settingsMessage}</span> : null}
+              </div>
+            </form>
+          </Panel>
+
+          <Panel className="stack">
+            <h3>Export</h3>
+            <p>Download a project report for the selected period as JSON or CSV.</p>
             <div className="row">
               <button
                 type="button"
@@ -2571,114 +2706,6 @@ export function ProjectDetailsPage() {
               />
             ) : null}
           </Panel>
-        </section>
-      )}
-
-      {tab === 'Settings' && (
-        <section className="page-section">
-          <Panel className="stack"><form
-            className="stack"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              setSettingsMessage(null);
-              try {
-                await updateMutation.mutateAsync({
-                  id: detail.id,
-                  body: {
-                    name: settingsDraft.name.trim(),
-                    slug: settingsDraft.slug.trim() || null,
-                    clientName: settingsDraft.clientName || null,
-                    billingCode: settingsDraft.billingCode || null,
-                    currency: settingsDraft.currency,
-                    isActive: settingsDraft.isActive,
-                  },
-                });
-                setSettingsMessage('Project settings saved.');
-                await project.refetch();
-              } catch (err) {
-                setSettingsMessage(err instanceof Error ? err.message : 'Save failed');
-              }
-            }}
-          >
-            <div className="field-row">
-              <div className="field">
-                <label htmlFor="name">Name</label>
-                <input
-                  id="name"
-                  required
-                  value={settingsDraft.name}
-                  onChange={(e) => setSettingsDraft((s) => ({ ...s, name: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="slug">Slug</label>
-                <input
-                  id="slug"
-                  value={settingsDraft.slug}
-                  onChange={(e) => setSettingsDraft((s) => ({ ...s, slug: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="clientName">Client</label>
-                <input
-                  id="clientName"
-                  value={settingsDraft.clientName}
-                  onChange={(e) => setSettingsDraft((s) => ({ ...s, clientName: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="billingCode">Billing code</label>
-                <input
-                  id="billingCode"
-                  value={settingsDraft.billingCode}
-                  onChange={(e) => setSettingsDraft((s) => ({ ...s, billingCode: e.target.value }))}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="currency">Currency</label>
-                <input
-                  id="currency"
-                  value={settingsDraft.currency}
-                  onChange={(e) => setSettingsDraft((s) => ({ ...s, currency: e.target.value }))}
-                />
-              </div>
-            </div>
-            <label className="row">
-              <input
-                type="checkbox"
-                checked={settingsDraft.isActive}
-                onChange={(e) => setSettingsDraft((s) => ({ ...s, isActive: e.target.checked }))}
-              />
-              Project is active
-            </label>
-            <div className="row-actions">
-              <button type="submit" className="btn" disabled={updateMutation.isPending}>
-                {updateMutation.isPending ? 'Saving…' : 'Save project settings'}
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  const ok = window.confirm(
-                    `Delete project “${detail.name}”? It will be deactivated and removed from the active list.`,
-                  );
-                  if (!ok) {
-                    return;
-                  }
-                  void deleteMutation
-                    .mutateAsync(detail.id)
-                    .then(() => navigate('/projects'))
-                    .catch((err: unknown) => {
-                      setSettingsMessage(err instanceof Error ? err.message : 'Delete failed');
-                    });
-                }}
-              >
-                Delete project
-              </button>
-              {settingsMessage ? <span>{settingsMessage}</span> : null}
-            </div>
-          </form></Panel>
         </section>
       )}
     </Page>
@@ -2939,6 +2966,89 @@ function ActivityDaySessionsDialog({
               ))}
               <tr>
                 <td colSpan={2}>
+                  <strong>Total</strong>
+                </td>
+                <td>
+                  <strong>{formatDurationMs(totalMs)}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </PopupForm>
+  );
+}
+
+function ActivityDayTimesheetsDialog({
+  day,
+  projectId,
+  onClose,
+}: {
+  day: string;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const dayKey = day.includes('T') ? day.slice(0, 10) : day;
+  const bounds = useMemo(() => dayBoundsLocal(dayKey), [dayKey]);
+  const timesheetsQuery = useProjectTimesheetQuery(projectId, bounds.fromUtc, bounds.toUtc);
+  const timesheetRows = useMemo(
+    () => timesheetsWithinTimeRange(timesheetsQuery.data ?? [], bounds.fromUtc, bounds.toUtc),
+    [bounds.fromUtc, bounds.toUtc, timesheetsQuery.data],
+  );
+  const totalMs = useMemo(
+    () => timesheetRows.reduce((sum, row) => sum + row.durationMs, 0),
+    [timesheetRows],
+  );
+
+  return (
+    <PopupForm
+      title={`Timesheets on ${formatDay(dayKey)}`}
+      subtitle="Start, end, and duration are the portions of each timesheet entry on this day."
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {timesheetsQuery.isLoading ? (
+        <LoadingState label="Loading timesheets…" />
+      ) : timesheetsQuery.error ? (
+        <ErrorState
+          message={
+            timesheetsQuery.error instanceof Error
+              ? timesheetsQuery.error.message
+              : 'Failed to load timesheets'
+          }
+        />
+      ) : timesheetRows.length === 0 ? (
+        <EmptyState message="No timesheet entries fall within this day." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {timesheetRows.map((row) => (
+                <tr key={row.entry.id}>
+                  <td>{row.entry.categoryName?.trim() || 'Uncategorized'}</td>
+                  <td>{formatDateTime(row.startUtc)}</td>
+                  <td>{formatDateTime(row.endUtc)}</td>
+                  <td>
+                    {formatDurationMs(row.durationMs)}
+                    {row.entry.isOpen && !row.entry.endedAtUtc ? ' (open)' : ''}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={3}>
                   <strong>Total</strong>
                 </td>
                 <td>

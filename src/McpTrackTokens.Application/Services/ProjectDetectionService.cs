@@ -188,12 +188,9 @@ public sealed class ProjectDetectionService : IProjectDetectionService
             request.RemoteUrl);
 
         await _projects.AddAsync(project, cancellationToken).ConfigureAwait(false);
-
-        if (!string.IsNullOrWhiteSpace(request.RepositoryPath))
-        {
-            var repo = ProjectRepository.Create(project.Id, request.RepositoryPath, request.RemoteUrl);
-            await _projects.AddRepositoryAsync(repo, cancellationToken).ConfigureAwait(false);
-        }
+        await _projects
+            .SetRepositoryAsync(project.Id, request.RepositoryPath, request.RemoteUrl, cancellationToken)
+            .ConfigureAwait(false);
 
         if (request.Aliases is not null)
         {
@@ -235,17 +232,23 @@ public sealed class ProjectDetectionService : IProjectDetectionService
             ? project.Currency
             : request.Currency;
 
+        var repositoryPath = request.RepositoryPath ?? project.PrimaryRepositoryPath;
+        var remoteUrl = request.RemoteUrl ?? project.PrimaryRemoteUrl;
+
         project.UpdateDetails(
             name,
             slug,
             currency,
             request.ClientName,
             request.BillingCode,
-            request.RepositoryPath ?? project.PrimaryRepositoryPath,
-            request.RemoteUrl ?? project.PrimaryRemoteUrl,
+            repositoryPath,
+            remoteUrl,
             request.IsActive ?? project.IsActive);
 
         await _projects.UpdateAsync(project, cancellationToken).ConfigureAwait(false);
+        await _projects
+            .SetRepositoryAsync(project.Id, project.PrimaryRepositoryPath, project.PrimaryRemoteUrl, cancellationToken)
+            .ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return await ToDetailDtoAsync(project, cancellationToken).ConfigureAwait(false);

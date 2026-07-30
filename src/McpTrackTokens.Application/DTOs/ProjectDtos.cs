@@ -33,7 +33,7 @@ public sealed record ProjectDto
 }
 
 /// <summary>
-/// Detailed project view including repositories and aliases.
+/// Detailed project view including its repository and aliases.
 /// </summary>
 public sealed record ProjectDetailDto
 {

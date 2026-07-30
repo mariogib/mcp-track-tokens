@@ -29,6 +29,15 @@ public interface IProjectRepository
 
     Task AddRepositoryAsync(ProjectRepository repository, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Replaces the project's single repository mapping. Clears it when <paramref name="localPath"/> is empty.
+    /// </summary>
+    Task SetRepositoryAsync(
+        Guid projectId,
+        string? localPath,
+        string? remoteUrl = null,
+        CancellationToken cancellationToken = default);
+
     Task AddAliasAsync(ProjectAlias alias, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ProjectRepository>> GetRepositoriesAsync(Guid projectId, CancellationToken cancellationToken = default);

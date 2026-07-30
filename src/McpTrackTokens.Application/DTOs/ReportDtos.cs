@@ -39,6 +39,12 @@ public sealed record DailyActivityRow
 
     public int SessionCount { get; init; }
 
+    /// <summary>Timesheet entries overlapping this calendar day.</summary>
+    public int TimesheetEntryCount { get; init; }
+
+    /// <summary>Merged timesheet coverage on this calendar day (seconds).</summary>
+    public long TimesheetDurationSeconds { get; init; }
+
     /// <summary>Imported usage tokens attributed to the project on this day.</summary>
     public long TotalTokens { get; init; }
 }

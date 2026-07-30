@@ -86,6 +86,9 @@ export function aggregateActivityReports(
         activeProjectTimeSeconds:
           existing.activeProjectTimeSeconds + row.activeProjectTimeSeconds,
         sessionCount: existing.sessionCount + row.sessionCount,
+        timesheetEntryCount: (existing.timesheetEntryCount ?? 0) + (row.timesheetEntryCount ?? 0),
+        timesheetDurationSeconds:
+          (existing.timesheetDurationSeconds ?? 0) + (row.timesheetDurationSeconds ?? 0),
         totalTokens: (existing.totalTokens ?? 0) + (row.totalTokens ?? 0),
       });
     }

@@ -185,8 +185,8 @@ export function ProjectsPage() {
       clientName: draft.clientName.trim() || null,
       billingCode: draft.billingCode.trim() || null,
       currency: draft.currency.trim() || null,
-      repositoryPath: draft.repositoryPath.trim() || null,
-      remoteUrl: draft.remoteUrl.trim() || null,
+      repositoryPath: draft.repositoryPath.trim(),
+      remoteUrl: draft.remoteUrl.trim(),
       isActive: draft.isActive,
     };
 
@@ -253,7 +253,7 @@ export function ProjectsPage() {
         { header: 'Name', key: 'name' },
         { header: 'Client', key: 'clientName' },
         { header: 'Slug', key: 'slug' },
-        { header: 'Repos', key: 'repositoryCount' },
+        { header: 'Repository', key: 'repositoryPath' },
         { header: 'Prompts', key: 'promptCount' },
         { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
         { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
@@ -269,7 +269,7 @@ export function ProjectsPage() {
           name: project.name,
           clientName: project.clientName ?? '',
           slug: project.slug,
-          repositoryCount: project.repositoryCount,
+          repositoryPath: project.primaryRepositoryPath ?? '',
           promptCount: cost?.promptCount ?? project.promptCount,
           agentDurationMilliseconds:
             cost?.agentDurationMilliseconds ?? project.agentDurationMilliseconds,
@@ -480,7 +480,7 @@ export function ProjectsPage() {
                 <tr>
                   <th>Name</th>
                   <th>Client</th>
-                  <th>Repos</th>
+                  <th>Repository</th>
                   <th>Prompts</th>
                   <th>Agent duration</th>
                   <th>Active time</th>
@@ -501,7 +501,7 @@ export function ProjectsPage() {
                         <TextLink to={`/projects/${project.id}`}>{project.name}</TextLink>
                       </td>
                       <td>{project.clientName ?? '—'}</td>
-                      <td>{formatNumber(project.repositoryCount)}</td>
+                      <td className="mono">{project.primaryRepositoryPath ?? '—'}</td>
                       <td>{formatNumber(cost?.promptCount ?? project.promptCount)}</td>
                       <td>
                         {formatDurationMs(

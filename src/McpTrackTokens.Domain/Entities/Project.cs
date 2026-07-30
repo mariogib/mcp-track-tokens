@@ -4,7 +4,7 @@ using McpTrackTokens.Domain.Validation;
 namespace McpTrackTokens.Domain.Entities;
 
 /// <summary>
-/// A billable or tracked project that groups repositories, sessions, and usage.
+/// A billable or tracked project with a single repository, plus sessions and usage.
 /// </summary>
 public sealed class Project : EntityBase, IAuditable
 {

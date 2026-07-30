@@ -193,6 +193,8 @@ export async function exportProjectDetailsWorkbook(
         { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
         { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
         { header: 'Sessions', key: 'sessionCount' },
+        { header: 'Timesheets', key: 'timesheetEntryCount' },
+        { header: 'Timesheet duration (s)', key: 'timesheetDurationSeconds' },
       ],
       data: (activity?.byDay ?? []).map((row) => ({
         day: formatDay(row.day),
@@ -201,6 +203,8 @@ export async function exportProjectDetailsWorkbook(
         agentDurationMilliseconds: row.agentDurationMilliseconds,
         activeProjectTimeSeconds: row.activeProjectTimeSeconds,
         sessionCount: row.sessionCount,
+        timesheetEntryCount: row.timesheetEntryCount ?? 0,
+        timesheetDurationSeconds: row.timesheetDurationSeconds ?? 0,
       })),
     },
     {

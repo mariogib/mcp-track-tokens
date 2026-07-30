@@ -31,6 +31,13 @@ export type SessionWithinTimesheet = {
   durationMs: number;
 };
 
+export type TimesheetWithinRange = {
+  entry: TimesheetEntryDto;
+  startUtc: string;
+  endUtc: string;
+  durationMs: number;
+};
+
 function toInterval(
   startedAtUtc: string,
   endedAtUtc: string | null | undefined,
@@ -105,6 +112,37 @@ export function sessionsWithinTimeRange(
   const range = toInterval(fromUtc, toUtc, now);
   if (!range) return [];
   return sessionsWithinIntervals(sessions, [range], now);
+}
+
+/**
+ * Timesheet entries overlapping `[fromUtc, toUtc]`, with start/end/duration clipped to that range.
+ */
+export function timesheetsWithinTimeRange(
+  entries: TimesheetEntryDto[],
+  fromUtc: string,
+  toUtc: string,
+  now = Date.now(),
+): TimesheetWithinRange[] {
+  const range = toInterval(fromUtc, toUtc, now);
+  if (!range) return [];
+
+  const rows: TimesheetWithinRange[] = [];
+  for (const entry of entries) {
+    const entryInterval = toInterval(entry.startedAtUtc, entry.endedAtUtc, now);
+    if (!entryInterval) continue;
+    const clip = clipInterval(entryInterval, range);
+    if (!clip) continue;
+    const durationMs = clip.endMs - clip.startMs;
+    if (durationMs <= 0) continue;
+    rows.push({
+      entry,
+      startUtc: new Date(clip.startMs).toISOString(),
+      endUtc: new Date(clip.endMs).toISOString(),
+      durationMs,
+    });
+  }
+
+  return rows.sort((a, b) => b.startUtc.localeCompare(a.startUtc));
 }
 
 function sessionsWithinIntervals(
