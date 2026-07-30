@@ -195,6 +195,15 @@ public sealed class ReportServiceTests
             totalTokens: 999,
             reportedCost: 9m);
 
+        var linkedPrompt = PromptActivityEvent.Create(
+            ActivityEventType.PromptSubmitted,
+            EditorType.Cursor,
+            from.AddMinutes(50),
+            projectId: project.Id,
+            model: "claude-4.5-sonnet",
+            branch: "main",
+            repositoryPath: @"D:\demo");
+
         _projects.GetByIdAsync(project.Id, Arg.Any<CancellationToken>()).Returns(project);
         _attributions.ListAsync(from, to, project.Id, Arg.Any<CancellationToken>())
             .Returns(
@@ -208,7 +217,8 @@ public sealed class ReportServiceTests
                     allocatedInputTokens: 1000,
                     allocatedOutputTokens: 200,
                     allocatedTotalTokens: 1650,
-                    projectId: project.Id),
+                    projectId: project.Id,
+                    activityEventId: linkedPrompt.Id),
                 UsageAttribution.Create(
                     usagePartial.Id,
                     AttributionMethod.Manual,
@@ -229,6 +239,7 @@ public sealed class ReportServiceTests
             ]);
         _usage.GetByIdAsync(usageFull.Id, Arg.Any<CancellationToken>()).Returns(usageFull);
         _usage.GetByIdAsync(usagePartial.Id, Arg.Any<CancellationToken>()).Returns(usagePartial);
+        _events.GetByIdAsync(linkedPrompt.Id, Arg.Any<CancellationToken>()).Returns(linkedPrompt);
 
         var sut = CreateSut();
         var summary = await sut.GetProjectUsageSummaryAsync(project.Id, from, to);
@@ -250,10 +261,17 @@ public sealed class ReportServiceTests
         summary.Items[0].CachedInputTokens.Should().Be(100);
         summary.Items[0].ReasoningTokens.Should().Be(20);
         summary.Items[0].TotalTokens.Should().Be(570);
+        summary.Items[0].LinkedPrompt.Should().BeNull();
         summary.Items[1].UsageRecordId.Should().Be(usageFull.Id);
         summary.Items[1].InputTokens.Should().Be(1000);
         summary.Items[1].CachedInputTokens.Should().Be(400);
         summary.Items[1].ReasoningTokens.Should().Be(50);
+        summary.Items[1].LinkedPrompt.Should().NotBeNull();
+        var linked = summary.Items[1].LinkedPrompt!;
+        linked.Id.Should().Be(linkedPrompt.Id);
+        linked.Model.Should().Be("claude-4.5-sonnet");
+        linked.Branch.Should().Be("main");
+        linked.AttributionMethod.Should().Be("ClosestPromptMatch");
         summary.CalculatedTokenCost.Should().Be(summary.Items.Sum(i => i.CalculatedTokenCost));
     }
 

@@ -393,6 +393,21 @@ public sealed class ReportService : IReportService
 
         var rates = CursorTokenCostCalculator.GetEffectiveRates(_options.CursorTokenRates);
 
+        var promptIds = allocated
+            .Where(a => a.ActivityEventId is Guid)
+            .Select(a => a.ActivityEventId!.Value)
+            .Distinct()
+            .ToList();
+        var promptsById = new Dictionary<Guid, PromptActivityEvent>();
+        foreach (var promptId in promptIds)
+        {
+            var prompt = await _events.GetByIdAsync(promptId, cancellationToken).ConfigureAwait(false);
+            if (prompt is not null)
+            {
+                promptsById[prompt.Id] = prompt;
+            }
+        }
+
         long cachedInputTokens = 0;
         long cacheWriteTokens = 0;
         long reasoningTokens = 0;
@@ -422,6 +437,33 @@ public sealed class ReportService : IReportService
                 usage,
                 attribution.AllocationPercentage,
                 rates);
+            var breakdown = CursorTokenCostCalculator.EstimateBreakdownOrZero(
+                usage,
+                CursorTokenCostCalculator.GetEffectiveAllocationPercentage(
+                    attribution.AllocationPercentage),
+                rates);
+
+            LinkedPromptSummaryDto? linkedPrompt = null;
+            if (attribution.ActivityEventId is Guid activityId &&
+                promptsById.TryGetValue(activityId, out var prompt))
+            {
+                linkedPrompt = new LinkedPromptSummaryDto
+                {
+                    Id = prompt.Id,
+                    TimestampUtc = prompt.TimestampUtc,
+                    EventType = prompt.EventType.ToString(),
+                    Editor = prompt.Editor.ToString(),
+                    Model = prompt.Model,
+                    Branch = prompt.Branch,
+                    Status = prompt.Status.ToString(),
+                    DurationMilliseconds = prompt.DurationMilliseconds,
+                    RepositoryPath = prompt.RepositoryPath,
+                    WorkspacePath = prompt.WorkspacePath,
+                    RemoteUrl = prompt.RemoteUrl,
+                    AttributionMethod = attribution.AttributionMethod.ToString(),
+                    AttributionConfidence = attribution.Confidence.ToString()
+                };
+            }
 
             items.Add(new ProjectUsageEntryDto
             {
@@ -434,7 +476,41 @@ public sealed class ReportService : IReportService
                 CacheWriteTokens = cacheWrite,
                 ReasoningTokens = reasoning,
                 TotalTokens = total,
-                CalculatedTokenCost = Math.Round(calculated, 4, MidpointRounding.AwayFromZero)
+                CalculatedTokenCost = Math.Round(calculated, 4, MidpointRounding.AwayFromZero),
+                LinkedPrompt = linkedPrompt,
+                UsageByType =
+                [
+                    new UsageTypeCostDto
+                    {
+                        Type = "Input",
+                        Tokens = breakdown.InputTokens,
+                        CalculatedCost = breakdown.InputCost
+                    },
+                    new UsageTypeCostDto
+                    {
+                        Type = "Output",
+                        Tokens = breakdown.OutputTokens,
+                        CalculatedCost = breakdown.OutputCost
+                    },
+                    new UsageTypeCostDto
+                    {
+                        Type = "Cache read",
+                        Tokens = breakdown.CachedInputTokens,
+                        CalculatedCost = breakdown.CachedInputCost
+                    },
+                    new UsageTypeCostDto
+                    {
+                        Type = "Cache write",
+                        Tokens = breakdown.CacheWriteTokens,
+                        CalculatedCost = breakdown.CacheWriteCost
+                    },
+                    new UsageTypeCostDto
+                    {
+                        Type = "Reasoning",
+                        Tokens = breakdown.ReasoningTokens,
+                        CalculatedCost = breakdown.ReasoningCost
+                    }
+                ]
             });
         }
 

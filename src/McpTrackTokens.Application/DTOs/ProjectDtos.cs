@@ -201,6 +201,56 @@ public sealed record ProjectUsageEntryDto
 
     /// <summary>Rate-card calculated cost for the attributed share.</summary>
     public decimal CalculatedTokenCost { get; init; }
+
+    /// <summary>Prompt this usage was attributed to, when linked.</summary>
+    public LinkedPromptSummaryDto? LinkedPrompt { get; init; }
+
+    /// <summary>Per usage-type token and calculated-cost breakdown.</summary>
+    public IReadOnlyList<UsageTypeCostDto> UsageByType { get; init; } = [];
+}
+
+/// <summary>
+/// Tokens and calculated cost for one Cursor usage type bucket.
+/// </summary>
+public sealed record UsageTypeCostDto
+{
+    public string Type { get; init; } = string.Empty;
+
+    public long Tokens { get; init; }
+
+    public decimal CalculatedCost { get; init; }
+}
+
+/// <summary>
+/// Summary of the prompt linked to an attributed usage row.
+/// </summary>
+public sealed record LinkedPromptSummaryDto
+{
+    public Guid Id { get; init; }
+
+    public DateTimeOffset TimestampUtc { get; init; }
+
+    public string EventType { get; init; } = string.Empty;
+
+    public string? Editor { get; init; }
+
+    public string? Model { get; init; }
+
+    public string? Branch { get; init; }
+
+    public string? Status { get; init; }
+
+    public long? DurationMilliseconds { get; init; }
+
+    public string? RepositoryPath { get; init; }
+
+    public string? WorkspacePath { get; init; }
+
+    public string? RemoteUrl { get; init; }
+
+    public string? AttributionMethod { get; init; }
+
+    public string? AttributionConfidence { get; init; }
 }
 
 /// <summary>

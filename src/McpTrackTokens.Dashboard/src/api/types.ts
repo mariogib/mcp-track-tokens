@@ -75,6 +75,22 @@ export interface ActivitySummaryDto {
   toUtc?: string | null;
 }
 
+export interface LinkedPromptSummaryDto {
+  id: string;
+  timestampUtc: string;
+  eventType: string;
+  editor?: string | null;
+  model?: string | null;
+  branch?: string | null;
+  status?: string | null;
+  durationMilliseconds?: number | null;
+  repositoryPath?: string | null;
+  workspacePath?: string | null;
+  remoteUrl?: string | null;
+  attributionMethod?: string | null;
+  attributionConfidence?: string | null;
+}
+
 export interface ProjectUsageEntryDto {
   usageRecordId: string;
   timestampUtc: string;
@@ -86,6 +102,8 @@ export interface ProjectUsageEntryDto {
   reasoningTokens: number;
   totalTokens: number;
   calculatedTokenCost: number;
+  linkedPrompt?: LinkedPromptSummaryDto | null;
+  usageByType?: PromptUsageTypeBreakdownDto[];
 }
 
 export interface UsageSummaryDto {

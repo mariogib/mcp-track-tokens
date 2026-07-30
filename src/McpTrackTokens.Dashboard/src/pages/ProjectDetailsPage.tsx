@@ -12,8 +12,10 @@ import {
   useProjectTokenCostQuery,
   useProjectPromptFacetsQuery,
   useProjectQuery,
+  useProjectSessionsQuery,
   useProjectUsageQuery,
   useRecalculateActivityWindowsMutation,
+  useSessionPromptsQuery,
   useTimesheetCategoriesQuery,
   useTimesheetReportMonthsQuery,
   useUpdateProjectMutation,
@@ -21,7 +23,15 @@ import {
   useUpdateTimesheetEntryMutation,
 } from '../api/hooks';
 import { api } from '../api/client';
-import type { PromptEventDto, PromptUsageTypeBreakdownDto, SessionDto, TimesheetEntryDto } from '../api/types';
+import type {
+  DailyActivityRow,
+  LinkedPromptSummaryDto,
+  PromptEventDto,
+  PromptUsageTypeBreakdownDto,
+  ProjectUsageEntryDto,
+  SessionDto,
+  TimesheetEntryDto,
+} from '../api/types';
 import {
   ChartCard,
   DailyLineChart,
@@ -45,7 +55,13 @@ import {
   buildModelCostSeries,
   resolveDisplayCost,
 } from '../utils/chartDetail';
-import { sessionDurationMs, timesheetEntryDurationMs } from '../utils/duration';
+import {
+  sessionDurationMs,
+  sessionsWithinTimesheetPeriods,
+  sessionsWithinTimeRange,
+  dayBoundsLocal,
+  timesheetEntryDurationMs,
+} from '../utils/duration';
 import {
   currentUtcYearMonth,
   monthDateInputs,
@@ -67,6 +83,23 @@ import {
 import { exportProjectDetailsWorkbook } from '../utils/projectDetailsExcelExport';
 
 const PROMPT_TIME_CUSTOM = '__custom__';
+
+type CombinedModelCostRow = {
+  model: string;
+  promptCount: number;
+  usageBasedCost: number;
+  subscriptionAllocation: number;
+  calculatedTokenCost: number;
+  rateSource: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  reportedCost: number;
+};
 
 function dayBoundsUtc(dayKey: string): { fromUtc: string; toUtc: string } {
   return {
@@ -275,6 +308,15 @@ export function ProjectDetailsPage() {
   const [promptFromDate, setPromptFromDate] = useState('');
   const [promptToDate, setPromptToDate] = useState('');
   const [selectedPrompt, setSelectedPrompt] = useState<PromptEventDto | null>(null);
+  const [selectedSessionForPrompts, setSelectedSessionForPrompts] = useState<SessionDto | null>(
+    null,
+  );
+  const [selectedActivityDay, setSelectedActivityDay] = useState<DailyActivityRow | null>(null);
+  const [selectedUsage, setSelectedUsage] = useState<ProjectUsageEntryDto | null>(null);
+  const [selectedCostModel, setSelectedCostModel] = useState<CombinedModelCostRow | null>(null);
+  const [selectedTimesheetEntry, setSelectedTimesheetEntry] = useState<TimesheetEntryDto | null>(
+    null,
+  );
   const [overviewExporting, setOverviewExporting] = useState(false);
   const [overviewExportMessage, setOverviewExportMessage] = useState<string | null>(null);
   const [recalculateMessage, setRecalculateMessage] = useState<string | null>(null);
@@ -410,25 +452,7 @@ export function ProjectDetailsPage() {
   const modelCalculatedSeries = buildModelCalculatedSeries(cost.data?.byModel ?? [], '');
 
   const combinedModelCostRows = (() => {
-    const byKey = new Map<
-      string,
-      {
-        model: string;
-        promptCount: number;
-        usageBasedCost: number;
-        subscriptionAllocation: number;
-        calculatedTokenCost: number;
-        rateSource: string;
-        inputTokens: number;
-        outputTokens: number;
-        cachedInputTokens: number;
-        cacheWriteTokens: number;
-        reasoningTokens: number;
-        totalTokens: number;
-        estimatedCost: number;
-        reportedCost: number;
-      }
-    >();
+    const byKey = new Map<string, CombinedModelCostRow>();
 
     const keyFor = (name: string) => name.trim().toLowerCase() || 'unknown';
 
@@ -783,79 +807,114 @@ export function ProjectDetailsPage() {
             message={activity.error instanceof Error ? activity.error.message : 'Failed'}
           />
         ) : (
-          <AnalysisDetailBrowse
-            heading="Activity by day"
-            searchPlaceholder="Search days..."
-            rows={activity.data?.byDay ?? []}
-            getSearchText={(row) =>
-              [
-                formatDay(row.day),
-                row.promptCount,
-                row.agentRuns,
-                row.sessionCount,
-              ]
-                .map(String)
-                .join(' ')
-            }
-            exportFilename={`project-${detail.id}-activity.xlsx`}
-            exportTitle={`${detail.name} · Activity`}
-            exportColumns={[
-              { header: 'Day', key: 'day' },
-              { header: 'Prompts', key: 'promptCount' },
-              { header: 'Agent runs', key: 'agentRuns' },
-              { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
-              { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
-              { header: 'Sessions', key: 'sessionCount' },
-            ]}
-            toExportRow={(row) => ({
-              day: formatDay(row.day),
-              promptCount: row.promptCount,
-              agentRuns: row.agentRuns,
-              agentDurationMilliseconds: row.agentDurationMilliseconds,
-              activeProjectTimeSeconds: row.activeProjectTimeSeconds,
-              sessionCount: row.sessionCount,
-            })}
-            emptySourceMessage="No activity in the selected range."
-            renderTable={(rows) => (
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Prompts</th>
-                    <th>Agent runs</th>
-                    <th>Agent duration</th>
-                    <th>Active time</th>
-                    <th>Sessions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.day}>
-                      <td>{formatDay(row.day)}</td>
-                      <td>{formatNumber(row.promptCount)}</td>
-                      <td>{formatNumber(row.agentRuns)}</td>
-                      <td>{formatDurationMs(row.agentDurationMilliseconds)}</td>
-                      <td>{formatDurationSeconds(row.activeProjectTimeSeconds)}</td>
-                      <td>{formatNumber(row.sessionCount)}</td>
+          <>
+            <AnalysisDetailBrowse
+              heading="Activity by day"
+              searchPlaceholder="Search days..."
+              rows={activity.data?.byDay ?? []}
+              getSearchText={(row) =>
+                [
+                  formatDay(row.day),
+                  row.promptCount,
+                  row.agentRuns,
+                  row.sessionCount,
+                ]
+                  .map(String)
+                  .join(' ')
+              }
+              exportFilename={`project-${detail.id}-activity.xlsx`}
+              exportTitle={`${detail.name} · Activity`}
+              exportColumns={[
+                { header: 'Day', key: 'day' },
+                { header: 'Prompts', key: 'promptCount' },
+                { header: 'Agent runs', key: 'agentRuns' },
+                { header: 'Agent duration (ms)', key: 'agentDurationMilliseconds' },
+                { header: 'Active time (s)', key: 'activeProjectTimeSeconds' },
+                { header: 'Sessions', key: 'sessionCount' },
+              ]}
+              toExportRow={(row) => ({
+                day: formatDay(row.day),
+                promptCount: row.promptCount,
+                agentRuns: row.agentRuns,
+                agentDurationMilliseconds: row.agentDurationMilliseconds,
+                activeProjectTimeSeconds: row.activeProjectTimeSeconds,
+                sessionCount: row.sessionCount,
+              })}
+              emptySourceMessage="No activity in the selected range."
+              renderTable={(rows) => (
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th>Day</th>
+                      <th>Prompts</th>
+                      <th>Agent runs</th>
+                      <th>Agent duration</th>
+                      <th>Active time</th>
+                      <th>Sessions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-            renderGrid={(rows) =>
-              rows.map((row) => (
-                <article key={row.day} className="analysis-browse-tile">
-                  <strong>{formatDay(row.day)}</strong>
-                  <span>Prompts {formatNumber(row.promptCount)}</span>
-                  <span>Agent runs {formatNumber(row.agentRuns)}</span>
-                  <span>
-                    Active {formatDurationSeconds(row.activeProjectTimeSeconds)}
-                  </span>
-                  <span>Sessions {formatNumber(row.sessionCount)}</span>
-                </article>
-              ))
-            }
-          />
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => (
+                      <tr
+                        key={row.day}
+                        className="clickable-row"
+                        onClick={() => setSelectedActivityDay(row)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedActivityDay(row);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Show sessions for ${formatDay(row.day)}`}
+                      >
+                        <td>{formatDay(row.day)}</td>
+                        <td>{formatNumber(row.promptCount)}</td>
+                        <td>{formatNumber(row.agentRuns)}</td>
+                        <td>{formatDurationMs(row.agentDurationMilliseconds)}</td>
+                        <td>{formatDurationSeconds(row.activeProjectTimeSeconds)}</td>
+                        <td>{formatNumber(row.sessionCount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              renderGrid={(rows) =>
+                rows.map((row) => (
+                  <article
+                    key={row.day}
+                    className="analysis-browse-tile clickable-row"
+                    onClick={() => setSelectedActivityDay(row)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedActivityDay(row);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Show sessions for ${formatDay(row.day)}`}
+                  >
+                    <strong>{formatDay(row.day)}</strong>
+                    <span>Prompts {formatNumber(row.promptCount)}</span>
+                    <span>Agent runs {formatNumber(row.agentRuns)}</span>
+                    <span>
+                      Active {formatDurationSeconds(row.activeProjectTimeSeconds)}
+                    </span>
+                    <span>Sessions {formatNumber(row.sessionCount)}</span>
+                  </article>
+                ))
+              }
+            />
+            {selectedActivityDay && projectId ? (
+              <ActivityDaySessionsDialog
+                day={selectedActivityDay.day}
+                projectId={projectId}
+                onClose={() => setSelectedActivityDay(null)}
+              />
+            ) : null}
+          </>
         ))}
 
       {tab === 'Prompts' && (
@@ -1107,7 +1166,10 @@ export function ProjectDetailsPage() {
           <div className="section-header">
             <div>
               <h2>Sessions</h2>
-              <p className="muted">Add, edit, or delete tracked editor sessions for this project.</p>
+              <p className="muted">
+                Add, edit, or delete tracked editor sessions for this project. Click a row to see
+                prompts in that session.
+              </p>
             </div>
             <button
               type="button"
@@ -1396,7 +1458,20 @@ export function ProjectDetailsPage() {
                   {rows.map((s) => {
                     const durationMs = sessionDurationMs(s);
                     return (
-                      <tr key={s.id}>
+                      <tr
+                        key={s.id}
+                        className="clickable-row"
+                        onClick={() => setSelectedSessionForPrompts(s)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedSessionForPrompts(s);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
+                      >
                         <td className="mono">{s.id.slice(0, 8)}</td>
                         <td>{s.editor ?? '—'}</td>
                         <td>{formatDateTime(s.startedAtUtc)}</td>
@@ -1412,7 +1487,7 @@ export function ProjectDetailsPage() {
                           />
                         </td>
                         <td>
-                          <div className="row-actions">
+                          <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               className="btn btn-compact btn-secondary"
@@ -1461,7 +1536,20 @@ export function ProjectDetailsPage() {
               rows.map((s) => {
                 const durationMs = sessionDurationMs(s);
                 return (
-                  <article key={s.id} className="analysis-browse-tile">
+                  <article
+                    key={s.id}
+                    className="analysis-browse-tile clickable-row"
+                    onClick={() => setSelectedSessionForPrompts(s)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedSessionForPrompts(s);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
+                  >
                     <strong className="mono">{s.id.slice(0, 8)}</strong>
                     <span>{s.editor ?? '—'}</span>
                     <span>{formatDateTime(s.startedAtUtc)}</span>
@@ -1469,7 +1557,7 @@ export function ProjectDetailsPage() {
                       {durationMs == null ? '—' : formatDurationMs(durationMs)}
                     </span>
                     <span>{s.branch ?? 'No branch'}</span>
-                    <div className="row-actions">
+                    <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         className="btn btn-compact btn-secondary"
@@ -1512,6 +1600,13 @@ export function ProjectDetailsPage() {
               })
             }
           />
+
+          {selectedSessionForPrompts ? (
+            <SessionPromptsDialog
+              session={selectedSessionForPrompts}
+              onClose={() => setSelectedSessionForPrompts(null)}
+            />
+          ) : null}
         </section>
       )}
 
@@ -1521,7 +1616,8 @@ export function ProjectDetailsPage() {
             <div>
               <h2>Timesheet</h2>
               <p className="muted">
-                Capture billable time with category, start, end, and notes. MCP tools{' '}
+                Capture billable time with category, start, end, and notes. Click a row to see
+                sessions that fall within that timesheet period. MCP tools{' '}
                 <code>start_timesheet</code> / <code>end_timesheet</code> write here for the open
                 Cursor project. Categories are managed under Settings → Data.
               </p>
@@ -1776,7 +1872,20 @@ export function ProjectDetailsPage() {
                   {rows.map((entry) => {
                     const duration = timesheetEntryDurationMs(entry);
                     return (
-                      <tr key={entry.id}>
+                      <tr
+                        key={entry.id}
+                        className="clickable-row"
+                        onClick={() => setSelectedTimesheetEntry(entry)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedTimesheetEntry(entry);
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
+                      >
                         <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
                         <td>{formatDateTime(entry.startedAtUtc)}</td>
                         <td>{formatDateTime(entry.endedAtUtc)}</td>
@@ -1793,7 +1902,7 @@ export function ProjectDetailsPage() {
                           />
                         </td>
                         <td>
-                          <div className="row-actions">
+                          <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               className="btn btn-compact btn-secondary"
@@ -1840,7 +1949,20 @@ export function ProjectDetailsPage() {
               rows.map((entry) => {
                 const duration = timesheetEntryDurationMs(entry);
                 return (
-                <article key={entry.id} className="analysis-browse-tile">
+                <article
+                  key={entry.id}
+                  className="analysis-browse-tile clickable-row"
+                  onClick={() => setSelectedTimesheetEntry(entry)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedTimesheetEntry(entry);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
+                >
                   <strong>
                     {entry.categoryName?.trim() ? entry.categoryName : 'Uncategorized'}
                   </strong>
@@ -1852,7 +1974,7 @@ export function ProjectDetailsPage() {
                       : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
                   </span>
                   <span>{entry.notes?.trim() ? entry.notes : 'No notes'}</span>
-                  <div className="row-actions">
+                  <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       className="btn btn-compact btn-secondary"
@@ -1893,6 +2015,14 @@ export function ProjectDetailsPage() {
               })
             }
           />
+
+          {selectedTimesheetEntry ? (
+            <TimesheetSessionsDialog
+              entry={selectedTimesheetEntry}
+              projectId={detail.id}
+              onClose={() => setSelectedTimesheetEntry(null)}
+            />
+          ) : null}
         </section>
       )}
 
@@ -1988,7 +2118,20 @@ export function ProjectDetailsPage() {
                       </thead>
                       <tbody>
                         {rows.map((row) => (
-                          <tr key={row.usageRecordId}>
+                          <tr
+                            key={row.usageRecordId}
+                            className="clickable-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Show linked prompt for usage at ${formatDateTime(row.timestampUtc)}`}
+                            onClick={() => setSelectedUsage(row)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setSelectedUsage(row);
+                              }
+                            }}
+                          >
                             <td>{formatDateTime(row.timestampUtc)}</td>
                             <td>{row.model ?? '—'}</td>
                             <td>{formatNumber(row.inputTokens)}</td>
@@ -2007,7 +2150,20 @@ export function ProjectDetailsPage() {
                 renderGrid={(rows) => {
                   const currency = usage.data?.currency ?? detail.currency;
                   return rows.map((row) => (
-                    <article key={row.usageRecordId} className="analysis-browse-tile">
+                    <article
+                      key={row.usageRecordId}
+                      className="analysis-browse-tile clickable-tile"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Show linked prompt for usage at ${formatDateTime(row.timestampUtc)}`}
+                      onClick={() => setSelectedUsage(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedUsage(row);
+                        }
+                      }}
+                    >
                       <strong>{row.model ?? 'Unknown model'}</strong>
                       <span>{formatDateTime(row.timestampUtc)}</span>
                       <span>
@@ -2028,6 +2184,10 @@ export function ProjectDetailsPage() {
           )}
         </section>
       )}
+
+      {selectedUsage ? (
+        <LinkedPromptDialog usage={selectedUsage} onClose={() => setSelectedUsage(null)} />
+      ) : null}
 
       {tab === 'Costs' && (
         <section className="page-section stack">
@@ -2196,7 +2356,20 @@ export function ProjectDetailsPage() {
                       </thead>
                       <tbody>
                         {rows.map((row) => (
-                          <tr key={row.model}>
+                          <tr
+                            key={row.model}
+                            className="clickable-row"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Show prompts and usage types for ${row.model}`}
+                            onClick={() => setSelectedCostModel(row)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setSelectedCostModel(row);
+                              }
+                            }}
+                          >
                             <td>{row.model}</td>
                             <td className="mono">{row.rateSource}</td>
                             <td>{formatNumber(row.promptCount)}</td>
@@ -2220,7 +2393,20 @@ export function ProjectDetailsPage() {
                   const currency =
                     cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency;
                   return rows.map((row) => (
-                    <article key={row.model} className="analysis-browse-tile">
+                    <article
+                      key={row.model}
+                      className="analysis-browse-tile clickable-tile"
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Show prompts and usage types for ${row.model}`}
+                      onClick={() => setSelectedCostModel(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedCostModel(row);
+                        }
+                      }}
+                    >
                       <strong>{row.model}</strong>
                       <span className="mono">{row.rateSource}</span>
                       <span>Prompts {formatNumber(row.promptCount)}</span>
@@ -2240,6 +2426,15 @@ export function ProjectDetailsPage() {
           )}
         </section>
       )}
+
+      {selectedCostModel ? (
+        <CostModelDetailDialog
+          modelRow={selectedCostModel}
+          usageItems={usage.data?.items ?? []}
+          currency={cost.data?.currency ?? tokenCost.data?.currency ?? detail.currency}
+          onClose={() => setSelectedCostModel(null)}
+        />
+      ) : null}
 
       {tab === 'Repositories' && (
         <AnalysisDetailBrowse
@@ -2487,6 +2682,538 @@ export function ProjectDetailsPage() {
         </section>
       )}
     </Page>
+  );
+}
+
+function CostModelDetailDialog({
+  modelRow,
+  usageItems,
+  currency,
+  onClose,
+}: {
+  modelRow: CombinedModelCostRow;
+  usageItems: ProjectUsageEntryDto[];
+  currency: string;
+  onClose: () => void;
+}) {
+  const modelKey = modelRow.model.trim().toLowerCase() || 'unknown';
+  const modelUsages = usageItems.filter(
+    (item) => (item.model?.trim().toLowerCase() || 'unknown') === modelKey,
+  );
+
+  const promptsById = new Map<
+    string,
+    {
+      prompt: LinkedPromptSummaryDto;
+      totalTokens: number;
+      calculatedTokenCost: number;
+    }
+  >();
+  for (const item of modelUsages) {
+    const prompt = item.linkedPrompt;
+    if (!prompt) continue;
+    const existing = promptsById.get(prompt.id);
+    if (existing) {
+      existing.totalTokens += item.totalTokens;
+      existing.calculatedTokenCost += item.calculatedTokenCost;
+    } else {
+      promptsById.set(prompt.id, {
+        prompt,
+        totalTokens: item.totalTokens,
+        calculatedTokenCost: item.calculatedTokenCost,
+      });
+    }
+  }
+  const associatedPrompts = [...promptsById.values()].sort(
+    (a, b) => b.prompt.timestampUtc.localeCompare(a.prompt.timestampUtc),
+  );
+
+  const usageTypeTotals = new Map<string, { tokens: number; calculatedCost: number }>();
+  for (const item of modelUsages) {
+    for (const row of item.usageByType ?? []) {
+      const current = usageTypeTotals.get(row.type) ?? { tokens: 0, calculatedCost: 0 };
+      current.tokens += row.tokens;
+      current.calculatedCost += row.calculatedCost;
+      usageTypeTotals.set(row.type, current);
+    }
+  }
+  const usageTypeOrder = ['Input', 'Output', 'Cache read', 'Cache write', 'Reasoning'];
+  const usageTypeRows: PromptUsageTypeBreakdownDto[] =
+    usageTypeTotals.size > 0
+      ? usageTypeOrder
+          .filter((type) => usageTypeTotals.has(type))
+          .map((type) => {
+            const row = usageTypeTotals.get(type)!;
+            return {
+              type,
+              tokens: row.tokens,
+              calculatedCost: Math.round(row.calculatedCost * 1_000_000) / 1_000_000,
+            };
+          })
+      : [
+          { type: 'Input', tokens: modelRow.inputTokens, calculatedCost: 0 },
+          { type: 'Output', tokens: modelRow.outputTokens, calculatedCost: 0 },
+          { type: 'Cache read', tokens: modelRow.cachedInputTokens, calculatedCost: 0 },
+          { type: 'Cache write', tokens: modelRow.cacheWriteTokens, calculatedCost: 0 },
+          { type: 'Reasoning', tokens: modelRow.reasoningTokens, calculatedCost: 0 },
+        ].filter((row) => row.tokens > 0 || modelRow.totalTokens === 0);
+
+  return (
+    <PopupForm
+      title={`Cost detail · ${modelRow.model}`}
+      subtitle={`Rate ${modelRow.rateSource} · ${formatNumber(associatedPrompts.length)} linked prompt${associatedPrompts.length === 1 ? '' : 's'}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      <div className="stack">
+        <div>
+          <h3>Usage by type</h3>
+          {usageTypeRows.length === 0 ? (
+            <EmptyState message="No token usage for this model in the selected range." />
+          ) : (
+            <TablePanel>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Usage type</th>
+                    <th>Tokens</th>
+                    <th>Calculated cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usageTypeRows.map((row) => (
+                    <tr key={row.type}>
+                      <td>
+                        <span className="setting-label">
+                          <span>{row.type}</span>
+                          <UsageTypeHelp type={row.type} />
+                        </span>
+                      </td>
+                      <td>{formatNumber(row.tokens)}</td>
+                      <td>{formatCurrency(row.calculatedCost, currency)}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td>
+                      <strong>Total</strong>
+                    </td>
+                    <td>
+                      <strong>
+                        {formatNumber(
+                          usageTypeTotals.size > 0
+                            ? [...usageTypeTotals.values()].reduce((sum, row) => sum + row.tokens, 0)
+                            : modelRow.totalTokens,
+                        )}
+                      </strong>
+                    </td>
+                    <td>
+                      <strong>
+                        {formatCurrency(
+                          usageTypeTotals.size > 0
+                            ? [...usageTypeTotals.values()].reduce(
+                                (sum, row) => sum + row.calculatedCost,
+                                0,
+                              )
+                            : modelRow.estimatedCost || modelRow.calculatedTokenCost,
+                          currency,
+                        )}
+                      </strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </TablePanel>
+          )}
+        </div>
+
+        <div>
+          <h3>Associated prompts</h3>
+          {associatedPrompts.length === 0 ? (
+            <EmptyState message="No linked prompts for this model’s attributed usage in the selected range." />
+          ) : (
+            <TablePanel>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Type</th>
+                    <th>Model</th>
+                    <th>Branch</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Tokens</th>
+                    <th>Calculated cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {associatedPrompts.map(({ prompt, totalTokens, calculatedTokenCost }) => (
+                    <tr key={prompt.id}>
+                      <td>{formatDateTime(prompt.timestampUtc)}</td>
+                      <td>{prompt.eventType}</td>
+                      <td>{prompt.model ?? '—'}</td>
+                      <td>{prompt.branch ?? '—'}</td>
+                      <td>{prompt.status ?? '—'}</td>
+                      <td>{formatDurationMs(prompt.durationMilliseconds)}</td>
+                      <td>{formatNumber(totalTokens)}</td>
+                      <td>{formatCurrency(calculatedTokenCost, currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TablePanel>
+          )}
+        </div>
+      </div>
+    </PopupForm>
+  );
+}
+
+function ActivityDaySessionsDialog({
+  day,
+  projectId,
+  onClose,
+}: {
+  day: string;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const dayKey = day.includes('T') ? day.slice(0, 10) : day;
+  const bounds = useMemo(() => dayBoundsLocal(dayKey), [dayKey]);
+  const sessionsQuery = useProjectSessionsQuery(projectId, bounds.fromUtc, bounds.toUtc);
+  const sessionRows = useMemo(
+    () => sessionsWithinTimeRange(sessionsQuery.data ?? [], bounds.fromUtc, bounds.toUtc),
+    [bounds.fromUtc, bounds.toUtc, sessionsQuery.data],
+  );
+  const totalMs = useMemo(
+    () => sessionRows.reduce((sum, row) => sum + row.durationMs, 0),
+    [sessionRows],
+  );
+
+  return (
+    <PopupForm
+      title={`Sessions on ${formatDay(dayKey)}`}
+      subtitle="Start, end, and duration are the portions of each session on this day."
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {sessionsQuery.isLoading ? (
+        <LoadingState label="Loading sessions…" />
+      ) : sessionsQuery.error ? (
+        <ErrorState
+          message={
+            sessionsQuery.error instanceof Error
+              ? sessionsQuery.error.message
+              : 'Failed to load sessions'
+          }
+        />
+      ) : sessionRows.length === 0 ? (
+        <EmptyState message="No sessions fall within this day." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessionRows.map((row) => (
+                <tr key={row.session.id}>
+                  <td>{formatDateTime(row.startUtc)}</td>
+                  <td>{formatDateTime(row.endUtc)}</td>
+                  <td>
+                    {formatDurationMs(row.durationMs)}
+                    {row.session.isActive && !row.session.endedAtUtc ? ' (running)' : ''}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={2}>
+                  <strong>Total</strong>
+                </td>
+                <td>
+                  <strong>{formatDurationMs(totalMs)}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </PopupForm>
+  );
+}
+
+function promptEndUtc(prompt: PromptEventDto): string | null {
+  if (prompt.durationMilliseconds == null || prompt.durationMilliseconds < 0) {
+    return null;
+  }
+  const start = new Date(prompt.timestampUtc).getTime();
+  if (!Number.isFinite(start)) {
+    return null;
+  }
+  return new Date(start + prompt.durationMilliseconds).toISOString();
+}
+
+function SessionPromptsDialog({
+  session,
+  onClose,
+}: {
+  session: SessionDto;
+  onClose: () => void;
+}) {
+  const promptsQuery = useSessionPromptsQuery(session.id);
+  const prompts = useMemo(
+    () =>
+      [...(promptsQuery.data ?? [])].sort((a, b) =>
+        b.timestampUtc.localeCompare(a.timestampUtc),
+      ),
+    [promptsQuery.data],
+  );
+  const totalDurationMs = useMemo(
+    () =>
+      prompts.reduce(
+        (sum, prompt) =>
+          sum +
+          (prompt.durationMilliseconds != null && prompt.durationMilliseconds > 0
+            ? prompt.durationMilliseconds
+            : 0),
+        0,
+      ),
+    [prompts],
+  );
+  const sessionDuration = sessionDurationMs(session);
+
+  return (
+    <PopupForm
+      title="Prompts in session"
+      subtitle={`${session.editor ?? 'Session'} · ${formatDateTime(session.startedAtUtc)}${
+        sessionDuration == null ? '' : ` · ${formatDurationMs(sessionDuration)}`
+      }`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {promptsQuery.isLoading ? (
+        <LoadingState label="Loading prompts…" />
+      ) : promptsQuery.error ? (
+        <ErrorState
+          message={
+            promptsQuery.error instanceof Error
+              ? promptsQuery.error.message
+              : 'Failed to load prompts'
+          }
+        />
+      ) : prompts.length === 0 ? (
+        <EmptyState message="No prompts were recorded for this session." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prompts.map((prompt) => {
+                const endUtc = promptEndUtc(prompt);
+                return (
+                  <tr key={prompt.id}>
+                    <td>{formatDateTime(prompt.timestampUtc)}</td>
+                    <td>{endUtc ? formatDateTime(endUtc) : '—'}</td>
+                    <td>
+                      {prompt.durationMilliseconds == null
+                        ? '—'
+                        : formatDurationMs(prompt.durationMilliseconds)}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr>
+                <td colSpan={2}>
+                  <strong>Total</strong>
+                </td>
+                <td>
+                  <strong>{formatDurationMs(totalDurationMs)}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </PopupForm>
+  );
+}
+
+function TimesheetSessionsDialog({
+  entry,
+  projectId,
+  onClose,
+}: {
+  entry: TimesheetEntryDto;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const sessionFromUtc = useMemo(() => {
+    const start = new Date(entry.startedAtUtc).getTime();
+    const base = Number.isFinite(start) ? start : Date.now();
+    return new Date(base - 60_000).toISOString();
+  }, [entry.startedAtUtc]);
+  const sessionToUtc = useMemo(() => {
+    const end = entry.endedAtUtc ? new Date(entry.endedAtUtc).getTime() : Date.now();
+    const base = Number.isFinite(end) ? end : Date.now();
+    return new Date(base + 60_000).toISOString();
+  }, [entry.endedAtUtc]);
+
+  const sessionsQuery = useProjectSessionsQuery(projectId, sessionFromUtc, sessionToUtc);
+  const sessionRows = useMemo(
+    () => sessionsWithinTimesheetPeriods(sessionsQuery.data ?? [], [entry]),
+    [entry, sessionsQuery.data],
+  );
+  const totalMs = useMemo(
+    () => sessionRows.reduce((sum, row) => sum + row.durationMs, 0),
+    [sessionRows],
+  );
+  const entryDuration = timesheetEntryDurationMs(entry);
+
+  return (
+    <PopupForm
+      title="Sessions in timesheet period"
+      subtitle={`${entry.categoryName?.trim() || 'Uncategorized'} · ${formatDateTime(entry.startedAtUtc)} – ${
+        entry.endedAtUtc ? formatDateTime(entry.endedAtUtc) : 'Open'
+      }${entryDuration == null ? '' : ` · ${formatDurationMs(entryDuration)}`}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {sessionsQuery.isLoading ? (
+        <LoadingState label="Loading sessions…" />
+      ) : sessionsQuery.error ? (
+        <ErrorState
+          message={
+            sessionsQuery.error instanceof Error
+              ? sessionsQuery.error.message
+              : 'Failed to load sessions'
+          }
+        />
+      ) : sessionRows.length === 0 ? (
+        <EmptyState message="No sessions fall within this timesheet period." />
+      ) : (
+        <TablePanel>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Started</th>
+                <th>Ended</th>
+                <th>Duration</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessionRows.map((row) => (
+                <tr key={row.session.id}>
+                  <td>{formatDateTime(row.startUtc)}</td>
+                  <td>{formatDateTime(row.endUtc)}</td>
+                  <td>
+                    {formatDurationMs(row.durationMs)}
+                    {row.session.isActive && !row.session.endedAtUtc ? ' (running)' : ''}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={2}>
+                  <strong>Total</strong>
+                </td>
+                <td>
+                  <strong>{formatDurationMs(totalMs)}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </TablePanel>
+      )}
+    </PopupForm>
+  );
+}
+
+function LinkedPromptDialog({
+  usage,
+  onClose,
+}: {
+  usage: ProjectUsageEntryDto;
+  onClose: () => void;
+}) {
+  const prompt: LinkedPromptSummaryDto | null | undefined = usage.linkedPrompt;
+  const fields: { label: string; value: string }[] = prompt
+    ? [
+        { label: 'Time', value: formatDateTime(prompt.timestampUtc) },
+        { label: 'Type', value: prompt.eventType || '—' },
+        { label: 'Editor', value: prompt.editor?.trim() || '—' },
+        { label: 'Model', value: prompt.model?.trim() || '—' },
+        { label: 'Branch', value: prompt.branch?.trim() || '—' },
+        { label: 'Status', value: prompt.status?.trim() || '—' },
+        {
+          label: 'Duration',
+          value:
+            prompt.durationMilliseconds == null
+              ? '—'
+              : formatDurationMs(prompt.durationMilliseconds),
+        },
+        { label: 'Repository', value: prompt.repositoryPath?.trim() || '—' },
+        { label: 'Workspace', value: prompt.workspacePath?.trim() || '—' },
+        { label: 'Remote URL', value: prompt.remoteUrl?.trim() || '—' },
+        { label: 'Attribution', value: prompt.attributionMethod?.trim() || '—' },
+        { label: 'Confidence', value: prompt.attributionConfidence?.trim() || '—' },
+        { label: 'Prompt id', value: prompt.id },
+      ]
+    : [];
+
+  return (
+    <PopupForm
+      title="Linked prompt"
+      subtitle={`${usage.model ?? 'Unknown model'} · ${formatDateTime(usage.timestampUtc)}`}
+      onClose={onClose}
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
+      {!prompt ? (
+        <EmptyState message="This usage row is not linked to a prompt (manual allocation or missing activity link)." />
+      ) : (
+        <div className="stack">
+          <TablePanel>
+            <table className="data">
+              <tbody>
+                {fields.map((field) => (
+                  <tr key={field.label}>
+                    <th scope="row">{field.label}</th>
+                    <td className={field.label === 'Prompt id' ? 'mono' : undefined}>{field.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TablePanel>
+        </div>
+      )}
+    </PopupForm>
   );
 }
 
