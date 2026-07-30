@@ -446,6 +446,8 @@ export function ProjectDetailsPage() {
       remoteUrl: detail.primaryRemoteUrl ?? '',
       isActive: detail.isActive,
     });
+    // Depend on stable fields only — `detail` identity changes on refetch and would wipe in-progress edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when persisted project fields change
   }, [
     tab,
     detail?.id,
@@ -896,8 +898,8 @@ export function ProjectDetailsPage() {
                         <td>{formatDurationSeconds(row.activeProjectTimeSeconds)}</td>
                         <td>
                           <TextLink
-                            title={`Show sessions for ${formatDay(row.day)}`}
-                            ariaLabel={`Show sessions for ${formatDay(row.day)}`}
+                            title={`Click to show sessions for ${formatDay(row.day)}`}
+                            ariaLabel={`Click to show sessions for ${formatDay(row.day)}`}
                             onClick={() =>
                               setSelectedActivityDayDrilldown({ day: row, kind: 'sessions' })
                             }
@@ -907,8 +909,8 @@ export function ProjectDetailsPage() {
                         </td>
                         <td>
                           <TextLink
-                            title={`Show timesheets for ${formatDay(row.day)}`}
-                            ariaLabel={`Show timesheets for ${formatDay(row.day)}`}
+                            title={`Click to show timesheets for ${formatDay(row.day)}`}
+                            ariaLabel={`Click to show timesheets for ${formatDay(row.day)}`}
                             onClick={() =>
                               setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
                             }
@@ -918,8 +920,8 @@ export function ProjectDetailsPage() {
                         </td>
                         <td>
                           <TextLink
-                            title={`Show timesheets for ${formatDay(row.day)}`}
-                            ariaLabel={`Show timesheet duration details for ${formatDay(row.day)}`}
+                            title={`Click to show timesheets for ${formatDay(row.day)}`}
+                            ariaLabel={`Click to show timesheet duration details for ${formatDay(row.day)}`}
                             onClick={() =>
                               setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
                             }
@@ -942,8 +944,8 @@ export function ProjectDetailsPage() {
                       Active {formatDurationSeconds(row.activeProjectTimeSeconds)}
                     </span>
                     <TextLink
-                      title={`Show sessions for ${formatDay(row.day)}`}
-                      ariaLabel={`Show sessions for ${formatDay(row.day)}`}
+                      title={`Click to show sessions for ${formatDay(row.day)}`}
+                      ariaLabel={`Click to show sessions for ${formatDay(row.day)}`}
                       onClick={() =>
                         setSelectedActivityDayDrilldown({ day: row, kind: 'sessions' })
                       }
@@ -951,8 +953,8 @@ export function ProjectDetailsPage() {
                       Sessions {formatNumber(row.sessionCount)}
                     </TextLink>
                     <TextLink
-                      title={`Show timesheets for ${formatDay(row.day)}`}
-                      ariaLabel={`Show timesheets for ${formatDay(row.day)}`}
+                      title={`Click to show timesheets for ${formatDay(row.day)}`}
+                      ariaLabel={`Click to show timesheets for ${formatDay(row.day)}`}
                       onClick={() =>
                         setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
                       }
@@ -960,8 +962,8 @@ export function ProjectDetailsPage() {
                       Timesheets {formatNumber(row.timesheetEntryCount ?? 0)}
                     </TextLink>
                     <TextLink
-                      title={`Show timesheets for ${formatDay(row.day)}`}
-                      ariaLabel={`Show timesheet duration details for ${formatDay(row.day)}`}
+                      title={`Click to show timesheets for ${formatDay(row.day)}`}
+                      ariaLabel={`Click to show timesheet duration details for ${formatDay(row.day)}`}
                       onClick={() =>
                         setSelectedActivityDayDrilldown({ day: row, kind: 'timesheets' })
                       }
@@ -1153,6 +1155,7 @@ export function ProjectDetailsPage() {
                       className="clickable-row"
                       tabIndex={0}
                       role="button"
+                      title="Click to show usage breakdown for this prompt"
                       aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
                       onClick={() => setSelectedPrompt(p)}
                       onKeyDown={(e) => {
@@ -1201,6 +1204,7 @@ export function ProjectDetailsPage() {
                   className="analysis-browse-tile clickable-tile"
                   tabIndex={0}
                   role="button"
+                  title="Click to show usage breakdown for this prompt"
                   aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
                   onClick={() => setSelectedPrompt(p)}
                   onKeyDown={(e) => {
@@ -1543,6 +1547,7 @@ export function ProjectDetailsPage() {
                         }}
                         role="button"
                         tabIndex={0}
+                        title="Click to show prompts in this session"
                         aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
                       >
                         <td className="mono">{s.id.slice(0, 8)}</td>
@@ -1621,6 +1626,7 @@ export function ProjectDetailsPage() {
                     }}
                     role="button"
                     tabIndex={0}
+                    title="Click to show prompts in this session"
                     aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
                   >
                     <strong className="mono">{s.id.slice(0, 8)}</strong>
@@ -1957,6 +1963,7 @@ export function ProjectDetailsPage() {
                         }}
                         role="button"
                         tabIndex={0}
+                        title="Click to show sessions in this timesheet period"
                         aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
                       >
                         <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
@@ -2034,6 +2041,7 @@ export function ProjectDetailsPage() {
                   }}
                   role="button"
                   tabIndex={0}
+                  title="Click to show sessions in this timesheet period"
                   aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
                 >
                   <strong>
@@ -2196,6 +2204,7 @@ export function ProjectDetailsPage() {
                             className="clickable-row"
                             tabIndex={0}
                             role="button"
+                            title="Click to show the linked prompt for this usage entry"
                             aria-label={`Show linked prompt for usage at ${formatDateTime(row.timestampUtc)}`}
                             onClick={() => setSelectedUsage(row)}
                             onKeyDown={(e) => {
@@ -2228,6 +2237,7 @@ export function ProjectDetailsPage() {
                       className="analysis-browse-tile clickable-tile"
                       tabIndex={0}
                       role="button"
+                      title="Click to show the linked prompt for this usage entry"
                       aria-label={`Show linked prompt for usage at ${formatDateTime(row.timestampUtc)}`}
                       onClick={() => setSelectedUsage(row)}
                       onKeyDown={(e) => {
@@ -2434,6 +2444,7 @@ export function ProjectDetailsPage() {
                             className="clickable-row"
                             tabIndex={0}
                             role="button"
+                            title="Click to show prompts and usage detail for this model"
                             aria-label={`Show prompts and usage types for ${row.model}`}
                             onClick={() => setSelectedCostModel(row)}
                             onKeyDown={(e) => {
@@ -2471,6 +2482,7 @@ export function ProjectDetailsPage() {
                       className="analysis-browse-tile clickable-tile"
                       tabIndex={0}
                       role="button"
+                      title="Click to show prompts and usage detail for this model"
                       aria-label={`Show prompts and usage types for ${row.model}`}
                       onClick={() => setSelectedCostModel(row)}
                       onKeyDown={(e) => {

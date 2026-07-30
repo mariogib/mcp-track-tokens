@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.27] — 2026-07-30
+
+### Added
+- Project details reporting, duration helpers, and Excel export on the dashboard.
+- Enforce a single repository binding per project (DB unique constraint + detection/report updates).
+
 ### Fixed
 - Store Cursor **cache-write** tokens as their own usage field (`CacheWriteTokens` / `Input (w/ Cache Write)`), and price them with the Settings **cache-write** rate in all calculated-cost paths (no longer folded into Input).
 

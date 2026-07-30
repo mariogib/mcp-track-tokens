@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- re-export shim */
 export { RemoteAnalysisDetailBrowse } from '../shared/adminUi';
 export {
   REMOTE_BROWSE_EXPORT_CAP,
