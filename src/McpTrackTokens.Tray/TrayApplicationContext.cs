@@ -13,6 +13,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _startItem;
     private readonly ToolStripMenuItem _stopItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
+    private readonly Form _shutdownSink;
     private bool _exiting;
 
     public TrayApplicationContext()
@@ -53,7 +54,93 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _statusTimer.Tick += OnStatusTick;
         _statusTimer.Start();
 
+        // Invisible top-level window so MSI CloseApplication / Restart Manager can deliver
+        // WM_CLOSE and WM_ENDSESSION. Without this, only the NotifyIcon sink receives
+        // WM_CLOSE (icon disappears) while the process keeps running.
+        _shutdownSink = new Form
+        {
+            Text = "MCP Track Tokens Host",
+            ShowInTaskbar = false,
+            FormBorderStyle = FormBorderStyle.FixedToolWindow,
+            StartPosition = FormStartPosition.Manual,
+            Location = new Point(-32000, -32000),
+            Size = new Size(1, 1),
+            Opacity = 0,
+            ShowIcon = false
+        };
+        _shutdownSink.FormClosing += OnShutdownSinkClosing;
+        MainForm = _shutdownSink;
+
+        Microsoft.Win32.SystemEvents.SessionEnding += OnSessionEnding;
+
         _ = StartServerAsync();
+    }
+
+    private void OnShutdownSinkClosing(object? sender, FormClosingEventArgs e)
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        // Installer / Task Manager / OS — never show the Exit confirmation dialog.
+        // Do not cancel: refusing close/end-session blocks MSI CloseApplication.
+        ForceExitWithoutPrompt();
+    }
+
+    private void OnSessionEnding(object sender, Microsoft.Win32.SessionEndingEventArgs e)
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        // Must NOT set e.Cancel = true — that makes CloseApplication wait forever /
+        // fail to terminate and leaves the process running for the MSI.
+        ForceExitWithoutPrompt();
+    }
+
+    /// <summary>
+    /// Immediate process exit for MSI / session end. No confirmation UI, no await on Kestrel.
+    /// </summary>
+    private void ForceExitWithoutPrompt()
+    {
+        if (_exiting)
+        {
+            return;
+        }
+
+        _exiting = true;
+        try
+        {
+            Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
+        }
+        catch
+        {
+            // Ignore.
+        }
+
+        try
+        {
+            _statusTimer.Stop();
+        }
+        catch
+        {
+            // Ignore.
+        }
+
+        try
+        {
+            _tray.Visible = false;
+            _tray.Dispose();
+        }
+        catch
+        {
+            // Ignore.
+        }
+
+        // Hard exit: graceful host stop can hang and keep the MSI blocked.
+        Environment.Exit(0);
     }
 
     private async void OnStartClicked(object? sender, EventArgs e) => await StartServerAsync();
@@ -62,6 +149,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async void OnExitClicked(object? sender, EventArgs e)
     {
+        // Confirmation only for the tray menu Exit action — never for MSI/OS shutdown.
         var result = MessageBox.Show(
             "Stop the MCP Track Tokens host and exit?",
             "MCP Track Tokens",
@@ -185,6 +273,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         _exiting = true;
+        try
+        {
+            Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
+        }
+        catch
+        {
+            // Ignore unsubscribe failures during teardown.
+        }
+
         _statusTimer.Stop();
         SetBusy(true, "Status: Exiting…");
         try
@@ -220,6 +317,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing && !_exiting)
         {
+            try
+            {
+                Microsoft.Win32.SystemEvents.SessionEnding -= OnSessionEnding;
+            }
+            catch
+            {
+                // Ignore.
+            }
+
             _statusTimer.Dispose();
             _tray.Dispose();
             _host.DisposeAsync().AsTask().GetAwaiter().GetResult();

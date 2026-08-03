@@ -34,21 +34,48 @@
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start MCP Track Tokens now" />
 
-    <!-- Unlock Program Files during upgrade / repair. -->
+    <!-- Unlock Program Files during upgrade / repair.
+         Timeout is seconds (not ms). Keep it short, then TerminateProcess. -->
     <util:CloseApplication Id="CloseTrayHost"
                            Target="mcp-track-tokens-tray.exe"
                            CloseMessage="yes"
+                           EndSessionMessage="yes"
+                           ElevatedCloseMessage="yes"
+                           ElevatedEndSessionMessage="yes"
                            RebootPrompt="no"
-                           TerminateProcess="5"
-                           Timeout="8000"
-                           EndSessionMessage="yes" />
+                           TerminateProcess="1"
+                           Timeout="3" />
     <util:CloseApplication Id="CloseDesktopShell"
                            Target="mcp-track-tokens-desktop.exe"
                            CloseMessage="yes"
+                           EndSessionMessage="yes"
+                           ElevatedCloseMessage="yes"
+                           ElevatedEndSessionMessage="yes"
                            RebootPrompt="no"
-                           TerminateProcess="5"
-                           Timeout="8000"
-                           EndSessionMessage="yes" />
+                           TerminateProcess="1"
+                           Timeout="3" />
+
+    <!-- Force-kill if CloseApplication left a tray/desktop process (common with NotifyIcon hosts). -->
+    <SetProperty Id="KillTrayHost"
+                 Value="&quot;[SystemFolder]taskkill.exe&quot; /F /IM mcp-track-tokens-tray.exe /T"
+                 Before="KillTrayHost"
+                 Sequence="execute" />
+    <SetProperty Id="KillDesktopShell"
+                 Value="&quot;[SystemFolder]taskkill.exe&quot; /F /IM mcp-track-tokens-desktop.exe /T"
+                 Before="KillDesktopShell"
+                 Sequence="execute" />
+    <CustomAction Id="KillTrayHost"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+    <CustomAction Id="KillDesktopShell"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixQuietExec"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
 
     <!-- Resolve install path after costing (cannot embed [INSTALLFOLDER] in a static Property). -->
     <SetProperty Id="WixShellExecTarget"
@@ -75,6 +102,9 @@
                   Return="ignore" />
 
     <InstallExecuteSequence>
+      <!-- Always force-kill hosts early so file replace/remove cannot block on a live tray. -->
+      <Custom Action="KillTrayHost" After="InstallInitialize" />
+      <Custom Action="KillDesktopShell" After="KillTrayHost" />
       <!-- Always run: writes HTTP MCP example config; optionally installs Cursor hooks. -->
       <Custom Action="InstallIntegrations" After="InstallFiles"
               Condition="NOT REMOVE" />

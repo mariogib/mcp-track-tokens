@@ -15,6 +15,7 @@ internal sealed class DashboardForm : Form
 {
     private readonly DesktopOptions _options;
     private readonly WebView2 _webView = new() { Dock = DockStyle.Fill };
+    private bool _acceleratorKeysAttached;
     private readonly Label _status = new()
     {
         Dock = DockStyle.Fill,
@@ -35,6 +36,7 @@ internal sealed class DashboardForm : Form
         ShowIcon = true;
         Icon = AppIconLoader.Load();
 
+        KeyPreview = true;
         Controls.Add(_webView);
         Controls.Add(_status);
         _webView.BringToFront();
@@ -103,7 +105,8 @@ internal sealed class DashboardForm : Form
             _webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
             // Keep browser chrome shortcuts off (print, find, zoom), but restore
-            // Back/Forward ourselves — disabling accelerators also kills Alt+←/→.
+            // Back/Forward and F5/Ctrl+R ourselves — disabling accelerators
+            // also kills Alt+←/→ and F5 refresh.
             _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
             _webView.CoreWebView2.Settings.IsZoomControlEnabled = false;
             _webView.CoreWebView2.Settings.IsSwipeNavigationEnabled = true;
@@ -189,16 +192,39 @@ internal sealed class DashboardForm : Form
 
     private void AttachHistoryAcceleratorKeys()
     {
-        // WinForms WebView2 does not expose Controller publicly; the private field is the supported host path.
-        var field = typeof(WebView2).GetField(
-            "_coreWebView2Controller",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        if (field?.GetValue(_webView) is not CoreWebView2Controller controller)
+        var controller = TryGetCoreWebView2Controller();
+        if (controller is null)
         {
             return;
         }
 
         controller.AcceleratorKeyPressed += OnAcceleratorKeyPressed;
+        _acceleratorKeysAttached = true;
+    }
+
+    private CoreWebView2Controller? TryGetCoreWebView2Controller()
+    {
+        // Prefer public API when present; fall back to known private field names across WebView2 versions.
+        var type = typeof(WebView2);
+        foreach (var name in new[] { "CoreWebView2Controller", "Controller" })
+        {
+            var prop = type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (prop?.GetValue(_webView) is CoreWebView2Controller fromProp)
+            {
+                return fromProp;
+            }
+        }
+
+        foreach (var name in new[] { "_coreWebView2Controller", "coreWebView2Controller" })
+        {
+            var field = type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            if (field?.GetValue(_webView) is CoreWebView2Controller fromField)
+            {
+                return fromField;
+            }
+        }
+
+        return null;
     }
 
     private void OnAcceleratorKeyPressed(object? sender, CoreWebView2AcceleratorKeyPressedEventArgs e)
@@ -218,27 +244,118 @@ internal sealed class DashboardForm : Form
         const uint vkRight = 0x27;
         const uint vkBrowserBack = 0xA6;
         const uint vkBrowserForward = 0xA7;
+        const uint vkF5 = 0x74;
+        const uint vkR = 0x52;
+        const uint vkBack = 0x08;
 
+        var ctrlHeld = (ModifierKeys & Keys.Control) == Keys.Control;
+        var shiftHeld = (ModifierKeys & Keys.Shift) == Keys.Shift;
         var altHeld = e.KeyEventKind == CoreWebView2KeyEventKind.SystemKeyDown
             || e.PhysicalKeyStatus.IsMenuKeyDown != 0
             || (ModifierKeys & Keys.Alt) == Keys.Alt;
 
-        var goBack = e.VirtualKey == vkBrowserBack || (e.VirtualKey == vkLeft && altHeld);
+        // Browser accelerators are disabled; restore F5 / Ctrl+R as content refresh
+        // (same as the dashboard Refresh button).
+        if (e.VirtualKey == vkF5 || (e.VirtualKey == vkR && ctrlHeld && !altHeld))
+        {
+            e.Handled = true;
+            TriggerDashboardContentRefresh();
+            return;
+        }
+
+        // Alt+← / Browser Back / Backspace (when not editing) → SPA history.back()
+        // Alt+→ / Browser Forward → SPA history.forward()
+        var goBack = e.VirtualKey == vkBrowserBack
+            || (e.VirtualKey == vkLeft && altHeld)
+            || (e.VirtualKey == vkBack && !altHeld && !ctrlHeld && !shiftHeld);
         var goForward = e.VirtualKey == vkBrowserForward || (e.VirtualKey == vkRight && altHeld);
         if (!goBack && !goForward)
         {
             return;
         }
 
+        // Backspace must not steal text editing; only use it when focus is not editable.
+        if (e.VirtualKey == vkBack)
+        {
+            e.Handled = true;
+            TriggerDashboardHistoryNavigation(forward: false, requireNonEditable: true);
+            return;
+        }
+
         e.Handled = true;
-        if (goBack && _webView.CanGoBack)
+        TriggerDashboardHistoryNavigation(forward: goForward, requireNonEditable: false);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        // Only used when WebView2 controller accelerator hook could not be attached.
+        if (_acceleratorKeysAttached)
         {
-            _webView.GoBack();
+            return base.ProcessCmdKey(ref msg, keyData);
         }
-        else if (goForward && _webView.CanGoForward)
+
+        var keyCode = keyData & Keys.KeyCode;
+        var modifiers = keyData & Keys.Modifiers;
+
+        if (keyCode == Keys.Left && modifiers == Keys.Alt)
         {
-            _webView.GoForward();
+            TriggerDashboardHistoryNavigation(forward: false, requireNonEditable: false);
+            return true;
         }
+
+        if (keyCode == Keys.Right && modifiers == Keys.Alt)
+        {
+            TriggerDashboardHistoryNavigation(forward: true, requireNonEditable: false);
+            return true;
+        }
+
+        if (keyCode == Keys.BrowserBack)
+        {
+            TriggerDashboardHistoryNavigation(forward: false, requireNonEditable: false);
+            return true;
+        }
+
+        if (keyCode == Keys.BrowserForward)
+        {
+            TriggerDashboardHistoryNavigation(forward: true, requireNonEditable: false);
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private void TriggerDashboardHistoryNavigation(bool forward, bool requireNonEditable)
+    {
+        if (_webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        // Prefer the SPA history stack (React Router pushState) over WebView.GoBack(),
+        // which is unreliable for in-app navigations when CanGoBack looks false.
+        var direction = forward ? "forward" : "back";
+        var script = requireNonEditable
+            ? "(function(){var t=document.activeElement;if(t&&(t.isContentEditable||" +
+              "/^(INPUT|TEXTAREA|SELECT)$/i.test(t.tagName))){return;}" +
+              "history." + direction + "();})();"
+            : "history." + direction + "();";
+        _ = _webView.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    private void TriggerDashboardContentRefresh()
+    {
+        if (_webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        // Prefer the shared Refresh control so remount + query invalidation stay in sync.
+        const string script =
+            "(function(){var b=document.querySelector('.content-refresh-btn');" +
+            "if(b){b.click();return;}" +
+            "window.dispatchEvent(new KeyboardEvent('keydown',{key:'F5',bubbles:true,cancelable:true}));" +
+            "})();";
+        _ = _webView.CoreWebView2.ExecuteScriptAsync(script);
     }
 
     private async Task InjectBootstrapScriptsAsync()

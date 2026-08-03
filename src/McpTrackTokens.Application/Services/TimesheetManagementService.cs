@@ -135,7 +135,16 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         var endedAt = request.EndedAtUtc is not null
             ? fallback
             : await ResolveCloseAtAsync(entry, fallback, cancellationToken).ConfigureAwait(false);
-        entry.End(endedAt, request.AppendNotes);
+
+        var appendNotes = request.AppendNotes;
+        if (request.EndedAtUtc is null &&
+            ToCalendarDay(entry.StartedAtUtc) < ToCalendarDay(fallback) &&
+            string.IsNullOrWhiteSpace(appendNotes))
+        {
+            appendNotes = DayBoundaryNotes;
+        }
+
+        entry.End(endedAt, appendNotes);
         await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return await ToDtoAsync(entry, cancellationToken).ConfigureAwait(false);
@@ -356,6 +365,8 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
     /// <summary>
     /// When ending a timesheet without an explicit end time, use the last ended editor session
     /// for the project on the timesheet's start calendar day; otherwise <paramref name="fallbackUtc"/>.
+    /// If the fallback falls on a later calendar day than the entry started, close at the
+    /// start day's day-boundary (last session/prompt that day) so idle overnight days are not billed.
     /// </summary>
     private async Task<DateTimeOffset> ResolveCloseAtAsync(
         TimesheetEntry entry,
@@ -363,9 +374,17 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
         CancellationToken cancellationToken)
     {
         var startDay = ToCalendarDay(entry.StartedAtUtc);
+        var fallback = fallbackUtc.ToUniversalTime();
+        var fallbackDay = ToCalendarDay(fallback);
+        if (startDay < fallbackDay)
+        {
+            return await ResolveDayBoundaryCloseAsync(entry.ProjectId, entry, startDay, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var sessionEnd = await TryGetLastSessionEndedAtOnDayAsync(entry.ProjectId, startDay, cancellationToken)
             .ConfigureAwait(false);
-        var closeAt = sessionEnd ?? fallbackUtc.ToUniversalTime();
+        var closeAt = sessionEnd ?? fallback;
         if (closeAt < entry.StartedAtUtc)
         {
             closeAt = entry.StartedAtUtc;
@@ -519,7 +538,11 @@ public sealed class TimesheetManagementService : ITimesheetManagementService
                 continue;
             }
 
-            entry.End(endAt, appendNotes);
+            // Crossing a calendar day is a day-boundary close, not a same-day project switch.
+            var notes = ToCalendarDay(entry.StartedAtUtc) < ToCalendarDay(endedAtUtc)
+                ? DayBoundaryNotes
+                : appendNotes;
+            entry.End(endAt, notes);
             await _timesheets.UpdateAsync(entry, cancellationToken).ConfigureAwait(false);
         }
     }

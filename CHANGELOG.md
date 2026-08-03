@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.31] — 2026-08-03
+
+### Fixed
+- MSI upgrade force-closes the tray/desktop hosts without a confirmation dialog: installer/session shutdown exits immediately (no cancel of end-session), and the MSI runs `taskkill /F` before replacing files if CloseApplication alone is not enough.
+
+## [1.0.30] — 2026-08-03
+
+### Fixed
+- Autoclose of overnight open timesheets now applies a **day-boundary** close on the start calendar day (last session/prompt that day) instead of extending through idle days with `autoclosed` until the next project switch.
+- MSI upgrade no longer hangs for hours when the tray host is running: CloseApplication `Timeout` is in **seconds** (was wrongly set to 8000), and the tray now exits on installer `WM_CLOSE` / end-session instead of only dropping the NotifyIcon.
+
+## [1.0.29] — 2026-08-03
+
+### Fixed
+- Pressing F5 (or Ctrl+R) in the dashboard refreshes page content instead of doing nothing in the desktop WebView.
+- Keyboard Back / Alt+← (and Forward / Alt+→) navigate React Router history in the desktop WebView host.
+
 ## [1.0.28] — 2026-07-30
 
 ### Fixed

@@ -416,4 +416,46 @@ public sealed class TimesheetManagementServiceTests
         added!.StartedAtUtc.Should().Be(nextLocalDayActivity);
         added.Notes.Should().Be("autocreated");
     }
+
+    [Fact]
+    public async Task StartAsync_autoclose_prior_day_open_uses_day_boundary_not_now()
+    {
+        // Reproduces: open timesheet left overnight (no work next day), then another project
+        // starts later — must close at start-day last activity, not span the idle day(s).
+        var staleProjectId = Guid.NewGuid();
+        var newProjectId = Guid.NewGuid();
+        var started = DateTimeOffset.Parse("2026-08-01T08:01:18Z");
+        var lastPrompt = DateTimeOffset.Parse("2026-08-01T18:30:00Z");
+        var switchAt = DateTimeOffset.Parse("2026-08-03T05:08:58Z");
+        var staleOpen = TimesheetEntry.Start(
+            staleProjectId,
+            TimesheetCategory.WorkId,
+            started,
+            "autocreated");
+
+        _timesheets.ListOpenAsync(Arg.Any<CancellationToken>()).Returns([staleOpen]);
+        _events.GetLatestPromptTimestampForProjectAsync(
+                staleProjectId,
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<DateTimeOffset>(),
+                Arg.Any<CancellationToken>())
+            .Returns(lastPrompt);
+        _categories.GetByIdAsync(TimesheetCategory.WorkId, Arg.Any<CancellationToken>())
+            .Returns(TimesheetCategory.Create("Work", sortOrder: 0, id: TimesheetCategory.WorkId));
+        _projects.GetByIdAsync(newProjectId, Arg.Any<CancellationToken>())
+            .Returns(Project.Create("Other", "other", id: newProjectId));
+
+        var sut = CreateSut();
+        await sut.StartAsync(new StartTimesheetRequest
+        {
+            ProjectId = newProjectId,
+            CategoryId = TimesheetCategory.WorkId,
+            StartedAtUtc = switchAt
+        });
+
+        staleOpen.EndedAtUtc.Should().Be(lastPrompt);
+        staleOpen.Notes.Should().Contain("day-boundary");
+        staleOpen.Notes.Should().NotContain("autoclosed");
+        (staleOpen.EndedAtUtc!.Value - started).TotalHours.Should().BeLessThan(24);
+    }
 }

@@ -24,7 +24,7 @@ MCP Track Tokens is a local-first stack that records **editor activity**, import
 | Exports | `~/.mcp-track-tokens/exports/` |
 | Logs | `~/.mcp-track-tokens/logs/` |
 | Hook queue | `~/.mcp-track-tokens/queue/` |
-| MCP server name | `mcp-track-tokens` `1.0.28` |
+| MCP server name | `mcp-track-tokens` `1.0.31` |
 
 Configuration section: `Tracking` in `src/McpTrackTokens.Server/appsettings.json` (tray uses `src/McpTrackTokens.Tray/appsettings.json`).  
 Environment overrides: `MCP_TRACK_TOKENS_*` via `TrackingEnvironmentVariables`.

@@ -8,6 +8,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
 import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
+import { useContentRefreshKeyboard } from '../hooks/useContentRefreshKeyboard';
 import { AdminShell, TextLink, applyStoredDashboardTheme } from '../shared/adminUi';
 
 const fluentIcons = createFluentNavIcons(React);
@@ -101,6 +102,7 @@ export function AppLayout() {
   const queryClient = useQueryClient();
   const lookAndFeel = useLookAndFeel();
   useHistoryKeyboardNavigation();
+  useContentRefreshKeyboard();
   const health = useHealthQuery();
   const status = useStatusQuery();
   const page = titleForPath(location.pathname, location.search);
