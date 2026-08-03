@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.32] — 2026-08-03
+
 ### Added
 - Dashboard redirects to `/settings` when the Bearer API key is missing or rejected with 401 (desktop app and Vite/browser), and shows an error explaining why.
 
