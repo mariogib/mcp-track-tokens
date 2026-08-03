@@ -1,15 +1,15 @@
 import React, { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AdminNavItem } from '@lunarq/frontend-shared/admin';
 import { createFluentNavIcons } from '@lunarq/frontend-shared/admin';
 import type { ThemeLookAndFeel } from '@lunarq/frontend-shared/theme';
 import { StatusBadge } from '../components/StatusBadge';
 import { useHealthQuery, useStatusQuery } from '../api/hooks';
-import { getStoredApiKey } from '../api/client';
 import { useHistoryKeyboardNavigation } from '../hooks/useHistoryKeyboardNavigation';
 import { useContentRefreshKeyboard } from '../hooks/useContentRefreshKeyboard';
-import { AdminShell, TextLink, applyStoredDashboardTheme } from '../shared/adminUi';
+import { useApiKeyAccess, useStoredApiKey } from '../hooks/useApiKeyAccess';
+import { AdminShell, applyStoredDashboardTheme } from '../shared/adminUi';
 
 const fluentIcons = createFluentNavIcons(React);
 
@@ -103,6 +103,8 @@ export function AppLayout() {
   const lookAndFeel = useLookAndFeel();
   useHistoryKeyboardNavigation();
   useContentRefreshKeyboard();
+  const apiKeyAccess = useApiKeyAccess();
+  const storedApiKey = useStoredApiKey();
   const health = useHealthQuery();
   const status = useStatusQuery();
   const page = titleForPath(location.pathname, location.search);
@@ -110,12 +112,21 @@ export function AppLayout() {
     health.data?.healthy === true ||
     health.data?.status === 'Healthy' ||
     (health.isSuccess && !health.isError);
-  const hasApiKey = Boolean(getStoredApiKey());
   const activeProject = status.data?.currentProject?.name;
   const navItems = useMemo(
     () => (lookAndFeel === 'fluent' ? fluentNavItems : lunarqNavItems),
     [lookAndFeel],
   );
+
+  if (apiKeyAccess.status === 'missing' || apiKeyAccess.status === 'invalid') {
+    return (
+      <Navigate
+        to="/settings?tab=connection"
+        replace
+        state={{ apiKeyGate: apiKeyAccess.status }}
+      />
+    );
+  }
 
   return (
     <AdminShell
@@ -145,18 +156,15 @@ export function AppLayout() {
               label={healthy ? 'Server healthy' : health.isError ? 'Server offline' : 'Checking…'}
               tone={healthy ? 'success' : health.isError ? 'danger' : 'warning'}
             />
+            {!storedApiKey ? (
+              <StatusBadge label="API key required" tone="warning" />
+            ) : apiKeyAccess.status === 'checking' ? (
+              <StatusBadge label="Checking API key…" tone="warning" />
+            ) : null}
           </div>
         </div>
       }
     >
-      {!hasApiKey &&
-      location.pathname !== '/settings' &&
-      location.pathname !== '/help' ? (
-        <div className="warning-banner" role="status">
-          No API key saved yet. Open <TextLink to="/settings">Settings</TextLink> and save your
-          tracking Bearer key (default for the Windows install is <code>OverTheMoon</code>).
-        </div>
-      ) : null}
       <Outlet />
     </AdminShell>
   );

@@ -68,6 +68,7 @@ import type {
 } from './types';
 
 export const API_KEY_STORAGE = 'mcp-track-tokens-api-key';
+export const API_KEY_CHANGED_EVENT = 'mcp-track-tokens-api-key-changed';
 
 export function getApiBaseUrl(): string {
   const raw = import.meta.env.VITE_API_URL?.trim();
@@ -91,6 +92,12 @@ export function setStoredApiKey(key: string | null): void {
     }
   } catch {
     /* ignore storage failures in private mode */
+  }
+
+  try {
+    window.dispatchEvent(new Event(API_KEY_CHANGED_EVENT));
+  } catch {
+    /* ignore */
   }
 }
 
@@ -714,6 +721,8 @@ export const api = {
     apiRequest<ApiKeyCreateResultDto>('/api/v1/api-keys', {
       method: 'POST',
       body,
+      // Unauthenticated so a locked-out dashboard can mint a recovery key.
+      auth: false,
       signal,
     }),
 

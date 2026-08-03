@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Dashboard redirects to `/settings` when the Bearer API key is missing or rejected with 401 (desktop app and Vite/browser), and shows an error explaining why.
+
+### Fixed
+- Configured bootstrap API key (e.g. `OverTheMoon`) is reactivated on startup if it was previously revoked, so the default dashboard key keeps working.
+- Revoking the last active API key is blocked so the dashboard cannot lock itself out.
+- Creating an API key no longer requires a Bearer token, so Settings can recover from a missing/invalid local key.
+- Revoked API keys can be permanently deleted from Settings → API keys.
+
 ## [1.0.31] — 2026-08-03
 
 ### Fixed

@@ -468,6 +468,8 @@ public interface IApiKeyRepository
     Task AddAsync(TrackingApiKey apiKey, CancellationToken cancellationToken = default);
 
     Task UpdateAsync(TrackingApiKey apiKey, CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(TrackingApiKey apiKey, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

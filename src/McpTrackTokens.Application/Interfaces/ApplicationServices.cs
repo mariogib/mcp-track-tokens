@@ -379,6 +379,11 @@ public interface IApiKeyService
 
     Task RevokeAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Permanently removes a revoked API key. Active keys must be revoked first.
+    /// </summary>
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<TrackingApiKey>> ListAsync(bool activeOnly = true, CancellationToken cancellationToken = default);
 }
 

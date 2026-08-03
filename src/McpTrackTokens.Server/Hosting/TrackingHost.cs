@@ -398,6 +398,16 @@ public static class TrackingHost
         var existing = await repository.FindByHashAsync(hash, cancellationToken).ConfigureAwait(false);
         if (existing is not null)
         {
+            // Revoking the configured bootstrap key used to leave OverTheMoon (and similar)
+            // permanently rejected because we only inserted when the hash was missing.
+            if (!existing.IsActive)
+            {
+                existing.IsActive = true;
+                await repository.UpdateAsync(existing, cancellationToken).ConfigureAwait(false);
+                await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                Log.Information("Reactivated configured tracking API key (was revoked)");
+            }
+
             return;
         }
 

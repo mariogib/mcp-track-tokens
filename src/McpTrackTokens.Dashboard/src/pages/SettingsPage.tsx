@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   API_KEY_STORAGE,
+  ApiError,
+  api,
   getStoredApiKey,
   setStoredApiKey,
 } from '../api/client';
@@ -22,8 +26,13 @@ import {
   useFetchCursorTokenRatesMutation,
   useUpdateTimesheetCategoryMutation,
 } from '../api/hooks';
+import {
+  bearerKeyGateMessage,
+  useStoredApiKey,
+  type ApiKeyGateLocationState,
+  type ApiKeyGateReason,
+} from '../hooks/useApiKeyAccess';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
-import { api } from '../api/client';
 import type {
   CursorModelTokenRateDto,
   SettingsDto,
@@ -364,6 +373,10 @@ function emptyRate(): CursorModelTokenRateDto {
 }
 
 export function SettingsPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const storedApiKey = useStoredApiKey();
   const settings = useSettingsQuery();
   const status = useStatusQuery();
   const apiKeys = useApiKeysQuery();
@@ -379,6 +392,63 @@ export function SettingsPage() {
   const updateCategory = useUpdateTimesheetCategoryMutation();
   const deleteCategory = useDeleteTimesheetCategoryMutation();
   const restoreUpload = useRestoreDatabaseUploadMutation();
+
+  const keyValidation = useQuery({
+    queryKey: ['api-key-validation', storedApiKey ?? ''],
+    queryFn: ({ signal }) => api.status(signal),
+    enabled: Boolean(storedApiKey),
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  // Only trust live key state — do not keep showing the redirect reason while a
+  // newly saved key is still validating (history.state survives reload).
+  const bearerKeyIssue: ApiKeyGateReason | null = !storedApiKey
+    ? 'missing'
+    : keyValidation.isError &&
+        keyValidation.error instanceof ApiError &&
+        keyValidation.error.status === 401
+      ? 'invalid'
+      : null;
+
+  const wasRedirectedForKey =
+    (location.state as ApiKeyGateLocationState | null)?.apiKeyGate === bearerKeyIssue;
+
+  const bearerKeyGateBanner = bearerKeyIssue ? (
+    <div className="error-box" role="alert">
+      <p>
+        {wasRedirectedForKey
+          ? bearerKeyGateMessage(bearerKeyIssue)
+          : bearerKeyIssue === 'missing'
+            ? 'No Bearer API key is saved in this browser. Paste a valid key under Local connection and click Save local key to use the rest of the dashboard.'
+            : 'The saved Bearer API key was rejected by the API (401 Unauthorized). Replace it with a valid key under Local connection and click Save local key.'}
+      </p>
+    </div>
+  ) : null;
+
+  useEffect(() => {
+    if (!storedApiKey || !keyValidation.isSuccess) {
+      return;
+    }
+    if (!(location.state as ApiKeyGateLocationState | null)?.apiKeyGate) {
+      return;
+    }
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
+  }, [
+    keyValidation.isSuccess,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+    storedApiKey,
+  ]);
+
+  const clearApiKeyGateState = () => {
+    if (!(location.state as ApiKeyGateLocationState | null)?.apiKeyGate) {
+      return;
+    }
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
+  };
 
   const [tab, setTab] = useTabSearchParam(SETTINGS_TABS, 'Connection');
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
@@ -514,7 +584,8 @@ export function SettingsPage() {
           <h2>Local connection</h2>
           <p>
             Dashboard auth uses localStorage key <span className="mono">{API_KEY_STORAGE}</span>.
-            Paste a key first if the rest of this page cannot load.
+            Other pages redirect here when this Bearer key is missing or rejected by the API.
+            Paste a valid key, then save, before using Overview and the rest of the app.
           </p>
         </div>
       </div>
@@ -527,7 +598,7 @@ export function SettingsPage() {
               help={{
                 summary: 'Bearer API key stored in this browser for dashboard requests.',
                 detail:
-                  'Saved in this browser’s localStorage and sent as Authorization: Bearer on API calls. Create a server key under API keys, then paste it here. Clearing the local key does not revoke the server key. Until a valid key is saved, most Settings tabs cannot load.',
+                  'Saved in this browser’s localStorage and sent as Authorization: Bearer on API calls. Create a server key under API keys (no existing Bearer required), then paste it here. Clearing the local key does not revoke the server key. Until a valid key is saved, most Settings tabs cannot load.',
               }}
             >
               Bearer key for this browser
@@ -548,9 +619,11 @@ export function SettingsPage() {
             type="button"
             className="btn btn-secondary"
             onClick={() => {
-              setStoredApiKey(localKey.trim() || null);
+              const nextKey = localKey.trim() || null;
+              setStoredApiKey(nextKey);
               setMessage('Local API key saved. Reloading…');
-              window.location.reload();
+              // assign (not reload) so redirect gate state is dropped from history
+              window.location.assign(`${location.pathname}${location.search}`);
             }}
           >
             Save local key
@@ -566,6 +639,19 @@ export function SettingsPage() {
           >
             Clear local key
           </button>
+          {bearerKeyIssue ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setTab('API keys');
+                setNewKeyName('Dashboard');
+                setApiKeyCreateOpen(true);
+              }}
+            >
+              Create server API key
+            </button>
+          ) : null}
         </div>
         {message && tab === 'Connection' ? <p>{message}</p> : null}
         {createdPlaintext ? (
@@ -605,6 +691,195 @@ export function SettingsPage() {
     </section>
   );
 
+  const apiKeysPanel = (
+    <section className="page-section">
+      <div className="section-header">
+        <div>
+          <h2>API key management</h2>
+          <p>
+            Create and revoke server API keys. Creating a key does not require a Bearer token, so you
+            can recover if the local key is missing or invalid. Revoked keys can be permanently
+            deleted from the list. The browser still uses the localStorage key under Connection.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            setNewKeyName('Dashboard');
+            setApiKeyCreateOpen(true);
+          }}
+        >
+          Create API key
+        </button>
+      </div>
+
+      <Panel className="stack">
+        {createdPlaintext ? (
+          <div className="warning-banner" role="status">
+            Copy this key now — it is shown only once:
+            <div className="mono" style={{ marginTop: '0.5rem', wordBreak: 'break-all' }}>
+              {createdPlaintext}
+            </div>
+          </div>
+        ) : null}
+
+        {apiKeys.isError ? (
+          <ErrorState
+            message={
+              apiKeys.error instanceof Error
+                ? apiKeys.error.message
+                : 'Unable to list API keys'
+            }
+          />
+        ) : (
+          <div className="stack">
+            <div className="field" style={{ maxWidth: '14rem' }}>
+              <label htmlFor="api-key-status-filter">Status</label>
+              <select
+                id="api-key-status-filter"
+                value={apiKeyStatusFilter}
+                onChange={(e) => setApiKeyStatusFilter(e.target.value)}
+              >
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="revoked">Revoked</option>
+              </select>
+            </div>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Created</th>
+                    <th>Last used</th>
+                    <th>Expires</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredApiKeys.map((key) => (
+                    <tr key={key.id}>
+                      <td>{key.name}</td>
+                      <td>{formatDateTime(key.createdAtUtc)}</td>
+                      <td>{formatDateTime(key.lastUsedAtUtc)}</td>
+                      <td>{formatDateTime(key.expiresAtUtc)}</td>
+                      <td>
+                        <StatusBadge
+                          label={key.isActive ? 'Active' : 'Revoked'}
+                          tone={key.isActive ? 'success' : 'danger'}
+                        />
+                      </td>
+                      <td>
+                        {key.isActive ? (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            onClick={() => revokeKey.mutate(key.id)}
+                            title="Revoke this key so it can no longer authenticate"
+                          >
+                            Revoke
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-danger"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Permanently delete revoked key “${key.name}”? This cannot be undone.`,
+                                )
+                              ) {
+                                revokeKey.mutate(key.id);
+                              }
+                            }}
+                            title="Permanently remove this revoked key from the list"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Panel>
+
+      {apiKeyCreateOpen ? (
+        <PopupForm
+          title="Create API key"
+          contentClassName="popup-form--narrow"
+          onClose={() => setApiKeyCreateOpen(false)}
+          onSubmit={(e) => {
+            const event = e as FormEvent;
+            event.preventDefault();
+            if (!newKeyName.trim()) {
+              return;
+            }
+            createKey.mutate(
+              { name: newKeyName.trim() },
+              {
+                onSuccess: (result) => {
+                  setCreatedPlaintext(result.apiKey);
+                  setLocalKey(result.apiKey);
+                  setStoredApiKey(result.apiKey);
+                  clearApiKeyGateState();
+                  void queryClient.invalidateQueries({ queryKey: ['api-key-validation'] });
+                  void queryClient.invalidateQueries({ queryKey: ['api-keys'] });
+                  void queryClient.invalidateQueries({ queryKey: ['settings'] });
+                  setApiKeyCreateOpen(false);
+                  setMessage('New API key saved as the local Bearer key.');
+                },
+              },
+            );
+          }}
+          footer={
+            <>
+              <button
+                type="submit"
+                className="btn"
+                disabled={createKey.isPending || !newKeyName.trim()}
+                title="Create a new server API key with the name above. The plaintext secret is shown only once."
+              >
+                {createKey.isPending ? 'Creating…' : 'Create API key'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setApiKeyCreateOpen(false)}
+              >
+                Cancel
+              </button>
+            </>
+          }
+        >
+          <div className="field">
+            <SettingLabel
+              htmlFor="new-key-name"
+              help={{
+                summary: 'Friendly name for a new server API key.',
+                detail:
+                  'Label only—used to identify the key in the list. After creation the plaintext secret is shown once; copy it into Bearer key for this browser or your client. Creating a key does not require an existing Bearer token. Revoking a key invalidates it immediately; clearing the local browser key does not revoke the server key.',
+              }}
+            >
+              Name
+            </SettingLabel>
+            <input
+              id="new-key-name"
+              required
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+            />
+          </div>
+        </PopupForm>
+      ) : null}
+    </section>
+  );
+
   const settingsTabs = (
     <div className="tabs" role="tablist" aria-label="Settings sections">
       {SETTINGS_TABS.map((name) => (
@@ -628,10 +903,12 @@ export function SettingsPage() {
   if (!draft) {
     return (
       <Page>
+        {bearerKeyGateBanner}
         {settingsTabs}
         {tab === 'Connection' && connectionPanel}
         {tab === 'Display' && displayPanel}
-        {tab !== 'Connection' && tab !== 'Display' ? (
+        {tab === 'API keys' && apiKeysPanel}
+        {tab !== 'Connection' && tab !== 'Display' && tab !== 'API keys' ? (
           settings.isError ? (
             <ErrorState
               message={
@@ -651,6 +928,7 @@ export function SettingsPage() {
 
   return (
     <Page>
+      {bearerKeyGateBanner}
       {settingsTabs}
 
       {message && tab !== 'Connection' ? (
@@ -1597,169 +1875,7 @@ export function SettingsPage() {
         </section>
       )}
 
-      {tab === 'API keys' && (
-        <section className="page-section">
-          <div className="section-header">
-            <div>
-              <h2>API key management</h2>
-              <p>
-                Create and revoke server API keys. The browser still uses the localStorage key above.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setNewKeyName('Dashboard');
-                setApiKeyCreateOpen(true);
-              }}
-            >
-              Create API key
-            </button>
-          </div>
-
-          <Panel className="stack">
-            {createdPlaintext ? (
-              <div className="warning-banner" role="status">
-                Copy this key now — it is shown only once:
-                <div className="mono" style={{ marginTop: '0.5rem', wordBreak: 'break-all' }}>
-                  {createdPlaintext}
-                </div>
-              </div>
-            ) : null}
-
-            {apiKeys.isError ? (
-              <ErrorState
-                message={
-                  apiKeys.error instanceof Error
-                    ? apiKeys.error.message
-                    : 'Unable to list API keys'
-                }
-              />
-            ) : (
-              <div className="stack">
-                <div className="field" style={{ maxWidth: '14rem' }}>
-                  <label htmlFor="api-key-status-filter">Status</label>
-                  <select
-                    id="api-key-status-filter"
-                    value={apiKeyStatusFilter}
-                    onChange={(e) => setApiKeyStatusFilter(e.target.value)}
-                  >
-                    <option value="">All statuses</option>
-                    <option value="active">Active</option>
-                    <option value="revoked">Revoked</option>
-                  </select>
-                </div>
-              <div className="table-wrap">
-                <table className="data">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Created</th>
-                      <th>Last used</th>
-                      <th>Expires</th>
-                      <th>Status</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredApiKeys.map((key) => (
-                      <tr key={key.id}>
-                        <td>{key.name}</td>
-                        <td>{formatDateTime(key.createdAtUtc)}</td>
-                        <td>{formatDateTime(key.lastUsedAtUtc)}</td>
-                        <td>{formatDateTime(key.expiresAtUtc)}</td>
-                        <td>
-                          <StatusBadge
-                            label={key.isActive ? 'Active' : 'Revoked'}
-                            tone={key.isActive ? 'success' : 'danger'}
-                          />
-                        </td>
-                        <td>
-                          {key.isActive ? (
-                            <button
-                              type="button"
-                              className="btn btn-danger"
-                              onClick={() => revokeKey.mutate(key.id)}
-                            >
-                              Revoke
-                            </button>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              </div>
-            )}
-          </Panel>
-
-          {apiKeyCreateOpen ? (
-            <PopupForm
-              title="Create API key"
-              contentClassName="popup-form--narrow"
-              onClose={() => setApiKeyCreateOpen(false)}
-              onSubmit={(e) => {
-                const event = e as FormEvent;
-                event.preventDefault();
-                if (!newKeyName.trim()) {
-                  return;
-                }
-                createKey.mutate(
-                  { name: newKeyName.trim() },
-                  {
-                    onSuccess: (result) => {
-                      setCreatedPlaintext(result.apiKey);
-                      setLocalKey(result.apiKey);
-                      setStoredApiKey(result.apiKey);
-                      setApiKeyCreateOpen(false);
-                    },
-                  },
-                );
-              }}
-              footer={
-                <>
-                  <button
-                    type="submit"
-                    className="btn"
-                    disabled={createKey.isPending || !newKeyName.trim()}
-                    title="Create a new server API key with the name above. The plaintext secret is shown only once."
-                  >
-                    {createKey.isPending ? 'Creating…' : 'Create API key'}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => setApiKeyCreateOpen(false)}
-                  >
-                    Cancel
-                  </button>
-                </>
-              }
-            >
-              <div className="field">
-                <SettingLabel
-                  htmlFor="new-key-name"
-                  help={{
-                    summary: 'Friendly name for a new server API key.',
-                    detail:
-                      'Label only—used to identify the key in the list. After creation the plaintext secret is shown once; copy it into Bearer key for this browser or your client. Revoking a key invalidates it immediately; clearing the local browser key does not revoke the server key.',
-                  }}
-                >
-                  Name
-                </SettingLabel>
-                <input
-                  id="new-key-name"
-                  required
-                  value={newKeyName}
-                  onChange={(e) => setNewKeyName(e.target.value)}
-                />
-              </div>
-            </PopupForm>
-          ) : null}
-        </section>
-      )}
+      {tab === 'API keys' && apiKeysPanel}
 
       {tab === 'Backup & restore' && (
         <section className="page-section">

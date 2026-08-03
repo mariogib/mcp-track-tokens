@@ -73,4 +73,48 @@ public sealed class ApiKeyServiceTests
         first.Should().HaveLength(64);
         first.Should().MatchRegex("^[0-9a-f]+$");
     }
+
+    [Fact]
+    public async Task RevokeAsync_rejects_revoking_last_active_key()
+    {
+        var entity = TrackingApiKey.Create("only", ApiKeyService.HashKey("mtt_only"));
+        _repository.GetByIdAsync(entity.Id, Arg.Any<CancellationToken>()).Returns(entity);
+        _repository.ListAsync(true, Arg.Any<CancellationToken>())
+            .Returns(new List<TrackingApiKey> { entity });
+
+        var sut = CreateSut();
+        var act = async () => await sut.RevokeAsync(entity.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*last active API key*");
+        entity.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteAsync_removes_revoked_key()
+    {
+        var entity = TrackingApiKey.Create("old", ApiKeyService.HashKey("mtt_old"));
+        entity.IsActive = false;
+        _repository.GetByIdAsync(entity.Id, Arg.Any<CancellationToken>()).Returns(entity);
+
+        var sut = CreateSut();
+        await sut.DeleteAsync(entity.Id);
+
+        await _repository.Received(1).DeleteAsync(entity, Arg.Any<CancellationToken>());
+        await _unitOfWork.Received(1).SaveChangesAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task DeleteAsync_rejects_active_key()
+    {
+        var entity = TrackingApiKey.Create("live", ApiKeyService.HashKey("mtt_live"));
+        _repository.GetByIdAsync(entity.Id, Arg.Any<CancellationToken>()).Returns(entity);
+
+        var sut = CreateSut();
+        var act = async () => await sut.DeleteAsync(entity.Id);
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*Revoke*");
+        await _repository.DidNotReceive().DeleteAsync(Arg.Any<TrackingApiKey>(), Arg.Any<CancellationToken>());
+    }
 }

@@ -44,6 +44,14 @@ public sealed class ApiKeyAuthMiddleware
     private static bool RequiresAuthentication(HttpRequest request)
     {
         var path = request.Path.Value ?? string.Empty;
+
+        // Local dashboard lockout recovery: creating a key must work without an existing Bearer.
+        if (HttpMethods.IsPost(request.Method) &&
+            path.Equals("/api/v1/api-keys", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
         {
             if (path.Equals("/health", StringComparison.OrdinalIgnoreCase) ||

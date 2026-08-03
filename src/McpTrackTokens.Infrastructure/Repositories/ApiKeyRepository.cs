@@ -58,4 +58,12 @@ public sealed class ApiKeyRepository : IApiKeyRepository
 
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    public Task DeleteAsync(TrackingApiKey apiKey, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(apiKey);
+        _db.TrackingApiKeys.Remove(apiKey);
+        return Task.CompletedTask;
+    }
 }

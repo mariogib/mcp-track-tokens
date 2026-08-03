@@ -40,6 +40,20 @@ public sealed class ApiIntegrationTests : IClassFixture<TrackingWebApplicationFa
     }
 
     [Fact]
+    public async Task CreateApiKey_IsPublic_ForLockoutRecovery()
+    {
+        using var anonymous = _factory.CreateClient();
+        var response = await anonymous.PostAsJsonAsync(
+            "/api/v1/api-keys",
+            new CreateApiKeyRequestDto { Name = "lockout-recovery" });
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var created = await response.Content.ReadFromJsonAsync<ApiKeyCreateResultDto>(JsonOptions);
+        created.Should().NotBeNull();
+        created!.ApiKey.Should().StartWith("mtt_");
+        created.Name.Should().Be("lockout-recovery");
+    }
+
+    [Fact]
     public async Task WriteEndpoints_RequireApiKey()
     {
         using var anonymous = _factory.CreateClient();

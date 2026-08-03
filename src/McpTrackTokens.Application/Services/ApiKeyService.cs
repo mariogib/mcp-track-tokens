@@ -79,8 +79,35 @@ public sealed class ApiKeyService : IApiKeyService
     {
         var entity = await _repository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
             ?? throw new EntityNotFoundException(nameof(TrackingApiKey), id);
+
+        if (entity.IsActive)
+        {
+            var active = await _repository.ListAsync(activeOnly: true, cancellationToken).ConfigureAwait(false);
+            if (active.Count <= 1)
+            {
+                throw new InvalidOperationException(
+                    "Cannot revoke the last active API key. Create another key first, or keep the configured bootstrap key active.");
+            }
+        }
+
         entity.IsActive = false;
         await _repository.UpdateAsync(entity, cancellationToken).ConfigureAwait(false);
+        await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var entity = await _repository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false)
+            ?? throw new EntityNotFoundException(nameof(TrackingApiKey), id);
+
+        if (entity.IsActive)
+        {
+            throw new InvalidOperationException(
+                "Cannot delete an active API key. Revoke it first, then delete.");
+        }
+
+        await _repository.DeleteAsync(entity, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 

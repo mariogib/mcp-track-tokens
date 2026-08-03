@@ -3,6 +3,7 @@ using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Options;
 using McpTrackTokens.Domain.Enums;
+using McpTrackTokens.Domain.Exceptions;
 using McpTrackTokens.Infrastructure.Persistence;
 
 namespace McpTrackTokens.Server.Endpoints;
@@ -25,7 +26,7 @@ public static class DashboardAdminEndpoints
         api.MapPost("/settings/cursor-token-rates/fetch", FetchCursorTokenRatesAsync);
         api.MapGet("/api-keys", ListApiKeysAsync);
         api.MapPost("/api-keys", CreateApiKeyAsync);
-        api.MapDelete("/api-keys/{id:guid}", RevokeApiKeyAsync);
+        api.MapDelete("/api-keys/{id:guid}", DeleteApiKeyAsync);
         api.MapGet("/timesheet-categories", ListTimesheetCategoriesAsync);
         api.MapPost("/timesheet-categories", CreateTimesheetCategoryAsync);
         api.MapPut("/timesheet-categories/{id:guid}", UpdateTimesheetCategoryAsync);
@@ -257,19 +258,42 @@ public static class DashboardAdminEndpoints
         }
     }
 
-    private static async Task<IResult> RevokeApiKeyAsync(
+    private static async Task<IResult> DeleteApiKeyAsync(
         Guid id,
         IApiKeyService apiKeys,
         CancellationToken cancellationToken)
     {
         try
         {
-            await apiKeys.RevokeAsync(id, cancellationToken).ConfigureAwait(false);
+            var keys = await apiKeys.ListAsync(activeOnly: false, cancellationToken).ConfigureAwait(false);
+            var existing = keys.FirstOrDefault(k => k.Id == id);
+            if (existing is null)
+            {
+                return Results.NotFound(new { error = $"API key '{id}' was not found." });
+            }
+
+            if (existing.IsActive)
+            {
+                await apiKeys.RevokeAsync(id, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await apiKeys.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+            }
+
             return Results.NoContent();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (EntityNotFoundException ex)
+        {
+            return Results.NotFound(new { error = ex.Message });
         }
         catch (Exception ex)
         {
-            return Results.NotFound(new { error = ex.Message });
+            return Results.BadRequest(new { error = ex.Message });
         }
     }
 
