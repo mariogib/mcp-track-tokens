@@ -22,8 +22,5 @@ public sealed class TrackingApiKeyConfiguration : IEntityTypeConfiguration<Track
 
         builder.HasIndex(e => e.KeyHash).IsUnique();
         builder.HasIndex(e => e.IsActive);
-        builder.HasIndex(e => e.CreatedAtUtc);
-        builder.HasIndex(e => e.ExpiresAtUtc);
-        builder.HasIndex(e => e.LastUsedAtUtc);
     }
 }

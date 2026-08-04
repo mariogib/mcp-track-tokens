@@ -75,7 +75,7 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
             args.Add(usageSource.ToString());
         }
 
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
         var sql = "SELECT * FROM ExternalUsageRecords " + where + " ORDER BY TimestampUtc DESC";
         return await SqliteDateTimeQuery
             .FromSqlAsync(_db.ExternalUsageRecords, sql, args, cancellationToken)
@@ -121,7 +121,7 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
         var where = new StringBuilder(
             "WHERE NOT EXISTS (SELECT 1 FROM UsageAttributions a WHERE a.ExternalUsageRecordId = ExternalUsageRecords.Id AND a.ProjectId IS NOT NULL)");
         var args = new List<object>();
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
         var sql = new StringBuilder("SELECT * FROM ExternalUsageRecords ")
             .Append(where)
             .Append(" ORDER BY TimestampUtc DESC");
@@ -163,7 +163,7 @@ public sealed class ExternalUsageRepository : IExternalUsageRepository
         var where = new StringBuilder(
             "WHERE NOT EXISTS (SELECT 1 FROM UsageAttributions a WHERE a.ExternalUsageRecordId = ExternalUsageRecords.Id AND a.ProjectId IS NOT NULL)");
         var args = new List<object>();
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
         var sql = "SELECT COUNT(*) AS \"Value\" FROM ExternalUsageRecords " + where;
         return await _db.Database
             .SqlQueryRaw<int>(sql, args.ToArray())

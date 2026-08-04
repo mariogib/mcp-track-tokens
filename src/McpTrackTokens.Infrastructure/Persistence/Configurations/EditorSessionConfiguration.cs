@@ -31,13 +31,11 @@ public sealed class EditorSessionConfiguration : IEntityTypeConfiguration<Editor
             .IsConcurrencyToken()
             .HasDefaultValue(Array.Empty<byte>());
 
-        builder.HasIndex(e => e.ProjectId);
-        builder.HasIndex(e => e.ExternalSessionId);
         builder.HasIndex(e => e.StartedAtUtc);
         builder.HasIndex(e => e.EndedAtUtc);
         builder.HasIndex(e => e.LastActivityAtUtc);
-        builder.HasIndex(e => e.Status);
-        builder.HasIndex(e => e.RepositoryPath);
+        builder.HasIndex(e => new { e.Status, e.LastActivityAtUtc });
+        builder.HasIndex(e => new { e.ProjectId, e.StartedAtUtc });
         builder.HasIndex(e => new { e.Editor, e.ExternalSessionId });
 
         builder.HasOne<Project>()

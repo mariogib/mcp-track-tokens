@@ -22,13 +22,11 @@ public sealed class UsageAttributionConfiguration : IEntityTypeConfiguration<Usa
         builder.Property(e => e.Reason).HasMaxLength(2048);
         builder.Property(e => e.ReviewedBy).HasMaxLength(256);
 
-        builder.HasIndex(e => e.ExternalUsageRecordId);
-        builder.HasIndex(e => e.ProjectId);
-        builder.HasIndex(e => e.EditorSessionId);
         // Non-unique: many usage attributions may reference the same prompt.
         builder.HasIndex(e => e.ActivityEventId);
-        builder.HasIndex(e => e.CreatedAtUtc);
-        builder.HasIndex(e => e.ReviewedAtUtc);
+        builder.HasIndex(e => e.EditorSessionId);
+        builder.HasIndex(e => new { e.ExternalUsageRecordId, e.ProjectId });
+        builder.HasIndex(e => new { e.ProjectId, e.CreatedAtUtc });
 
         builder.HasOne<ExternalUsageRecord>()
             .WithMany()

@@ -244,18 +244,18 @@ public sealed class BrowsePagingTests : IAsyncLifetime
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TrackingDbContext>();
-        var from = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeSeconds();
-        var to = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var from = DateTimeOffset.UtcNow.AddDays(-1).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        var toExclusive = DateTimeOffset.UtcNow.ToUniversalTime().AddSeconds(1).ToString("yyyy-MM-dd HH:mm:ss");
         var sql =
-            "SELECT * FROM PromptActivityEvents WHERE unixepoch(replace(substr(\"TimestampUtc\", 1, 19), ' ', 'T') || 'Z') >= {0} AND unixepoch(replace(substr(\"TimestampUtc\", 1, 19), ' ', 'T') || 'Z') <= {1} ORDER BY TimestampUtc DESC, Id DESC LIMIT {2} OFFSET {3}";
-        var query = db.PromptActivityEvents.FromSqlRaw(sql, from, to, 25, 0);
+            "SELECT * FROM PromptActivityEvents WHERE \"TimestampUtc\" >= {0} AND \"TimestampUtc\" < {1} ORDER BY TimestampUtc DESC, Id DESC LIMIT {2} OFFSET {3}";
+        var query = db.PromptActivityEvents.FromSqlRaw(sql, from, toExclusive, 25, 0);
         var text = query.ToQueryString();
         text.Should().ContainEquivalentOf("LIMIT");
         text.Should().ContainEquivalentOf("OFFSET");
     }
 
     [Fact]
-    public async Task ActivityEvents_ListAsync_FiltersByUnixRangeWithoutLoadingOutsideWindow()
+    public async Task ActivityEvents_ListAsync_FiltersByTextRangeWithoutLoadingOutsideWindow()
     {
         using var scope = _services.CreateScope();
         var projects = scope.ServiceProvider.GetRequiredService<IProjectRepository>();

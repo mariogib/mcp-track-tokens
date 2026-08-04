@@ -24,11 +24,8 @@ public sealed class ExternalUsageRecordConfiguration : IEntityTypeConfiguration<
         builder.Property(e => e.Currency).HasMaxLength(8);
 
         builder.HasIndex(e => e.TimestampUtc);
-        builder.HasIndex(e => e.Source);
         builder.HasIndex(e => e.ImportBatchId);
-        builder.HasIndex(e => e.ImportedAtUtc);
-        builder.HasIndex(e => e.CreatedAtUtc);
-        builder.HasIndex(e => e.ExternalRecordId);
+        builder.HasIndex(e => new { e.Source, e.TimestampUtc });
         builder.HasIndex(e => new { e.Source, e.ExternalRecordId })
             .IsUnique()
             .HasFilter("\"ExternalRecordId\" IS NOT NULL");

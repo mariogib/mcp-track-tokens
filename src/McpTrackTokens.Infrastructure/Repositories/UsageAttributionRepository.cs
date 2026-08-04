@@ -115,7 +115,7 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
             args.Add(project);
         }
 
-        SqliteDateTimePaging.AppendUnixRange(where, args, "CreatedAtUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "CreatedAtUtc", from, to);
         var sql = "SELECT * FROM UsageAttributions " + where + " ORDER BY CreatedAtUtc DESC";
         return await SqliteDateTimeQuery
             .FromSqlAsync(_db.UsageAttributions, sql, args, cancellationToken)

@@ -31,14 +31,13 @@ public sealed class PromptActivityEventConfiguration : IEntityTypeConfiguration<
         builder.Property(e => e.AttributionMethod).HasConversion<string>().HasMaxLength(64);
         builder.Property(e => e.AttributionConfidence).HasConversion<string>().HasMaxLength(64);
 
+        // Global time browse / ORDER BY TimestampUtc DESC
         builder.HasIndex(e => e.TimestampUtc);
-        builder.HasIndex(e => e.ProjectId);
-        builder.HasIndex(e => e.EditorSessionId);
-        builder.HasIndex(e => e.ExternalEventId);
         builder.HasIndex(e => e.ExternalRequestId);
         builder.HasIndex(e => e.ExternalConversationId);
-        builder.HasIndex(e => e.RepositoryPath);
-        builder.HasIndex(e => e.CreatedAtUtc);
+        builder.HasIndex(e => new { e.ProjectId, e.TimestampUtc });
+        builder.HasIndex(e => new { e.ProjectId, e.EventType, e.TimestampUtc });
+        builder.HasIndex(e => new { e.EditorSessionId, e.EventType, e.TimestampUtc });
         builder.HasIndex(e => new { e.Editor, e.ExternalEventId })
             .IsUnique()
             .HasFilter("\"ExternalEventId\" IS NOT NULL");

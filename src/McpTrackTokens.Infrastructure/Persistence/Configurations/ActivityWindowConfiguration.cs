@@ -17,11 +17,9 @@ public sealed class ActivityWindowConfiguration : IEntityTypeConfiguration<Activ
 
         builder.Property(e => e.CalculationVersion).HasMaxLength(32).IsRequired();
 
-        builder.HasIndex(e => e.ProjectId);
         builder.HasIndex(e => e.EditorSessionId);
         builder.HasIndex(e => e.StartedAtUtc);
         builder.HasIndex(e => e.EndedAtUtc);
-        builder.HasIndex(e => e.CreatedAtUtc);
         builder.HasIndex(e => new { e.ProjectId, e.StartedAtUtc, e.EndedAtUtc });
 
         builder.HasOne<Project>()

@@ -77,18 +77,17 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
 
         if (from is DateTimeOffset fromBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            var started = SqliteDateTimePaging.ColumnRef("StartedAtUtc");
+            var ended = SqliteDateTimePaging.ColumnRef("EndedAtUtc");
+            var bound = SqliteDateTimePaging.FormatSecondBound(fromBound);
             where.Append(CultureInfo.InvariantCulture,
                 $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+            args.Add(bound);
         }
 
         if (to is DateTimeOffset toBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+            SqliteDateTimePaging.AppendLessThanOrEqual(where, args, "StartedAtUtc", toBound);
         }
 
         var sql = "SELECT * FROM TimesheetEntries " + where + " ORDER BY StartedAtUtc DESC";
@@ -232,21 +231,20 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
             args.Add(projectId);
         }
 
-        // Match ListAsync range semantics using unixepoch on TEXT DateTimeOffset columns.
+        // Match ListAsync range semantics with index-friendly TEXT bounds.
         if (filter.FromUtc is DateTimeOffset from)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
-            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc", "e");
+            var started = SqliteDateTimePaging.ColumnRef("StartedAtUtc", "e");
+            var ended = SqliteDateTimePaging.ColumnRef("EndedAtUtc", "e");
+            var bound = SqliteDateTimePaging.FormatSecondBound(from);
             where.Append(CultureInfo.InvariantCulture,
                 $" AND ({started} >= {{{args.Count}}} OR (e.EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(from));
+            args.Add(bound);
         }
 
         if (filter.ToUtc is DateTimeOffset to)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc", "e");
-            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(to));
+            SqliteDateTimePaging.AppendLessThanOrEqual(where, args, "StartedAtUtc", to, "e");
         }
 
         var openClosed = filter.OpenClosed?.Trim().ToLowerInvariant();

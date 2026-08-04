@@ -89,13 +89,12 @@ public sealed class SessionRepository : ISessionRepository
                 .ConfigureAwait(false);
         }
 
-        var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-        var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
-        var atSec = SqliteDateTimePaging.ToUnixSeconds(at);
+        var atBound = SqliteDateTimePaging.FormatSecondBound(at);
+        var atExclusiveUpper = SqliteDateTimePaging.FormatSecondBound(at.AddSeconds(1));
         var sql =
-            $"SELECT * FROM EditorSessions WHERE {started} <= {{0}} AND (EndedAtUtc IS NULL OR {ended} >= {{0}}) ORDER BY LastActivityAtUtc DESC";
+            "SELECT * FROM EditorSessions WHERE \"StartedAtUtc\" < {0} AND (EndedAtUtc IS NULL OR \"EndedAtUtc\" >= {1}) ORDER BY LastActivityAtUtc DESC";
         return await SqliteDateTimeQuery
-            .FromSqlAsync(_db.EditorSessions, sql, [atSec], cancellationToken)
+            .FromSqlAsync(_db.EditorSessions, sql, [atExclusiveUpper, atBound], cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -152,18 +151,17 @@ public sealed class SessionRepository : ISessionRepository
 
         if (from is DateTimeOffset fromBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            var started = SqliteDateTimePaging.ColumnRef("StartedAtUtc");
+            var ended = SqliteDateTimePaging.ColumnRef("EndedAtUtc");
+            var bound = SqliteDateTimePaging.FormatSecondBound(fromBound);
             where.Append(CultureInfo.InvariantCulture,
                 $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+            args.Add(bound);
         }
 
         if (to is DateTimeOffset toBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+            SqliteDateTimePaging.AppendLessThanOrEqual(where, args, "StartedAtUtc", toBound);
         }
 
         var sql = "SELECT * FROM EditorSessions " + where + " ORDER BY StartedAtUtc DESC";
@@ -224,18 +222,17 @@ public sealed class SessionRepository : ISessionRepository
 
         if (filter.FromUtc is DateTimeOffset fromBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
+            var started = SqliteDateTimePaging.ColumnRef("StartedAtUtc");
+            var ended = SqliteDateTimePaging.ColumnRef("EndedAtUtc");
+            var bound = SqliteDateTimePaging.FormatSecondBound(fromBound);
             where.Append(CultureInfo.InvariantCulture,
                 $" AND ({started} >= {{{args.Count}}} OR (EndedAtUtc IS NOT NULL AND {ended} >= {{{args.Count}}}))");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(fromBound));
+            args.Add(bound);
         }
 
         if (filter.ToUtc is DateTimeOffset toBound)
         {
-            var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-            where.Append(CultureInfo.InvariantCulture, $" AND {started} <= {{{args.Count}}}");
-            args.Add(SqliteDateTimePaging.ToUnixSeconds(toBound));
+            SqliteDateTimePaging.AppendLessThanOrEqual(where, args, "StartedAtUtc", toBound);
         }
 
         var status = filter.Status?.Trim();

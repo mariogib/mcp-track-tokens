@@ -147,11 +147,8 @@ public sealed class ActivityWindowRepository : IActivityWindowRepository
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc)
     {
-        var started = SqliteDateTimePaging.UnixEpochExpr("StartedAtUtc");
-        var ended = SqliteDateTimePaging.UnixEpochExpr("EndedAtUtc");
-        where.Append(CultureInfo.InvariantCulture,
-            $" AND {started} < {{{args.Count}}} AND {ended} > {{{args.Count + 1}}}");
-        args.Add(SqliteDateTimePaging.ToUnixSeconds(toUtc));
-        args.Add(SqliteDateTimePaging.ToUnixSeconds(fromUtc));
+        // Overlap: started < to AND ended > from (second-precision, index-friendly TEXT).
+        SqliteDateTimePaging.AppendLessThan(where, args, "StartedAtUtc", toUtc);
+        SqliteDateTimePaging.AppendGreaterThan(where, args, "EndedAtUtc", fromUtc);
     }
 }

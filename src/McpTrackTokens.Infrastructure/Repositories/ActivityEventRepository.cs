@@ -101,7 +101,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             args.Add(nameof(AttributionMethod.Unallocated));
         }
 
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
         var sql = "SELECT * FROM PromptActivityEvents " + where + " ORDER BY TimestampUtc DESC";
         return await SqliteDateTimeQuery
             .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
@@ -236,7 +236,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             args.Add(projectId);
         }
 
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", filter.FromUtc, filter.ToUtc);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", filter.FromUtc, filter.ToUtc);
 
         if (filter.PromptSubmittedOnly)
         {
@@ -355,7 +355,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         args.Add(projectId);
         where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
         args.Add(nameof(ActivityEventType.PromptSubmitted));
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to, toInclusive: false);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to, toInclusive: false);
         var sql = "SELECT * FROM PromptActivityEvents " + where + " ORDER BY TimestampUtc DESC LIMIT 1";
         var matches = await SqliteDateTimeQuery
             .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
@@ -418,7 +418,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             where.Append(CultureInfo.InvariantCulture, $" AND EventType = {{{args.Count}}}");
             args.Add(nameof(ActivityEventType.PromptSubmitted));
             where.Append(" AND ProjectId IS NOT NULL");
-            SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+            SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
             var sql = "SELECT * FROM PromptActivityEvents " + where;
             candidates = await SqliteDateTimeQuery
                 .FromSqlAsync(_db.PromptActivityEvents, sql, args, cancellationToken)
@@ -482,7 +482,7 @@ public sealed class ActivityEventRepository : IActivityEventRepository
 
         var where = new StringBuilder("WHERE (ProjectId IS NULL OR AttributionMethod = {0})");
         var args = new List<object> { nameof(AttributionMethod.Unallocated) };
-        SqliteDateTimePaging.AppendUnixRange(where, args, "TimestampUtc", from, to);
+        SqliteDateTimePaging.AppendTextRange(where, args, "TimestampUtc", from, to);
         var sql = "SELECT COUNT(*) AS \"Value\" FROM PromptActivityEvents " + where;
         return await _db.Database
             .SqlQueryRaw<int>(sql, args.ToArray())
