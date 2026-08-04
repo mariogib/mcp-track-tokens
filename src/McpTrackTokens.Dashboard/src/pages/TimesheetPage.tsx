@@ -109,7 +109,7 @@ export function TimesheetPage() {
   const [projectFilter, setProjectFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [searchValue, setSearchValue] = useState('');
-  const [viewMode, setViewMode] = useState<BrowseViewMode>('calendar');
+  const [viewMode, setViewMode] = useState<BrowseViewMode>('grid');
   const [calendarScope, setCalendarScope] = useState<BrowseCalendarScope>('day');
   const [calendarCursor, setCalendarCursor] = useState(() => new Date());
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(() =>

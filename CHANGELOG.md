@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.33] — 2026-08-04
+
 ### Changed
 - SQLite date-range filters now use index-friendly UTC TEXT bounds instead of `unixepoch(substr(...))`, so time indexes are usable at high volume.
 - High-volume tables gained composite indexes (prompts, sessions, usage attributions, timesheets, external usage) and dropped redundant single-column indexes.
