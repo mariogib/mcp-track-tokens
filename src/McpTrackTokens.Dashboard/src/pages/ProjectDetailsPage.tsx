@@ -6,7 +6,6 @@ import {
   useDeleteProjectMutation,
   useDeleteSessionMutation,
   useDeleteTimesheetEntryMutation,
-  useExportMutation,
   useProjectActivityQuery,
   useProjectCostQuery,
   useProjectTokenCostQuery,
@@ -277,7 +276,6 @@ export function ProjectDetailsPage() {
   const [sessionBrowseEpoch, setSessionBrowseEpoch] = useState(0);
   const timesheetCategories = useTimesheetCategoriesQuery(true);
   const [timesheetBrowseEpoch, setTimesheetBrowseEpoch] = useState(0);
-  const exportMutation = useExportMutation();
   const updateMutation = useUpdateProjectMutation();
   const deleteMutation = useDeleteProjectMutation();
   const createSessionMutation = useCreateProjectSessionMutation();
@@ -2657,66 +2655,6 @@ export function ProjectDetailsPage() {
                 {settingsMessage ? <span>{settingsMessage}</span> : null}
               </div>
             </form>
-          </Panel>
-
-          <Panel className="stack">
-            <h3>Export</h3>
-            <p>Download a project report for the selected period as JSON or CSV.</p>
-            <div className="row">
-              <button
-                type="button"
-                className="btn"
-                disabled={exportMutation.isPending}
-                onClick={() =>
-                  exportMutation.mutate({
-                    reportType: 'project',
-                    format: 'Json',
-                    projectId: detail.id,
-                    fromUtc: range.fromUtc,
-                    toUtc: range.toUtc,
-                    includeActivity: true,
-                    includeUsage: true,
-                    includeCosts: true,
-                  })
-                }
-              >
-                Export JSON
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={exportMutation.isPending}
-                onClick={() =>
-                  exportMutation.mutate({
-                    reportType: 'project',
-                    format: 'Csv',
-                    projectId: detail.id,
-                    fromUtc: range.fromUtc,
-                    toUtc: range.toUtc,
-                    includeActivity: true,
-                    includeUsage: true,
-                    includeCosts: true,
-                  })
-                }
-              >
-                Export CSV
-              </button>
-            </div>
-            {exportMutation.isSuccess ? (
-              <p className="mono">
-                Downloaded {exportMutation.data.fileName} (
-                {formatNumber(exportMutation.data.byteCount)} bytes)
-              </p>
-            ) : null}
-            {exportMutation.isError ? (
-              <ErrorState
-                message={
-                  exportMutation.error instanceof Error
-                    ? exportMutation.error.message
-                    : 'Export failed'
-                }
-              />
-            ) : null}
           </Panel>
         </section>
       )}

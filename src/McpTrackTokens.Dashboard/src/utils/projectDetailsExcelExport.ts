@@ -11,12 +11,10 @@ import type {
 } from '../api/types';
 import { REMOTE_BROWSE_EXPORT_CAP } from '../components/RemoteAnalysisDetailBrowse';
 import {
-  formatCurrency,
   formatDateTime,
   formatDay,
   formatDurationMs,
   formatDurationSeconds,
-  formatNumber,
   millisecondsToMinutesExact,
 } from './format';
 import { sessionDurationMs, timesheetEntryDurationMs } from './duration';
@@ -65,6 +63,28 @@ function metricSheet(
   };
 }
 
+function asNumber(value: number | null | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function asOptionalNumber(value: number | null | undefined): number | '' {
+  return typeof value === 'number' && Number.isFinite(value) ? value : '';
+}
+
+function asDecimal(value: number | null | undefined, fallback = 0): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.round(value * 100) / 100;
+}
+
+function asOptionalDecimal(value: number | null | undefined): number | '' {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return '';
+  }
+  return Math.round(value * 100) / 100;
+}
+
 /** Elapsed hours for a timesheet entry (ended − started). Open entries count through now. */
 function timesheetHours(entry: TimesheetEntryDto): number | '' {
   const duration = timesheetEntryDurationMs(entry);
@@ -86,7 +106,6 @@ export async function exportProjectDetailsWorkbook(
   args: ProjectDetailsWorkbookArgs,
 ): Promise<void> {
   const { project, fromUtc, toUtc, activity, usage, cost, tokenCost } = args;
-  const currency = cost?.currency ?? tokenCost?.currency ?? usage?.currency ?? project.currency;
   const byDay = [...(activity?.byDay ?? [])].sort((a, b) => a.day.localeCompare(b.day));
   const reportedTotalCost = cost?.totalAiCost ?? 0;
   const calculatedTotalCost = cost?.calculatedTokenCost ?? 0;
@@ -102,9 +121,9 @@ export async function exportProjectDetailsWorkbook(
       day: formatDay(row.day),
       prompts: row.promptCount,
       activeMinutes: Math.round(row.activeProjectTimeSeconds / 60),
-      agentMinutes: millisecondsToMinutesExact(row.agentDurationMilliseconds),
+      agentMinutes: asDecimal(millisecondsToMinutesExact(row.agentDurationMilliseconds)),
       tokens: row.totalTokens ?? 0,
-      cost: Number(share.toFixed(2)),
+      cost: asDecimal(share),
     };
   });
 
@@ -115,7 +134,7 @@ export async function exportProjectDetailsWorkbook(
     },
     {
       metric: 'Prompts',
-      value: formatNumber(activity?.promptCount ?? project.activity?.promptCount),
+      value: asNumber(activity?.promptCount ?? project.activity?.promptCount),
     },
     {
       metric: 'Agent time',
@@ -131,19 +150,19 @@ export async function exportProjectDetailsWorkbook(
     },
     {
       metric: 'Total tokens',
-      value: formatNumber(cost?.importedTotalTokens ?? usage?.totalTokens ?? 0),
+      value: asNumber(cost?.importedTotalTokens ?? usage?.totalTokens ?? 0),
     },
     {
       metric: reportedTotalCost > 0 ? 'Total AI cost' : 'Calculated token cost',
-      value: formatCurrency(displayTotalCost || (project.cost?.totalAiCost ?? 0), currency),
+      value: asDecimal(displayTotalCost || (project.cost?.totalAiCost ?? 0)),
     },
     ...overviewDaily.map((row) => ({
       metric: `Day · ${row.day}`,
-      value: `prompts ${row.prompts} · active ${row.activeMinutes}m · agent ${row.agentMinutes}m · tokens ${row.tokens} · cost ${row.cost}`,
+      value: `prompts ${row.prompts} · active ${row.activeMinutes}m · agent ${row.agentMinutes.toFixed(2)}m · tokens ${row.tokens} · cost ${row.cost.toFixed(2)}`,
     })),
     ...(activity?.byBranch ?? []).map((branch) => ({
       metric: `Branch · ${branch.name || '(none)'}`,
-      value: formatNumber(branch.promptCount),
+      value: asNumber(branch.promptCount),
     })),
     ...(cost?.byModel ?? [])
       .map((model) => ({
@@ -153,17 +172,17 @@ export async function exportProjectDetailsWorkbook(
       }))
       .filter((model) => model.reported > 0 || model.calculated > 0)
       .flatMap((model) => {
-        const rows: Array<{ metric: string; value: string }> = [];
+        const rows: Array<{ metric: string; value: number }> = [];
         if (model.reported > 0) {
           rows.push({
             metric: `Cost by model · ${model.name}`,
-            value: formatCurrency(model.reported, currency),
+            value: asDecimal(model.reported),
           });
         }
         if (model.calculated > 0) {
           rows.push({
             metric: `Calculated cost by model · ${model.name}`,
-            value: formatCurrency(model.calculated, currency),
+            value: asDecimal(model.calculated),
           });
         }
         return rows;
@@ -229,15 +248,25 @@ export async function exportProjectDetailsWorkbook(
         model: prompt.model ?? '',
         branch: prompt.branch ?? '',
         status: prompt.status ?? '',
-        durationMilliseconds: prompt.durationMilliseconds ?? '',
-        linkedUsageCount: prompt.linkedUsageCount ?? '',
-        totalTokens: prompt.totalTokens ?? '',
-        reportedCost: prompt.reportedCost ?? '',
-        calculatedTokenCost: prompt.calculatedTokenCost ?? '',
+        durationMilliseconds: asOptionalNumber(prompt.durationMilliseconds),
+        linkedUsageCount: asOptionalNumber(prompt.linkedUsageCount),
+        totalTokens: asOptionalNumber(prompt.totalTokens),
+        reportedCost: asOptionalDecimal(prompt.reportedCost),
+        calculatedTokenCost: asOptionalDecimal(prompt.calculatedTokenCost),
       })),
     },
-    (() => {
-      const rows = sessions.map((session) => {
+    {
+      sheetName: 'Sessions',
+      columns: [
+        { header: 'Session', key: 'id' },
+        { header: 'Editor', key: 'editor' },
+        { header: 'Started', key: 'startedAtUtc' },
+        { header: 'Ended', key: 'endedAtUtc' },
+        { header: 'Hours', key: 'hours' },
+        { header: 'Branch', key: 'branch' },
+        { header: 'Status', key: 'status' },
+      ],
+      data: sessions.map((session) => {
         const durationMs = sessionDurationMs(session);
         return {
           id: session.id,
@@ -249,80 +278,35 @@ export async function exportProjectDetailsWorkbook(
           branch: session.branch ?? '',
           status: session.status || (session.isActive ? 'Active' : 'Closed'),
         };
-      });
-      const totalHours =
-        Math.round(
-          rows.reduce((sum, row) => sum + (typeof row.hours === 'number' ? row.hours : 0), 0) * 100,
-        ) / 100;
-      return {
-        sheetName: 'Sessions',
-        columns: [
-          { header: 'Session', key: 'id' },
-          { header: 'Editor', key: 'editor' },
-          { header: 'Started', key: 'startedAtUtc' },
-          { header: 'Ended', key: 'endedAtUtc' },
-          { header: 'Hours', key: 'hours' },
-          { header: 'Branch', key: 'branch' },
-          { header: 'Status', key: 'status' },
-        ],
-        data: [
-          ...rows,
-          {
-            id: '(Total)',
-            editor: '',
-            startedAtUtc: '',
-            endedAtUtc: '',
-            hours: totalHours,
-            branch: '',
-            status: '',
-          },
-        ],
-      };
-    })(),
-    (() => {
-      const rows = timesheetEntries.map((entry) => ({
+      }),
+    },
+    {
+      sheetName: 'Timesheet',
+      columns: [
+        { header: 'Category', key: 'categoryName' },
+        { header: 'Started', key: 'startedAtUtc' },
+        { header: 'Ended', key: 'endedAtUtc' },
+        { header: 'Hours', key: 'hours' },
+        { header: 'Notes', key: 'notes' },
+        { header: 'Status', key: 'status' },
+      ],
+      data: timesheetEntries.map((entry) => ({
         categoryName: entry.categoryName ?? '',
         startedAtUtc: formatDateTime(entry.startedAtUtc),
         endedAtUtc: formatDateTime(entry.endedAtUtc),
         hours: timesheetHours(entry),
         notes: entry.notes ?? '',
         status: entry.isOpen ? 'Open' : 'Closed',
-      }));
-      const totalHours =
-        Math.round(
-          rows.reduce((sum, row) => sum + (typeof row.hours === 'number' ? row.hours : 0), 0) * 100,
-        ) / 100;
-      return {
-        sheetName: 'Timesheet',
-        columns: [
-          { header: 'Category', key: 'categoryName' },
-          { header: 'Started', key: 'startedAtUtc' },
-          { header: 'Ended', key: 'endedAtUtc' },
-          { header: 'Hours', key: 'hours' },
-          { header: 'Notes', key: 'notes' },
-          { header: 'Status', key: 'status' },
-        ],
-        data: [
-          ...rows,
-          {
-            categoryName: '(Total)',
-            startedAtUtc: '',
-            endedAtUtc: '',
-            hours: totalHours,
-            notes: '',
-            status: '',
-          },
-        ],
-      };
-    })(),
+      })),
+    },
     metricSheet('Usage', [
-      { metric: 'Total tokens', value: formatNumber(usage?.totalTokens) },
-      { metric: 'Input tokens', value: formatNumber(usage?.inputTokens) },
-      { metric: 'Output tokens', value: formatNumber(usage?.outputTokens) },
-      { metric: 'Cached input', value: formatNumber(usage?.cachedInputTokens) },
-      { metric: 'Reasoning', value: formatNumber(usage?.reasoningTokens) },
-      { metric: 'Reported cost', value: formatCurrency(usage?.reportedCost, usage?.currency) },
-      { metric: 'Requests', value: formatNumber(usage?.requestCount) },
+      { metric: 'Total tokens', value: asNumber(usage?.totalTokens) },
+      { metric: 'Input tokens', value: asNumber(usage?.inputTokens) },
+      { metric: 'Output tokens', value: asNumber(usage?.outputTokens) },
+      { metric: 'Cached input', value: asNumber(usage?.cachedInputTokens) },
+      { metric: 'Reasoning', value: asNumber(usage?.reasoningTokens) },
+      { metric: 'Reported cost', value: asDecimal(usage?.reportedCost) },
+      { metric: 'Requests', value: asNumber(usage?.requestCount) },
     ]),
     {
       sheetName: 'Cost',
@@ -332,32 +316,14 @@ export async function exportProjectDetailsWorkbook(
         { header: 'Subscription', key: 'subscriptionAllocation' },
         { header: 'Token cost', key: 'calculatedTokenCost' },
         { header: 'Prompts', key: 'promptCount' },
-        { header: 'Other providers', key: 'otherProviderCost' },
-        { header: 'Unallocated', key: 'unallocatedCost' },
-        { header: 'Total AI cost', key: 'totalAiCost' },
       ],
-      data: [
-        {
-          name: '(Summary)',
-          usageBasedCost: cost?.usageBasedCursorCost ?? '',
-          subscriptionAllocation: cost?.subscriptionAllocation ?? '',
-          calculatedTokenCost: cost?.calculatedTokenCost ?? '',
-          promptCount: '',
-          otherProviderCost: cost?.otherProviderCost ?? '',
-          unallocatedCost: cost?.unallocatedCost ?? '',
-          totalAiCost: cost?.totalAiCost ?? '',
-        },
-        ...(cost?.byModel ?? []).map((model) => ({
-          name: model.name,
-          usageBasedCost: model.usageBasedCost,
-          subscriptionAllocation: model.subscriptionAllocation,
-          calculatedTokenCost: model.calculatedTokenCost ?? 0,
-          promptCount: model.promptCount,
-          otherProviderCost: '',
-          unallocatedCost: '',
-          totalAiCost: '',
-        })),
-      ],
+      data: (cost?.byModel ?? []).map((model) => ({
+        name: model.name,
+        usageBasedCost: asDecimal(model.usageBasedCost),
+        subscriptionAllocation: asDecimal(model.subscriptionAllocation),
+        calculatedTokenCost: asDecimal(model.calculatedTokenCost ?? 0),
+        promptCount: asNumber(model.promptCount),
+      })),
     },
     {
       sheetName: 'Token Costs',
@@ -373,32 +339,18 @@ export async function exportProjectDetailsWorkbook(
         { header: 'Estimated', key: 'estimatedCost' },
         { header: 'Reported', key: 'reportedCost' },
       ],
-      data: [
-        {
-          model: '(Summary)',
-          rateSource: `${tokenCost?.rateCardModelCount ?? 0} rate card models`,
-          inputTokens: tokenCost?.inputTokens ?? '',
-          outputTokens: tokenCost?.outputTokens ?? '',
-          cachedInputTokens: tokenCost?.cachedInputTokens ?? '',
-          cacheWriteTokens: tokenCost?.cacheWriteTokens ?? '',
-          reasoningTokens: tokenCost?.reasoningTokens ?? '',
-          totalTokens: tokenCost?.totalTokens ?? '',
-          estimatedCost: tokenCost?.estimatedCost ?? '',
-          reportedCost: tokenCost?.reportedCost ?? '',
-        },
-        ...(tokenCost?.byModel ?? []).map((row) => ({
-          model: row.model,
-          rateSource: row.rateSource,
-          inputTokens: row.inputTokens,
-          outputTokens: row.outputTokens,
-          cachedInputTokens: row.cachedInputTokens,
-          cacheWriteTokens: row.cacheWriteTokens ?? 0,
-          reasoningTokens: row.reasoningTokens,
-          totalTokens: row.totalTokens,
-          estimatedCost: row.estimatedCost,
-          reportedCost: row.reportedCost,
-        })),
-      ],
+      data: (tokenCost?.byModel ?? []).map((row) => ({
+        model: row.model,
+        rateSource: row.rateSource,
+        inputTokens: asNumber(row.inputTokens),
+        outputTokens: asNumber(row.outputTokens),
+        cachedInputTokens: asNumber(row.cachedInputTokens),
+        cacheWriteTokens: asNumber(row.cacheWriteTokens ?? 0),
+        reasoningTokens: asNumber(row.reasoningTokens),
+        totalTokens: asNumber(row.totalTokens),
+        estimatedCost: asDecimal(row.estimatedCost),
+        reportedCost: asDecimal(row.reportedCost),
+      })),
     },
   ];
 

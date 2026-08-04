@@ -176,11 +176,77 @@ function uniqueNames(names: string[], sanitize: (name: string) => string): strin
   });
 }
 
-function formatCell(column: ExcelColumn, row: Record<string, unknown>): string {
+function formatCellDisplay(column: ExcelColumn, row: Record<string, unknown>): string {
   const raw = row[column.key];
   if (column.format) return column.format(raw);
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return (Math.round(raw * 100) / 100).toFixed(2);
+  }
   if (raw == null) return '';
   return String(raw);
+}
+
+function toExcelNumber(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function renderCellXml(cellRef: string, column: ExcelColumn, row: Record<string, unknown>): string {
+  const raw = row[column.key];
+  if (column.format) {
+    return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(column.format(raw))}</t></is></c>`;
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return `<c r="${cellRef}" s="1"><v>${toExcelNumber(raw).toFixed(2)}</v></c>`;
+  }
+  if (raw == null || raw === '') {
+    return `<c r="${cellRef}" t="inlineStr"><is><t/></is></c>`;
+  }
+  return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(String(raw))}</t></is></c>`;
+}
+
+function columnIsSummable(column: ExcelColumn, data: Array<Record<string, unknown>>): boolean {
+  if (column.format) {
+    return false;
+  }
+  let sawNumber = false;
+  for (const row of data) {
+    const raw = row[column.key];
+    if (raw == null || raw === '') {
+      continue;
+    }
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      sawNumber = true;
+      continue;
+    }
+    return false;
+  }
+  return sawNumber;
+}
+
+function buildTotalsFlags(columns: ExcelColumn[], data: Array<Record<string, unknown>>): {
+  summable: boolean[];
+  hasTotals: boolean;
+  labelIndex: number;
+} {
+  const summable = columns.map((column) => columnIsSummable(column, data));
+  const hasTotals = summable.some(Boolean);
+  const firstText = summable.findIndex((isSum) => !isSum);
+  return {
+    summable,
+    hasTotals,
+    labelIndex: firstText >= 0 ? firstText : 0,
+  };
+}
+
+function sumColumnValues(column: ExcelColumn, data: Array<Record<string, unknown>>): number {
+  let sum = 0;
+  for (const row of data) {
+    const raw = row[column.key];
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      sum += raw;
+    }
+  }
+  return toExcelNumber(sum);
 }
 
 /** Excel column width units ≈ character count of Calibri 11; pad and clamp for readability. */
@@ -188,6 +254,7 @@ function autoFitColumnWidths(
   columns: ExcelColumn[],
   headers: string[],
   data: Array<Record<string, unknown>>,
+  hasTotals: boolean,
 ): number[] {
   const minWidth = 8;
   const maxWidth = 60;
@@ -195,8 +262,11 @@ function autoFitColumnWidths(
 
   return columns.map((column, index) => {
     let maxLen = headers[index]?.length ?? 0;
+    if (hasTotals) {
+      maxLen = Math.max(maxLen, 5); // "Total"
+    }
     for (const row of data) {
-      const cell = formatCell(column, row);
+      const cell = formatCellDisplay(column, row);
       if (cell.length > maxLen) {
         maxLen = cell.length;
       }
@@ -217,11 +287,42 @@ function buildColsXml(widths: number[]): string {
   return `<cols>${cols}</cols>`;
 }
 
+function buildTotalsRowXml(
+  columns: ExcelColumn[],
+  data: Array<Record<string, unknown>>,
+  summable: boolean[],
+  labelIndex: number,
+): string {
+  const totalsRow = data.length + 2;
+  const firstDataRow = 2;
+  const lastDataRow = data.length + 1;
+  const cells = columns
+    .map((column, columnIndex) => {
+      const cellRef = `${columnLetter(columnIndex)}${totalsRow}`;
+      if (columnIndex === labelIndex) {
+        return `<c r="${cellRef}" t="inlineStr"><is><t>Total</t></is></c>`;
+      }
+      if (summable[columnIndex] && data.length > 0) {
+        const col = columnLetter(columnIndex);
+        // A1 SUM below the table — avoids Excel repairing Table totals metadata.
+        const formula = `SUM(${col}${firstDataRow}:${col}${lastDataRow})`;
+        const total = sumColumnValues(column, data);
+        return `<c r="${cellRef}" s="1"><f>${escapeXml(formula)}</f><v>${total.toFixed(2)}</v></c>`;
+      }
+      return '';
+    })
+    .join('');
+  return `<row r="${totalsRow}">${cells}</row>`;
+}
+
 function buildSheetXml(
   columns: ExcelColumn[],
   headers: string[],
   data: Array<Record<string, unknown>>,
-  tableRef: string,
+  dimensionRef: string,
+  summable: boolean[],
+  hasTotals: boolean,
+  labelIndex: number,
 ): string {
   const headerRow = headers
     .map((header, index) => {
@@ -234,20 +335,23 @@ function buildSheetXml(
     .map((row, rowIndex) => {
       const excelRow = rowIndex + 2;
       const cells = columns
-        .map((column, columnIndex) => {
-          const cellRef = `${columnLetter(columnIndex)}${excelRow}`;
-          return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(formatCell(column, row))}</t></is></c>`;
-        })
+        .map((column, columnIndex) =>
+          renderCellXml(`${columnLetter(columnIndex)}${excelRow}`, column, row),
+        )
         .join('');
       return `<row r="${excelRow}">${cells}</row>`;
     })
     .join('');
 
-  const colsXml = buildColsXml(autoFitColumnWidths(columns, headers, data));
+  const totalsRowXml = hasTotals
+    ? buildTotalsRowXml(columns, data, summable, labelIndex)
+    : '';
+
+  const colsXml = buildColsXml(autoFitColumnWidths(columns, headers, data, hasTotals));
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <dimension ref="${tableRef}"/>
+  <dimension ref="${dimensionRef}"/>
   <sheetViews>
     <sheetView workbookViewId="0"/>
   </sheetViews>
@@ -256,6 +360,7 @@ function buildSheetXml(
   <sheetData>
     <row r="1">${headerRow}</row>
     ${bodyRows}
+    ${totalsRowXml}
   </sheetData>
   <tableParts count="1">
     <tablePart r:id="rId1"/>
@@ -277,8 +382,8 @@ function buildTableXml(
     .join('');
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tableId}" name="${escapeXml(tableName)}" displayName="${escapeXml(tableName)}" ref="${tableRef}" headerRowCount="1" totalsRowShown="0">
-  <autoFilter ref="${tableRef}"/>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tableId}" name="${escapeXml(tableName)}" displayName="${escapeXml(tableName)}" ref="${escapeXml(tableRef)}" headerRowCount="1" totalsRowCount="0" totalsRowShown="0">
+  <autoFilter ref="${escapeXml(tableRef)}"/>
   <tableColumns count="${headers.length}">
     ${columnsXml}
   </tableColumns>
@@ -386,8 +491,9 @@ export function buildMultiSheetExcelWorkbook(sheets: ExcelSheetSpec[]): Blob {
   <cellStyleXfs count="1">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
   </cellStyleXfs>
-  <cellXfs count="1">
+  <cellXfs count="2">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+    <xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
   </cellXfs>
   <cellStyles count="1">
     <cellStyle name="Normal" xfId="0" builtinId="0"/>
@@ -412,9 +518,15 @@ export function buildMultiSheetExcelWorkbook(sheets: ExcelSheetSpec[]): Blob {
       sheet.data.length > 0
         ? sheet.data
         : [Object.fromEntries(sheet.columns.map((column) => [column.key, '']))];
-    const rowCount = data.length + 1;
+    const { summable, hasTotals, labelIndex } = buildTotalsFlags(sheet.columns, data);
+    const dataRowCount = data.length;
     const lastColumn = columnLetter(sheet.columns.length - 1);
-    const tableRef = `A1:${lastColumn}${rowCount}`;
+    // Keep the Excel Table on header+data only; SUM formulas sit on the next row so
+    // Excel does not repair invalid table totals metadata.
+    const tableEndRow = dataRowCount + 1;
+    const sheetEndRow = hasTotals ? dataRowCount + 2 : dataRowCount + 1;
+    const tableRef = `A1:${lastColumn}${tableEndRow}`;
+    const dimensionRef = `A1:${lastColumn}${sheetEndRow}`;
     const sheetRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table${n}.xml"/>
@@ -423,7 +535,15 @@ export function buildMultiSheetExcelWorkbook(sheets: ExcelSheetSpec[]): Blob {
     zipEntries.push(
       {
         name: `xl/worksheets/sheet${n}.xml`,
-        data: buildSheetXml(sheet.columns, headers, data, tableRef),
+        data: buildSheetXml(
+          sheet.columns,
+          headers,
+          data,
+          dimensionRef,
+          summable,
+          hasTotals,
+          labelIndex,
+        ),
       },
       { name: `xl/worksheets/_rels/sheet${n}.xml.rels`, data: sheetRels },
       {
