@@ -20,7 +20,8 @@ import { DateTimeField, isCompleteLocalDateTime } from '../components/DateTimeFi
 import { RemoteAnalysisDetailBrowse } from '../components/RemoteAnalysisDetailBrowse';
 import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
-import { BrowseListControls, PopupForm, TextLink } from '../shared/adminUi';
+import { BrowseListControls, DataTable, PopupForm, TextLink } from '../shared/adminUi';
+import { browseSortQuery } from '../utils/browseSort';
 import { type RangePreset, resolveRange } from '../utils/dateRange';
 import { timesheetEntryDurationMs } from '../utils/duration';
 import { formatDateTime, formatDurationMs, formatNumber } from '../utils/format';
@@ -1023,7 +1024,7 @@ export function TimesheetPage() {
               setSelectedDayKey(todayKey);
               setViewMode('calendar');
             }}
-            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+            fetchPage={async ({ pageIndex, pageSize, search, status, sort, signal }) =>
               api.getTimesheetEntriesPaged(
                 {
                   projectId: projectFilter || undefined,
@@ -1040,6 +1041,7 @@ export function TimesheetPage() {
                         : status === 'open' || status === 'closed'
                           ? status
                           : undefined,
+                  ...browseSortQuery(sort),
                 },
                 signal,
               )
@@ -1109,51 +1111,52 @@ export function TimesheetPage() {
             })}
             emptySourceMessage={`No timesheet entries in ${range.label.toLowerCase()}.`}
             emptyMessage="No timesheet entries match the current search or filters."
-            renderTable={(rows) => (
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Project</th>
-                    <th>Category</th>
-                    <th>Started</th>
-                    <th>Ended</th>
-                    <th>Duration</th>
-                    <th>Notes</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((entry) => {
-                    const duration = timesheetEntryDurationMs(entry);
-                    return (
-                      <tr key={entry.id}>
-                        <td>
-                          <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
-                            {projectLabelFor(entry)}
-                          </TextLink>
-                        </td>
-                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                        <td>{formatDateTime(entry.startedAtUtc)}</td>
-                        <td>{formatDateTime(entry.endedAtUtc)}</td>
-                        <td>
-                          {duration == null
-                            ? '—'
-                            : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
-                        </td>
-                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                        <td>
-                          <StatusBadge
-                            label={entry.isOpen ? 'Open' : 'Closed'}
-                            tone={entry.isOpen ? 'success' : 'neutral'}
-                          />
-                        </td>
-                        <td>{renderEntryActions(entry)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            renderTable={(rows, { sort, onSortChange }) => (
+              <DataTable
+                className="data"
+                shellClassName=""
+                sort={sort}
+                onSortChange={onSortChange}
+                headers={[
+                  { id: 'projectName', header: 'Project', sortable: true },
+                  { id: 'categoryName', header: 'Category', sortable: true },
+                  { id: 'startedAtUtc', header: 'Started', sortable: true },
+                  { id: 'endedAtUtc', header: 'Ended', sortable: true },
+                  { id: 'durationMilliseconds', header: 'Duration' },
+                  { id: 'notes', header: 'Notes', sortable: true },
+                  { id: 'status', header: 'Status', sortable: true },
+                  { id: 'actions', header: 'Actions' },
+                ]}
+              >
+                {rows.map((entry) => {
+                  const duration = timesheetEntryDurationMs(entry);
+                  return (
+                    <tr key={entry.id}>
+                      <td>
+                        <TextLink to={`/projects/${entry.projectId}?tab=Timesheet`}>
+                          {projectLabelFor(entry)}
+                        </TextLink>
+                      </td>
+                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                      <td>{formatDateTime(entry.startedAtUtc)}</td>
+                      <td>{formatDateTime(entry.endedAtUtc)}</td>
+                      <td>
+                        {duration == null
+                          ? '—'
+                          : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                      </td>
+                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={entry.isOpen ? 'Open' : 'Closed'}
+                          tone={entry.isOpen ? 'success' : 'neutral'}
+                        />
+                      </td>
+                      <td>{renderEntryActions(entry)}</td>
+                    </tr>
+                  );
+                })}
+              </DataTable>
             )}
             renderGrid={(rows) => rows.map(renderEntryCard)}
           />

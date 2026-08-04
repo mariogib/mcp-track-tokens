@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.Browsing;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Application.Services;
@@ -143,6 +144,18 @@ public sealed class ActivityEventRepository : IActivityEventRepository
             .ConfigureAwait(false);
     }
 
+    private static readonly IReadOnlyDictionary<string, string> PromptBrowseSortColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["timestampUtc"] = "TimestampUtc",
+            ["eventType"] = "EventType",
+            ["editor"] = "Editor",
+            ["model"] = "Model",
+            ["branch"] = "Branch",
+            ["status"] = "Status",
+            ["durationMilliseconds"] = "DurationMilliseconds",
+        };
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<PromptActivityEvent>> ListPagedAsync(
         ActivityEventPageFilter filter,
@@ -153,10 +166,20 @@ public sealed class ActivityEventRepository : IActivityEventRepository
         ArgumentNullException.ThrowIfNull(filter);
         var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
         var (where, args) = BuildBrowseWhere(filter);
+        var orderBy = BrowseSort.ResolveOrderBy(
+            filter.SortBy,
+            filter.SortDirection,
+            PromptBrowseSortColumns,
+            "TimestampUtc DESC, Id DESC");
+        if (!orderBy.Contains("Id ", StringComparison.Ordinal))
+        {
+            orderBy += ", Id DESC";
+        }
+
         var sql = new StringBuilder()
             .Append("SELECT * FROM PromptActivityEvents ")
             .Append(where)
-            .Append(CultureInfo.InvariantCulture, $" ORDER BY TimestampUtc DESC, Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+            .Append(CultureInfo.InvariantCulture, $" ORDER BY {orderBy} LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
         args.Add(take);
         args.Add(skip);
 

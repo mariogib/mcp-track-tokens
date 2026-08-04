@@ -48,13 +48,14 @@ import { ErrorState, EmptyState, LoadingState } from '../components/States';
 import { StatusBadge } from '../components/StatusBadge';
 import { useTabSearchParam } from '../hooks/useTabSearchParam';
 import { Page } from '../layout/AppLayout';
-import { Breadcrumb, PopupForm, TextLink } from '../shared/adminUi';
+import { Breadcrumb, DataTable, PopupForm, TextLink } from '../shared/adminUi';
 import {
   buildDaySeries,
   buildModelCalculatedSeries,
   buildModelCostSeries,
   resolveDisplayCost,
 } from '../utils/chartDetail';
+import { browseSortQuery } from '../utils/browseSort';
 import {
   sessionDurationMs,
   sessionsWithinTimesheetPeriods,
@@ -1005,7 +1006,7 @@ export function ProjectDetailsPage() {
               promptFromDate,
               promptToDate,
             ].join('|')}
-            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+            fetchPage={async ({ pageIndex, pageSize, search, status, sort, signal }) =>
               api.getProjectPromptsPaged(
                 projectId!,
                 {
@@ -1018,6 +1019,7 @@ export function ProjectDetailsPage() {
                   eventType: promptTypeFilter || undefined,
                   model: promptModelFilter || undefined,
                   branch: promptBranchFilter || undefined,
+                  ...browseSortQuery(sort),
                 },
                 signal,
               )
@@ -1129,71 +1131,72 @@ export function ProjectDetailsPage() {
             })}
             emptySourceMessage="No prompts in the selected range."
             emptyMessage="No prompts match the current search or filters."
-            renderTable={(rows) => (
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Editor</th>
-                    <th>Model</th>
-                    <th>Branch</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Linked usages</th>
-                    <th>Total Tokens</th>
-                    <th>Cost</th>
-                    <th>Calculated cost</th>
+            renderTable={(rows, { sort, onSortChange }) => (
+              <DataTable
+                className="data"
+                shellClassName=""
+                sort={sort}
+                onSortChange={onSortChange}
+                headers={[
+                  { id: 'timestampUtc', header: 'Time', sortable: true },
+                  { id: 'eventType', header: 'Type', sortable: true },
+                  { id: 'editor', header: 'Editor', sortable: true },
+                  { id: 'model', header: 'Model', sortable: true },
+                  { id: 'branch', header: 'Branch', sortable: true },
+                  { id: 'status', header: 'Status', sortable: true },
+                  { id: 'durationMilliseconds', header: 'Duration', sortable: true },
+                  { id: 'linkedUsageCount', header: 'Linked usages' },
+                  { id: 'totalTokens', header: 'Total Tokens' },
+                  { id: 'reportedCost', header: 'Cost' },
+                  { id: 'calculatedTokenCost', header: 'Calculated cost' },
+                ]}
+              >
+                {rows.map((p) => (
+                  <tr
+                    key={p.id}
+                    className="clickable-row"
+                    tabIndex={0}
+                    role="button"
+                    title="Click to show usage breakdown for this prompt"
+                    aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
+                    onClick={() => setSelectedPrompt(p)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        setSelectedPrompt(p);
+                      }
+                    }}
+                  >
+                    <td>{formatDateTime(p.timestampUtc)}</td>
+                    <td>{p.eventType}</td>
+                    <td>{p.editor ?? '—'}</td>
+                    <td>{p.model ?? '—'}</td>
+                    <td>{p.branch ?? '—'}</td>
+                    <td>{p.status ?? '—'}</td>
+                    <td>{formatDurationMs(p.durationMilliseconds)}</td>
+                    <td>
+                      {p.hasLinkedUsage || (p.linkedUsageCount ?? 0) > 0
+                        ? formatNumber(p.linkedUsageCount ?? 0)
+                        : '—'}
+                    </td>
+                    <td>
+                      {p.hasLinkedUsage || p.totalTokens != null
+                        ? formatNumber(p.totalTokens ?? 0)
+                        : '—'}
+                    </td>
+                    <td>
+                      {p.hasLinkedUsage || p.reportedCost != null
+                        ? formatCurrency(p.reportedCost ?? 0)
+                        : '—'}
+                    </td>
+                    <td>
+                      {p.hasLinkedUsage || p.calculatedTokenCost != null
+                        ? formatCurrency(p.calculatedTokenCost ?? 0)
+                        : '—'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {rows.map((p) => (
-                    <tr
-                      key={p.id}
-                      className="clickable-row"
-                      tabIndex={0}
-                      role="button"
-                      title="Click to show usage breakdown for this prompt"
-                      aria-label={`Show usage breakdown for prompt at ${formatDateTime(p.timestampUtc)}`}
-                      onClick={() => setSelectedPrompt(p)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setSelectedPrompt(p);
-                        }
-                      }}
-                    >
-                      <td>{formatDateTime(p.timestampUtc)}</td>
-                      <td>{p.eventType}</td>
-                      <td>{p.editor ?? '—'}</td>
-                      <td>{p.model ?? '—'}</td>
-                      <td>{p.branch ?? '—'}</td>
-                      <td>{p.status ?? '—'}</td>
-                      <td>{formatDurationMs(p.durationMilliseconds)}</td>
-                      <td>
-                        {p.hasLinkedUsage || (p.linkedUsageCount ?? 0) > 0
-                          ? formatNumber(p.linkedUsageCount ?? 0)
-                          : '—'}
-                      </td>
-                      <td>
-                        {p.hasLinkedUsage || p.totalTokens != null
-                          ? formatNumber(p.totalTokens ?? 0)
-                          : '—'}
-                      </td>
-                      <td>
-                        {p.hasLinkedUsage || p.reportedCost != null
-                          ? formatCurrency(p.reportedCost ?? 0)
-                          : '—'}
-                      </td>
-                      <td>
-                        {p.hasLinkedUsage || p.calculatedTokenCost != null
-                          ? formatCurrency(p.calculatedTokenCost ?? 0)
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </DataTable>
             )}
             renderGrid={(rows) =>
               rows.map((p) => (
@@ -1475,7 +1478,7 @@ export function ProjectDetailsPage() {
             showHeading={false}
             searchPlaceholder="Search sessions..."
             filterKey={[projectId, range.fromUtc, range.toUtc, sessionBrowseEpoch].join('|')}
-            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+            fetchPage={async ({ pageIndex, pageSize, search, status, sort, signal }) =>
               api.getProjectSessionsPaged(
                 projectId!,
                 {
@@ -1485,6 +1488,7 @@ export function ProjectDetailsPage() {
                   pageSize,
                   search: search || undefined,
                   status: status || undefined,
+                  ...browseSortQuery(sort),
                 },
                 signal,
               )
@@ -1515,98 +1519,99 @@ export function ProjectDetailsPage() {
               status: s.status || (s.isActive ? 'Active' : 'Closed'),
             })}
             emptySourceMessage="No sessions in the selected range."
-            renderTable={(rows) => (
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Session</th>
-                    <th>Editor</th>
-                    <th>Started</th>
-                    <th>Ended</th>
-                    <th>Duration</th>
-                    <th>Branch</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((s) => {
-                    const durationMs = sessionDurationMs(s);
-                    return (
-                      <tr
-                        key={s.id}
-                        className="clickable-row"
-                        onClick={() => setSelectedSessionForPrompts(s)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedSessionForPrompts(s);
+            renderTable={(rows, { sort, onSortChange }) => (
+              <DataTable
+                className="data"
+                shellClassName=""
+                sort={sort}
+                onSortChange={onSortChange}
+                headers={[
+                  { id: 'id', header: 'Session', sortable: true },
+                  { id: 'editor', header: 'Editor', sortable: true },
+                  { id: 'startedAtUtc', header: 'Started', sortable: true },
+                  { id: 'endedAtUtc', header: 'Ended', sortable: true },
+                  { id: 'durationMilliseconds', header: 'Duration' },
+                  { id: 'branch', header: 'Branch', sortable: true },
+                  { id: 'status', header: 'Status', sortable: true },
+                  { id: 'actions', header: 'Actions' },
+                ]}
+              >
+                {rows.map((s) => {
+                  const durationMs = sessionDurationMs(s);
+                  return (
+                    <tr
+                      key={s.id}
+                      className="clickable-row"
+                      onClick={() => setSelectedSessionForPrompts(s)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedSessionForPrompts(s);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="Click to show prompts in this session"
+                      aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
+                    >
+                      <td className="mono">{s.id.slice(0, 8)}</td>
+                      <td>{s.editor ?? '—'}</td>
+                      <td>{formatDateTime(s.startedAtUtc)}</td>
+                      <td>{formatDateTime(s.endedAtUtc)}</td>
+                      <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
+                      <td>{s.branch ?? '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={s.status || (s.isActive ? 'Active' : 'Closed')}
+                          tone={
+                            s.isActive || s.status === 'Active' ? 'success' : 'neutral'
                           }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        title="Click to show prompts in this session"
-                        aria-label={`Show prompts for session ${s.id.slice(0, 8)}`}
-                      >
-                        <td className="mono">{s.id.slice(0, 8)}</td>
-                        <td>{s.editor ?? '—'}</td>
-                        <td>{formatDateTime(s.startedAtUtc)}</td>
-                        <td>{formatDateTime(s.endedAtUtc)}</td>
-                        <td>{durationMs == null ? '—' : formatDurationMs(durationMs)}</td>
-                        <td>{s.branch ?? '—'}</td>
-                        <td>
-                          <StatusBadge
-                            label={s.status || (s.isActive ? 'Active' : 'Closed')}
-                            tone={
-                              s.isActive || s.status === 'Active' ? 'success' : 'neutral'
-                            }
-                          />
-                        </td>
-                        <td>
-                          <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-secondary"
-                              onClick={() => {
-                                setEditingSessionId(s.id);
-                                setSessionDraft(draftFromSession(s));
-                                setSessionMessage(null);
-                                setSessionEditorOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-danger"
-                              disabled={deleteSessionMutation.isPending}
-                              onClick={() => {
-                                const ok = window.confirm(
-                                  `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
-                                );
-                                if (!ok) return;
-                                void deleteSessionMutation
-                                  .mutateAsync({ id: s.id, projectId: detail.id })
-                                  .then(() => {
-                                    setSessionMessage(null);
-                                    setSessionBrowseEpoch((value) => value + 1);
-                                  })
-                                  .catch((err: unknown) => {
-                                    setSessionMessage(
-                                      err instanceof Error ? err.message : 'Delete failed',
-                                    );
-                                  });
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                        />
+                      </td>
+                      <td>
+                        <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-secondary"
+                            onClick={() => {
+                              setEditingSessionId(s.id);
+                              setSessionDraft(draftFromSession(s));
+                              setSessionMessage(null);
+                              setSessionEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-danger"
+                            disabled={deleteSessionMutation.isPending}
+                            onClick={() => {
+                              const ok = window.confirm(
+                                `Delete session ${s.id.slice(0, 8)}…? Linked activity stays, but loses this session link.`,
+                              );
+                              if (!ok) return;
+                              void deleteSessionMutation
+                                .mutateAsync({ id: s.id, projectId: detail.id })
+                                .then(() => {
+                                  setSessionMessage(null);
+                                  setSessionBrowseEpoch((value) => value + 1);
+                                })
+                                .catch((err: unknown) => {
+                                  setSessionMessage(
+                                    err instanceof Error ? err.message : 'Delete failed',
+                                  );
+                                });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </DataTable>
             )}
             renderGrid={(rows) =>
               rows.map((s) => {
@@ -1893,7 +1898,7 @@ export function ProjectDetailsPage() {
             showHeading={false}
             searchPlaceholder="Search timesheet entries..."
             filterKey={[projectId, range.fromUtc, range.toUtc, timesheetBrowseEpoch].join('|')}
-            fetchPage={async ({ pageIndex, pageSize, search, status, signal }) =>
+            fetchPage={async ({ pageIndex, pageSize, search, status, sort, signal }) =>
               api.getProjectTimesheetEntriesPaged(
                 projectId!,
                 {
@@ -1904,6 +1909,7 @@ export function ProjectDetailsPage() {
                   search: search || undefined,
                   openClosed:
                     status === 'Open' ? 'open' : status === 'Closed' ? 'closed' : undefined,
+                  ...browseSortQuery(sort),
                 },
                 signal,
               )
@@ -1932,96 +1938,97 @@ export function ProjectDetailsPage() {
               status: entry.isOpen ? 'Open' : 'Closed',
             })}
             emptySourceMessage="No timesheet entries in the selected range."
-            renderTable={(rows) => (
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>Started</th>
-                    <th>Ended</th>
-                    <th>Duration</th>
-                    <th>Notes</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((entry) => {
-                    const duration = timesheetEntryDurationMs(entry);
-                    return (
-                      <tr
-                        key={entry.id}
-                        className="clickable-row"
-                        onClick={() => setSelectedTimesheetEntry(entry)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            setSelectedTimesheetEntry(entry);
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        title="Click to show sessions in this timesheet period"
-                        aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
-                      >
-                        <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
-                        <td>{formatDateTime(entry.startedAtUtc)}</td>
-                        <td>{formatDateTime(entry.endedAtUtc)}</td>
-                        <td>
-                          {duration == null
-                            ? '—'
-                            : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
-                        </td>
-                        <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
-                        <td>
-                          <StatusBadge
-                            label={entry.isOpen ? 'Open' : 'Closed'}
-                            tone={entry.isOpen ? 'success' : 'neutral'}
-                          />
-                        </td>
-                        <td>
-                          <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-secondary"
-                              onClick={() => {
-                                setEditingTimesheetId(entry.id);
-                                setTimesheetDraft(draftFromTimesheet(entry));
-                                setTimesheetMessage(null);
-                                setTimesheetEditorOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-compact btn-danger"
-                              disabled={deleteTimesheetMutation.isPending}
-                              onClick={() => {
-                                const ok = window.confirm('Delete this timesheet entry?');
-                                if (!ok) return;
-                                void deleteTimesheetMutation
-                                  .mutateAsync({ id: entry.id, projectId: detail.id })
-                                  .then(() => {
-                                    setTimesheetMessage(null);
-                                    setTimesheetBrowseEpoch((value) => value + 1);
-                                  })
-                                  .catch((err: unknown) => {
-                                    setTimesheetMessage(
-                                      err instanceof Error ? err.message : 'Delete failed',
-                                    );
-                                  });
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            renderTable={(rows, { sort, onSortChange }) => (
+              <DataTable
+                className="data"
+                shellClassName=""
+                sort={sort}
+                onSortChange={onSortChange}
+                headers={[
+                  { id: 'categoryName', header: 'Category', sortable: true },
+                  { id: 'startedAtUtc', header: 'Started', sortable: true },
+                  { id: 'endedAtUtc', header: 'Ended', sortable: true },
+                  { id: 'durationMilliseconds', header: 'Duration' },
+                  { id: 'notes', header: 'Notes', sortable: true },
+                  { id: 'status', header: 'Status', sortable: true },
+                  { id: 'actions', header: 'Actions' },
+                ]}
+              >
+                {rows.map((entry) => {
+                  const duration = timesheetEntryDurationMs(entry);
+                  return (
+                    <tr
+                      key={entry.id}
+                      className="clickable-row"
+                      onClick={() => setSelectedTimesheetEntry(entry)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedTimesheetEntry(entry);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      title="Click to show sessions in this timesheet period"
+                      aria-label={`Show sessions for timesheet starting ${formatDateTime(entry.startedAtUtc)}`}
+                    >
+                      <td>{entry.categoryName?.trim() ? entry.categoryName : '—'}</td>
+                      <td>{formatDateTime(entry.startedAtUtc)}</td>
+                      <td>{formatDateTime(entry.endedAtUtc)}</td>
+                      <td>
+                        {duration == null
+                          ? '—'
+                          : `${formatDurationMs(duration)}${entry.isOpen ? ' (running)' : ''}`}
+                      </td>
+                      <td>{entry.notes?.trim() ? entry.notes : '—'}</td>
+                      <td>
+                        <StatusBadge
+                          label={entry.isOpen ? 'Open' : 'Closed'}
+                          tone={entry.isOpen ? 'success' : 'neutral'}
+                        />
+                      </td>
+                      <td>
+                        <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-secondary"
+                            onClick={() => {
+                              setEditingTimesheetId(entry.id);
+                              setTimesheetDraft(draftFromTimesheet(entry));
+                              setTimesheetMessage(null);
+                              setTimesheetEditorOpen(true);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-compact btn-danger"
+                            disabled={deleteTimesheetMutation.isPending}
+                            onClick={() => {
+                              const ok = window.confirm('Delete this timesheet entry?');
+                              if (!ok) return;
+                              void deleteTimesheetMutation
+                                .mutateAsync({ id: entry.id, projectId: detail.id })
+                                .then(() => {
+                                  setTimesheetMessage(null);
+                                  setTimesheetBrowseEpoch((value) => value + 1);
+                                })
+                                .catch((err: unknown) => {
+                                  setTimesheetMessage(
+                                    err instanceof Error ? err.message : 'Delete failed',
+                                  );
+                                });
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </DataTable>
             )}
             renderGrid={(rows) =>
               rows.map((entry) => {
@@ -2374,6 +2381,7 @@ export function ProjectDetailsPage() {
                     row.promptCount,
                     row.totalTokens,
                     row.usageBasedCost,
+                    row.calculatedTokenCost,
                     row.estimatedCost,
                     row.reportedCost,
                   ]
@@ -2394,6 +2402,7 @@ export function ProjectDetailsPage() {
                   { header: 'Total tokens', key: 'totalTokens' },
                   { header: 'Usage cost', key: 'usageBasedCost' },
                   { header: 'Subscription', key: 'subscriptionAllocation' },
+                  { header: 'Calculated cost', key: 'calculatedTokenCost' },
                   { header: 'Estimated', key: 'estimatedCost' },
                   { header: 'Reported', key: 'reportedCost' },
                 ]}
@@ -2409,6 +2418,7 @@ export function ProjectDetailsPage() {
                   totalTokens: row.totalTokens,
                   usageBasedCost: row.usageBasedCost,
                   subscriptionAllocation: row.subscriptionAllocation,
+                  calculatedTokenCost: row.calculatedTokenCost,
                   estimatedCost: row.estimatedCost,
                   reportedCost: row.reportedCost,
                 })}
@@ -2431,6 +2441,7 @@ export function ProjectDetailsPage() {
                           <th>Total tokens</th>
                           <th>Usage cost</th>
                           <th>Subscription</th>
+                          <th>Calculated cost</th>
                           <th>Estimated</th>
                           <th>Reported</th>
                         </tr>
@@ -2463,6 +2474,7 @@ export function ProjectDetailsPage() {
                             <td>{formatNumber(row.totalTokens)}</td>
                             <td>{formatCurrency(row.usageBasedCost, currency)}</td>
                             <td>{formatCurrency(row.subscriptionAllocation, currency)}</td>
+                            <td>{formatCurrency(row.calculatedTokenCost, currency)}</td>
                             <td>{formatCurrency(row.estimatedCost, currency)}</td>
                             <td>{formatCurrency(row.reportedCost, currency)}</td>
                           </tr>
@@ -2495,6 +2507,9 @@ export function ProjectDetailsPage() {
                       <span>Prompts {formatNumber(row.promptCount)}</span>
                       <span>Tokens {formatNumber(row.totalTokens)}</span>
                       <span>Usage {formatCurrency(row.usageBasedCost, currency)}</span>
+                      <span>
+                        Calculated {formatCurrency(row.calculatedTokenCost, currency)}
+                      </span>
                       <span>Est. {formatCurrency(row.estimatedCost, currency)}</span>
                     </article>
                   ));

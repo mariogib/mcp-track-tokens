@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.Browsing;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
@@ -110,6 +111,17 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
             .ConfigureAwait(false);
     }
 
+    private static readonly IReadOnlyDictionary<string, string> TimesheetBrowseSortColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["projectName"] = "IFNULL(p.Name,'')",
+            ["categoryName"] = "IFNULL(c.Name,'')",
+            ["startedAtUtc"] = "e.StartedAtUtc",
+            ["endedAtUtc"] = "e.EndedAtUtc",
+            ["notes"] = "IFNULL(e.Notes,'')",
+            ["status"] = "CASE WHEN e.EndedAtUtc IS NULL THEN 0 ELSE 1 END",
+        };
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<TimesheetEntry>> ListPagedAsync(
         TimesheetEntryPageFilter filter,
@@ -120,13 +132,24 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
         ArgumentNullException.ThrowIfNull(filter);
         var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
         var (fromSql, where, args) = BuildBrowseSql(filter, forCount: false);
+        var orderBy = BrowseSort.ResolveOrderBy(
+            filter.SortBy,
+            filter.SortDirection,
+            TimesheetBrowseSortColumns,
+            "e.StartedAtUtc DESC, e.Id DESC");
+        if (!orderBy.Contains("e.Id ", StringComparison.Ordinal) &&
+            !orderBy.Contains("Id ", StringComparison.Ordinal))
+        {
+            orderBy += ", e.Id DESC";
+        }
+
         var sql = new StringBuilder()
             .Append("SELECT e.* ")
             .Append(fromSql)
             .Append(' ')
             .Append(where)
             .Append(CultureInfo.InvariantCulture,
-                $" ORDER BY e.StartedAtUtc DESC, e.Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+                $" ORDER BY {orderBy} LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
         args.Add(take);
         args.Add(skip);
 
@@ -217,7 +240,11 @@ public sealed class TimesheetEntryRepository : ITimesheetEntryRepository
         bool forCount)
     {
         var search = filter.Search?.Trim();
-        var needsJoin = !string.IsNullOrEmpty(search);
+        var sortKey = filter.SortBy?.Trim();
+        var needsJoin =
+            !string.IsNullOrEmpty(search)
+            || string.Equals(sortKey, "projectName", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(sortKey, "categoryName", StringComparison.OrdinalIgnoreCase);
         var fromSql = needsJoin
             ? "FROM TimesheetEntries AS e LEFT JOIN Projects AS p ON p.Id = e.ProjectId LEFT JOIN TimesheetCategories AS c ON c.Id = e.CategoryId"
             : "FROM TimesheetEntries AS e";

@@ -8,6 +8,7 @@ import {
   createBrowseScrollSentinel,
   createCard,
   createChartCard,
+  createDataTable,
   createDateRangeFilters,
   createEmptyState,
   createLoadingState,
@@ -45,6 +46,9 @@ export const TextLink = createTextLink(React, Link);
 
 /** Shared browse toolbar (table/grid; calendar optional per page). */
 export const BrowseListControls = createBrowseListControls(React);
+
+/** Sortable table shell used inside AnalysisDetailBrowse / RemoteAnalysisDetailBrowse. */
+export const DataTable = createDataTable(React);
 
 /** Sentinel for BrowseListControls `paging.mode === "scroll"`. */
 export const BrowseScrollSentinel = createBrowseScrollSentinel(React);

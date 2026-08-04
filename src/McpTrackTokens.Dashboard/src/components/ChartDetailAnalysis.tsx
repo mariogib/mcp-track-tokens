@@ -28,6 +28,18 @@ import {
   millisecondsToMinutes,
 } from '../utils/format';
 
+function averageCostPerToken(cost: number, tokens: number | undefined): number | null {
+  if (tokens == null || tokens <= 0 || !Number.isFinite(cost)) {
+    return null;
+  }
+  return cost / tokens;
+}
+
+function formatAvgCostPerToken(cost: number, tokens: number | undefined, currency: string): string {
+  const avg = averageCostPerToken(cost, tokens);
+  return avg == null ? '—' : formatCurrency(avg, currency, 6);
+}
+
 export type ChartDetailEntityFilter = {
   kind: 'project' | 'branch';
   label: string;
@@ -335,30 +347,102 @@ export function ChartDetailAnalysis({
           heading="Detail data"
           searchPlaceholder="Search models..."
           rows={pieData}
-          getSearchText={(row) => `${row.name} ${row.cost}`}
+          getSearchText={(row) =>
+            [
+              row.name,
+              row.cost,
+              row.calculatedTokenCost,
+              row.tokens,
+              row.rateSource,
+              row.inputPerMillion,
+              row.outputPerMillion,
+            ]
+              .filter((v) => v != null)
+              .map(String)
+              .join(' ')
+          }
           exportFilename={`${exportFilenamePrefix}-${chartKey}-detail.xlsx`}
           exportTitle={chartTitle}
-          exportColumns={[
-            { header: 'Model', key: 'name' },
-            {
-              header: chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost',
-              key: 'cost',
-            },
-          ]}
-          toExportRow={(row) => ({ name: row.name, cost: row.cost })}
-          renderTable={(rows) => (
-            <NamedValueTable
-              rows={rows}
-              nameHeader="Model"
-              valueHeader={chartKey === 'calculated-cost-by-model' ? 'Calculated cost' : 'Cost'}
-              currency={currency}
-            />
-          )}
+          exportColumns={
+            chartKey === 'calculated-cost-by-model'
+              ? [
+                  { header: 'Model', key: 'name' },
+                  { header: 'Rate source', key: 'rateSource' },
+                  { header: 'Tokens', key: 'tokens' },
+                  { header: 'Input / M', key: 'inputPerMillion' },
+                  { header: 'Output / M', key: 'outputPerMillion' },
+                  { header: 'Cache read / M', key: 'cacheReadPerMillion' },
+                  { header: 'Cache write / M', key: 'cacheWritePerMillion' },
+                  { header: 'Calculated cost', key: 'cost' },
+                  { header: 'Avg cost / token', key: 'avgCostPerToken' },
+                ]
+              : [
+                  { header: 'Model', key: 'name' },
+                  { header: 'Cost', key: 'cost' },
+                  { header: 'Calculated cost', key: 'calculatedTokenCost' },
+                ]
+          }
+          toExportRow={(row) =>
+            chartKey === 'calculated-cost-by-model'
+              ? {
+                  name: row.name,
+                  rateSource: row.rateSource ?? '',
+                  tokens: row.tokens ?? '',
+                  inputPerMillion: row.inputPerMillion ?? '',
+                  outputPerMillion: row.outputPerMillion ?? '',
+                  cacheReadPerMillion: row.cacheReadPerMillion ?? '',
+                  cacheWritePerMillion: row.cacheWritePerMillion ?? '',
+                  cost: row.cost,
+                  avgCostPerToken: averageCostPerToken(row.cost, row.tokens) ?? '',
+                }
+              : {
+                  name: row.name,
+                  cost: row.cost,
+                  calculatedTokenCost: row.calculatedTokenCost ?? 0,
+                }
+          }
+          renderTable={(rows) =>
+            chartKey === 'calculated-cost-by-model' ? (
+              <CalculatedModelCostTable rows={rows} currency={currency} />
+            ) : (
+              <NamedValueTable
+                rows={rows}
+                nameHeader="Model"
+                valueHeader="Cost"
+                currency={currency}
+                showCalculatedCost
+              />
+            )
+          }
           renderGrid={(rows) =>
             rows.map((row) => (
               <article key={row.name} className="analysis-browse-tile">
                 <strong>{row.name}</strong>
-                <span>{formatCurrency(row.cost, currency)}</span>
+                {chartKey === 'calculated-cost-by-model' ? (
+                  <>
+                    {row.rateSource ? <span className="mono">{row.rateSource}</span> : null}
+                    {row.tokens != null ? <span>Tokens {formatNumber(row.tokens)}</span> : null}
+                    {row.inputPerMillion != null ? (
+                      <span>In/M {formatCurrency(row.inputPerMillion, currency)}</span>
+                    ) : null}
+                    {row.outputPerMillion != null ? (
+                      <span>Out/M {formatCurrency(row.outputPerMillion, currency)}</span>
+                    ) : null}
+                    <span>{formatCurrency(row.cost, currency)}</span>
+                    <span>
+                      Avg/token {formatAvgCostPerToken(row.cost, row.tokens, currency)}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>{formatCurrency(row.cost, currency)}</span>
+                    {(row.calculatedTokenCost ?? 0) > 0 ? (
+                      <span>
+                        Calculated {formatCurrency(row.calculatedTokenCost, currency)}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </article>
             ))
           }
@@ -464,12 +548,14 @@ function NamedValueTable({
   valueHeader,
   currency,
   asNumber = false,
+  showCalculatedCost = false,
 }: {
-  rows: Array<{ name: string; cost: number }>;
+  rows: NamedCostPoint[];
   nameHeader: string;
   valueHeader: string;
   currency: string;
   asNumber?: boolean;
+  showCalculatedCost?: boolean;
 }) {
   return (
     <table className="data">
@@ -477,6 +563,7 @@ function NamedValueTable({
         <tr>
           <th>{nameHeader}</th>
           <th>{valueHeader}</th>
+          {showCalculatedCost ? <th>Calculated cost</th> : null}
         </tr>
       </thead>
       <tbody>
@@ -487,11 +574,81 @@ function NamedValueTable({
               <td>
                 {asNumber ? formatNumber(row.cost) : formatCurrency(row.cost, currency)}
               </td>
+              {showCalculatedCost ? (
+                <td>
+                  {(row.calculatedTokenCost ?? 0) > 0
+                    ? formatCurrency(row.calculatedTokenCost, currency)
+                    : '—'}
+                </td>
+              ) : null}
             </tr>
           ))
         ) : (
           <tr>
-            <td colSpan={2}>No rows</td>
+            <td colSpan={showCalculatedCost ? 3 : 2}>No rows</td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function CalculatedModelCostTable({
+  rows,
+  currency,
+}: {
+  rows: NamedCostPoint[];
+  currency: string;
+}) {
+  return (
+    <table className="data">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Rate source</th>
+          <th>Tokens</th>
+          <th>Input / M</th>
+          <th>Output / M</th>
+          <th>Cache read / M</th>
+          <th>Cache write / M</th>
+          <th>Calculated cost</th>
+          <th>Avg cost / token</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.length ? (
+          rows.map((row) => (
+            <tr key={row.name}>
+              <td>{row.name}</td>
+              <td className="mono">{row.rateSource || '—'}</td>
+              <td>{row.tokens != null ? formatNumber(row.tokens) : '—'}</td>
+              <td>
+                {row.inputPerMillion != null
+                  ? formatCurrency(row.inputPerMillion, currency)
+                  : '—'}
+              </td>
+              <td>
+                {row.outputPerMillion != null
+                  ? formatCurrency(row.outputPerMillion, currency)
+                  : '—'}
+              </td>
+              <td>
+                {row.cacheReadPerMillion != null
+                  ? formatCurrency(row.cacheReadPerMillion, currency)
+                  : '—'}
+              </td>
+              <td>
+                {row.cacheWritePerMillion != null
+                  ? formatCurrency(row.cacheWritePerMillion, currency)
+                  : '—'}
+              </td>
+              <td>{formatCurrency(row.cost, currency)}</td>
+              <td>{formatAvgCostPerToken(row.cost, row.tokens, currency)}</td>
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td colSpan={9}>No rows</td>
           </tr>
         )}
       </tbody>

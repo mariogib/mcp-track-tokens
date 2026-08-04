@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.34] — 2026-08-04
+
+### Added
+- Project Excel export writes numeric cells as real Excel numbers (2 decimals), adds SUM total rows under tables without corrupting Excel table XML, and drops synthetic Total/Summary data rows.
+- Calculated cost by model detail lists show rate-card prices (per million) and average cost per token.
+- Browse list column sorting via shared `DataTable` headers; lazy/remote pages re-fetch with allowlisted `sortBy`/`sortDirection` on prompts, sessions, and timesheets.
+
+### Changed
+- Project Settings no longer shows the separate JSON/CSV export card (use Overview → Export to Excel).
+
 ## [1.0.33] — 2026-08-04
 
 ### Changed

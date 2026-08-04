@@ -4,6 +4,7 @@ import {
   useProjectActivityQuery,
   useProjectCostQuery,
   useProjectQuery,
+  useProjectTokenCostQuery,
 } from '../api/hooks';
 import { ChartDetailAnalysis } from '../components/ChartDetailAnalysis';
 import { ErrorState, LoadingState } from '../components/States';
@@ -17,6 +18,7 @@ import {
   buildDaySeries,
   buildModelCalculatedSeries,
   buildModelCostSeries,
+  enrichModelCostWithTokenRates,
   resolveDisplayCost,
 } from '../utils/chartDetail';
 
@@ -28,6 +30,11 @@ export function ProjectChartDetailPage() {
   const project = useProjectQuery(projectId);
   const activity = useProjectActivityQuery(projectId, search.range.fromUtc, search.range.toUtc);
   const cost = useProjectCostQuery(projectId, search.range.fromUtc, search.range.toUtc);
+  const tokenCost = useProjectTokenCostQuery(
+    validKey === 'calculated-cost-by-model' ? projectId : undefined,
+    search.range.fromUtc,
+    search.range.toUtc,
+  );
 
   const reportedTotalCost = cost.data?.totalAiCost ?? 0;
   const calculatedTotalCost = cost.data?.calculatedTokenCost ?? 0;
@@ -52,8 +59,12 @@ export function ProjectChartDetailPage() {
   );
 
   const modelCalculatedSeries = useMemo(
-    () => buildModelCalculatedSeries(cost.data?.byModel ?? [], search.modelFilter),
-    [cost.data?.byModel, search.modelFilter],
+    () =>
+      enrichModelCostWithTokenRates(
+        buildModelCalculatedSeries(cost.data?.byModel ?? [], search.modelFilter),
+        tokenCost.data?.byModel ?? [],
+      ),
+    [cost.data?.byModel, search.modelFilter, tokenCost.data?.byModel],
   );
 
   const branchSeries = useMemo(() => {
@@ -94,8 +105,12 @@ export function ProjectChartDetailPage() {
   }
 
   const def = PROJECT_CHARTS[validKey];
-  const loading = project.isLoading || activity.isLoading || cost.isLoading;
-  const error = project.error || activity.error || cost.error;
+  const loading =
+    project.isLoading ||
+    activity.isLoading ||
+    cost.isLoading ||
+    (validKey === 'calculated-cost-by-model' && tokenCost.isLoading);
+  const error = project.error || activity.error || cost.error || tokenCost.error;
 
   if (loading) {
     return (

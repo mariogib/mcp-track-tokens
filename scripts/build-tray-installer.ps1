@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 5.1
 <#
 .SYNOPSIS
   Publishes tray + desktop, stages Cursor hooks, and builds the WiX MSI.
@@ -129,7 +129,7 @@ Invoke-AppPublish -Project $desktopProject -Output $desktopPublishDir -Label 'de
 Invoke-AppPublish -Project $helperProject -Output $integrationsHelperDir -Label 'integrations helper' -SingleFile
 
 if (-not (Test-Path (Join-Path $publishDir 'mcp-track-tokens-tray.exe'))) {
-    throw "Tray publish failed — mcp-track-tokens-tray.exe not found in $publishDir"
+    throw "Tray publish failed - mcp-track-tokens-tray.exe not found in $publishDir"
 }
 
 $serverDll = Join-Path $publishDir 'McpTrackTokens.Server.dll'
@@ -156,11 +156,11 @@ if ($appSettingsText -notmatch '"ServerUrl"\s*:\s*"http://127\.0\.0\.1:5187"' -a
 }
 
 if (-not (Test-Path (Join-Path $desktopPublishDir 'mcp-track-tokens-desktop.exe'))) {
-    throw "Desktop publish failed — mcp-track-tokens-desktop.exe not found in $desktopPublishDir"
+    throw "Desktop publish failed - mcp-track-tokens-desktop.exe not found in $desktopPublishDir"
 }
 
 if (-not (Test-Path (Join-Path $integrationsHelperDir 'mcp-track-tokens-setup-integrations.exe'))) {
-    throw "Integrations helper publish failed — exe not found in $integrationsHelperDir"
+    throw "Integrations helper publish failed - exe not found in $integrationsHelperDir"
 }
 
 if (-not (Test-Path (Join-Path $integrationsContentDir 'cursor-hooks\dist'))) {

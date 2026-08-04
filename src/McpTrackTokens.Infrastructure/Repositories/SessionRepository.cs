@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using McpTrackTokens.Application.Browsing;
 using McpTrackTokens.Application.DTOs;
 using McpTrackTokens.Application.Interfaces;
 using McpTrackTokens.Domain.Entities;
@@ -184,6 +185,17 @@ public sealed class SessionRepository : ISessionRepository
             .ConfigureAwait(false);
     }
 
+    private static readonly IReadOnlyDictionary<string, string> SessionBrowseSortColumns =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["id"] = "Id",
+            ["editor"] = "Editor",
+            ["startedAtUtc"] = "StartedAtUtc",
+            ["endedAtUtc"] = "EndedAtUtc",
+            ["branch"] = "Branch",
+            ["status"] = "Status",
+        };
+
     /// <inheritdoc />
     public async Task<IReadOnlyList<EditorSession>> ListPagedAsync(
         SessionPageFilter filter,
@@ -194,11 +206,21 @@ public sealed class SessionRepository : ISessionRepository
         ArgumentNullException.ThrowIfNull(filter);
         var (skip, take) = SqliteDateTimePaging.NormalizePage(pageIndex, pageSize);
         var (where, args) = BuildBrowseWhere(filter);
+        var orderBy = BrowseSort.ResolveOrderBy(
+            filter.SortBy,
+            filter.SortDirection,
+            SessionBrowseSortColumns,
+            "StartedAtUtc DESC, Id DESC");
+        if (!orderBy.Contains("Id ", StringComparison.Ordinal))
+        {
+            orderBy += ", Id DESC";
+        }
+
         var sql = new StringBuilder()
             .Append("SELECT * FROM EditorSessions ")
             .Append(where)
             .Append(CultureInfo.InvariantCulture,
-                $" ORDER BY StartedAtUtc DESC, Id DESC LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
+                $" ORDER BY {orderBy} LIMIT {{{args.Count}}} OFFSET {{{args.Count + 1}}}");
         args.Add(take);
         args.Add(skip);
 

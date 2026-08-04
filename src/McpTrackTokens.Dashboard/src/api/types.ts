@@ -736,6 +736,8 @@ export interface PromptBrowseQuery {
   eventType?: string;
   model?: string;
   branch?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface TimesheetBrowseQuery {
@@ -746,6 +748,8 @@ export interface TimesheetBrowseQuery {
   pageSize: number;
   search?: string;
   openClosed?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface SessionBrowseQuery {
@@ -755,6 +759,8 @@ export interface SessionBrowseQuery {
   pageSize: number;
   search?: string;
   status?: string;
+  sortBy?: string;
+  sortDirection?: 'asc' | 'desc';
 }
 
 export interface SessionDto {

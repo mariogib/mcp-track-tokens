@@ -606,6 +606,8 @@ public static class ApiEndpoints
         int? pageSize,
         string? search,
         string? status,
+        string? sortBy,
+        string? sortDirection,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -626,7 +628,9 @@ public static class ApiEndpoints
                 FromUtc = from,
                 ToUtc = to,
                 Search = search,
-                Status = status
+                Status = status,
+                SortBy = sortBy,
+                SortDirection = sortDirection
             };
             var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
             var page = await sessions
@@ -654,6 +658,8 @@ public static class ApiEndpoints
         int? pageSize,
         string? search,
         string? status,
+        string? sortBy,
+        string? sortDirection,
         CancellationToken cancellationToken)
     {
         var (from, to) = DateRange.Resolve(fromUtc, toUtc);
@@ -668,7 +674,9 @@ public static class ApiEndpoints
                 FromUtc = from,
                 ToUtc = to,
                 Search = search,
-                Status = status
+                Status = status,
+                SortBy = sortBy,
+                SortDirection = sortDirection
             };
             var totalCount = await sessions.CountAsync(filter, cancellationToken).ConfigureAwait(false);
             var page = await sessions
@@ -766,6 +774,8 @@ public static class ApiEndpoints
         int? pageSize,
         string? search,
         string? openClosed,
+        string? sortBy,
+        string? sortDirection,
         CancellationToken cancellationToken)
     {
         try
@@ -781,7 +791,9 @@ public static class ApiEndpoints
                             FromUtc = fromUtc,
                             ToUtc = toUtc,
                             Search = search,
-                            OpenClosed = openClosed
+                            OpenClosed = openClosed,
+                            SortBy = sortBy,
+                            SortDirection = sortDirection
                         },
                         index,
                         size,
@@ -809,6 +821,8 @@ public static class ApiEndpoints
         int? pageSize,
         string? search,
         string? openClosed,
+        string? sortBy,
+        string? sortDirection,
         CancellationToken cancellationToken)
     {
         try
@@ -824,7 +838,9 @@ public static class ApiEndpoints
                             FromUtc = fromUtc,
                             ToUtc = toUtc,
                             Search = search,
-                            OpenClosed = openClosed
+                            OpenClosed = openClosed,
+                            SortBy = sortBy,
+                            SortDirection = sortDirection
                         },
                         index,
                         size,
@@ -1027,6 +1043,8 @@ public static class ApiEndpoints
         string? eventType,
         string? model,
         string? branch,
+        string? sortBy,
+        string? sortDirection,
         CancellationToken cancellationToken)
     {
         var project = await projects.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -1051,7 +1069,9 @@ public static class ApiEndpoints
                 EventType = eventType,
                 Model = model,
                 Branch = branch,
-                PromptSubmittedOnly = true
+                PromptSubmittedOnly = true,
+                SortBy = sortBy,
+                SortDirection = sortDirection
             };
             var totalCount = await events.CountAsync(filter, cancellationToken).ConfigureAwait(false);
             var prompts = await events

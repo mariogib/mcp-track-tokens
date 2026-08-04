@@ -56,6 +56,12 @@ public sealed record ActivityEventPageFilter
     /// When true, only <c>PromptSubmitted</c> rows (dashboard prompts tab).
     /// </summary>
     public bool PromptSubmittedOnly { get; init; }
+
+    /// <summary>Allowlisted column id from the dashboard DataTable header.</summary>
+    public string? SortBy { get; init; }
+
+    /// <summary><c>asc</c> or <c>desc</c>.</summary>
+    public string? SortDirection { get; init; }
 }
 
 /// <summary>
@@ -75,6 +81,12 @@ public sealed record TimesheetEntryPageFilter
     /// <c>open</c>, <c>closed</c>, or null for all.
     /// </summary>
     public string? OpenClosed { get; init; }
+
+    /// <summary>Allowlisted column id from the dashboard DataTable header.</summary>
+    public string? SortBy { get; init; }
+
+    /// <summary><c>asc</c> or <c>desc</c>.</summary>
+    public string? SortDirection { get; init; }
 }
 
 /// <summary>
@@ -94,4 +106,10 @@ public sealed record SessionPageFilter
     /// Exact <see cref="Domain.Enums.SessionStatus"/> name, or <c>Closed</c> for Ended/Abandoned.
     /// </summary>
     public string? Status { get; init; }
+
+    /// <summary>Allowlisted column id from the dashboard DataTable header.</summary>
+    public string? SortBy { get; init; }
+
+    /// <summary><c>asc</c> or <c>desc</c>.</summary>
+    public string? SortDirection { get; init; }
 }

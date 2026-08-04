@@ -18,7 +18,20 @@ export type DaySeriesPoint = {
   cost: number;
 };
 
-export type NamedCostPoint = { name: string; cost: number };
+export type NamedCostPoint = {
+  name: string;
+  /** Primary chart value (reported cost or calculated token cost). */
+  cost: number;
+  /** Rate-card calculated token cost (when different from `cost`). */
+  calculatedTokenCost?: number;
+  tokens?: number;
+  rateSource?: string;
+  /** Currency units per 1,000,000 tokens from the Settings rate card. */
+  inputPerMillion?: number;
+  outputPerMillion?: number;
+  cacheReadPerMillion?: number;
+  cacheWritePerMillion?: number;
+};
 
 export type NamedPromptPoint = {
   name: string;
@@ -65,6 +78,7 @@ export function buildModelCostSeries(
     .map((m) => ({
       name: m.name || 'Unknown',
       cost: m.usageBasedCost + m.subscriptionAllocation,
+      calculatedTokenCost: m.calculatedTokenCost ?? 0,
     }))
     .filter((m) => m.cost > 0);
   if (!modelFilter) return rows;
@@ -79,10 +93,45 @@ export function buildModelCalculatedSeries(
     .map((m) => ({
       name: m.name || 'Unknown',
       cost: m.calculatedTokenCost ?? 0,
+      calculatedTokenCost: m.calculatedTokenCost ?? 0,
     }))
     .filter((m) => m.cost > 0);
   if (!modelFilter) return rows;
   return rows.filter((m) => m.name === modelFilter);
+}
+
+type TokenRateRow = {
+  model: string;
+  rateSource: string;
+  totalTokens: number;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion: number;
+  cacheWritePerMillion?: number;
+};
+
+/** Attach Settings rate-card token prices to calculated-cost model rows. */
+export function enrichModelCostWithTokenRates(
+  points: NamedCostPoint[],
+  tokenModels: TokenRateRow[],
+): NamedCostPoint[] {
+  if (tokenModels.length === 0) return points;
+  const byKey = new Map(
+    tokenModels.map((row) => [(row.model || 'Unknown').trim().toLowerCase(), row]),
+  );
+  return points.map((point) => {
+    const rate = byKey.get(point.name.trim().toLowerCase());
+    if (!rate) return point;
+    return {
+      ...point,
+      tokens: rate.totalTokens,
+      rateSource: rate.rateSource,
+      inputPerMillion: rate.inputPerMillion,
+      outputPerMillion: rate.outputPerMillion,
+      cacheReadPerMillion: rate.cacheReadPerMillion,
+      cacheWritePerMillion: rate.cacheWritePerMillion ?? 0,
+    };
+  });
 }
 
 export function summarize(values: number[]): ChartStats {
