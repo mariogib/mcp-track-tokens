@@ -25,4 +25,8 @@
     <ProjectReference Include="..\..\src\McpTrackTokens.Application\McpTrackTokens.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\models-and-pricing.md" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

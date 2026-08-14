@@ -1386,7 +1386,7 @@ export function SettingsPage() {
                           help={{
                             summary: 'Model name from Cursor usage exports (* = fallback).',
                             detail:
-                              'Enter the model string exactly as it appears in Cursor usage CSV/JSON exports (for example Auto or a Claude/GPT SKU). Matching is case-insensitive after normalization. Use * as the catch-all rate when no other row matches. Get Rates pulls the published Cursor Models & Pricing table and maps Auto Cost to Auto/* when present.',
+                              'Enter the model string exactly as it appears in Cursor usage CSV/JSON exports (for example Auto, Grok 4.6, Composer 2.5, or a Claude/GPT SKU). Matching is case-insensitive after normalization. Use * as the catch-all rate when no other row matches. Get Rates pulls both the Cursor Models table (Grok/Composer) and the Other Models pricing table, and maps Auto Cost to Auto/* when present.',
                           }}
                         />
                       </span>

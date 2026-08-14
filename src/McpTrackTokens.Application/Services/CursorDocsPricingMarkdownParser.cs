@@ -36,7 +36,7 @@ public static partial class CursorDocsPricingMarkdownParser
         }
 
         rates.AddRange(ParseModelPricingTable(markdown, warnings));
-        EnsureAutoFallbackRates(rates);
+        EnsureAutoFallbackRates(rates, warnings);
 
         return rates
             .Where(r => !string.IsNullOrWhiteSpace(r.Model))
@@ -78,12 +78,7 @@ public static partial class CursorDocsPricingMarkdownParser
         }
 
         rates.AddRange(tableRates);
-        EnsureAutoFallbackRates(rates);
-
-        if (!rates.Any(r => r.Model.Equals("Auto", StringComparison.OrdinalIgnoreCase)))
-        {
-            warnings.Add("Auto pricing was not found; Auto/* fallback rates were not added.");
-        }
+        EnsureAutoFallbackRates(rates, warnings);
 
         var normalized = rates
             .Where(r => !string.IsNullOrWhiteSpace(r.Model))
@@ -97,14 +92,36 @@ public static partial class CursorDocsPricingMarkdownParser
     }
 
     /// <summary>
-    /// Newer Cursor docs list Auto as "Auto Cost" in the model table instead of a separate Auto pricing section.
+    /// True when the rate card includes first-party Cursor pool models (Grok or Composer).
     /// </summary>
-    private static void EnsureAutoFallbackRates(List<CursorModelTokenRate> rates)
+    public static bool HasCursorPoolRates(IReadOnlyList<CursorModelTokenRate> rates)
+        => rates.Any(r => IsCursorPoolModel(r.Model));
+
+    public static bool IsCursorPoolModel(string? model)
+    {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return false;
+        }
+
+        var name = model.Trim();
+        return name.StartsWith("Grok", StringComparison.OrdinalIgnoreCase) ||
+               name.StartsWith("Composer", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Newer Cursor docs list Auto as "Auto Cost" in the model table instead of a separate Auto pricing section.
+    /// When neither is present, keep the last published Auto Cost rates so Get Rates still seeds Auto/*.
+    /// </summary>
+    private static void EnsureAutoFallbackRates(List<CursorModelTokenRate> rates, List<string>? warnings = null)
     {
         var auto = rates.FirstOrDefault(r =>
             r.Model.Equals("Auto", StringComparison.OrdinalIgnoreCase));
         if (auto is null)
         {
+            var defaults = CursorTokenCostCalculator.CreateDefaultRates();
+            rates.AddRange(defaults);
+            warnings?.Add("Auto pricing was not listed in Cursor docs; used built-in Auto Cost fallback rates.");
             return;
         }
 
@@ -195,74 +212,190 @@ public static partial class CursorDocsPricingMarkdownParser
         string markdown,
         List<string> warnings)
     {
-        var sectionStart = markdown.IndexOf("### Model pricing", StringComparison.OrdinalIgnoreCase);
-        if (sectionStart < 0)
-        {
-            warnings.Add("Could not find '### Model pricing' section.");
-            return [];
-        }
-
-        var section = markdown[sectionStart..];
-        var nextHeading = section.IndexOf("\n## ", StringComparison.Ordinal);
-        if (nextHeading > 0)
-        {
-            section = section[..nextHeading];
-        }
-
         var rates = new List<CursorModelTokenRate>();
-        foreach (var line in section.Split('\n'))
+        var cursorSection = ExtractSection(markdown, "## Cursor Models", "\n## ");
+        if (!string.IsNullOrWhiteSpace(cursorSection))
         {
-            var trimmed = line.Trim();
-            if (!trimmed.StartsWith('|') || trimmed.Contains("---", StringComparison.Ordinal))
+            var cursorRates = ParseAllModelTables(cursorSection, warnings);
+            if (cursorRates.Count == 0)
             {
-                continue;
+                warnings.Add("Found a Cursor Models section but could not parse its pricing table.");
             }
 
-            var cells = SplitRow(trimmed);
-            if (cells.Count < 6)
-            {
-                continue;
-            }
+            rates.AddRange(cursorRates);
+        }
 
-            // Model | Provider | Input | Cache write | Cache read | Output | Notes
-            var model = NormalizeModelName(ExtractModelName(cells[0]));
-            if (string.IsNullOrWhiteSpace(model) ||
-                model.Equals("Model", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
+        var otherStart = markdown.IndexOf("## Other Models", StringComparison.OrdinalIgnoreCase);
+        if (otherStart < 0)
+        {
+            otherStart = markdown.IndexOf("### Model pricing", StringComparison.OrdinalIgnoreCase);
+        }
 
-            if (!TryParseMoney(cells[2], out var input))
-            {
-                warnings.Add($"Skipped '{model}': could not parse input price '{cells[2]}'.");
-                continue;
-            }
+        if (otherStart >= 0)
+        {
+            rates.AddRange(ParseAllModelTables(markdown[otherStart..], warnings));
+        }
+        else if (rates.Count == 0)
+        {
+            rates.AddRange(ParseAllModelTables(markdown, warnings));
+        }
 
-            var cacheWrite = TryParseMoney(cells[3], out var cw) ? cw : input;
-            if (!TryParseMoney(cells[4], out var cacheRead))
-            {
-                warnings.Add($"Skipped '{model}': could not parse cache-read price '{cells[4]}'.");
-                continue;
-            }
+        if (!rates.Any(r => IsCursorPoolModel(r.Model)))
+        {
+            var fallback = ParseAllModelTables(markdown, warnings)
+                .Where(r => IsCursorPoolModel(r.Model))
+                .ToList();
+            rates.InsertRange(0, fallback);
+        }
 
-            if (!TryParseMoney(cells[5], out var output))
-            {
-                warnings.Add($"Skipped '{model}': could not parse output price '{cells[5]}'.");
-                continue;
-            }
-
-            rates.Add(new CursorModelTokenRate
-            {
-                Model = model,
-                InputPerMillion = input,
-                CacheWritePerMillion = cacheWrite,
-                CacheReadPerMillion = cacheRead,
-                OutputPerMillion = output
-            });
+        if (rates.Count == 0)
+        {
+            warnings.Add("Could not find a Model pricing table.");
         }
 
         return rates;
     }
+
+    private static List<CursorModelTokenRate> ParseAllModelTables(
+        string markdown,
+        List<string> warnings)
+    {
+        var rates = new List<CursorModelTokenRate>();
+        var lines = markdown.Replace("\r\n", "\n").Split('\n');
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (!trimmed.StartsWith('|'))
+            {
+                continue;
+            }
+
+            var headerCells = SplitRow(trimmed);
+            if (!TryMapPricingColumns(headerCells, out var columns))
+            {
+                continue;
+            }
+
+            i++;
+            for (; i < lines.Length; i++)
+            {
+                var row = lines[i].Trim();
+                if (!row.StartsWith('|'))
+                {
+                    break;
+                }
+
+                if (IsMarkdownSeparatorRow(row))
+                {
+                    continue;
+                }
+
+                var cells = SplitRow(row);
+                if (cells.Count <= columns.Model)
+                {
+                    continue;
+                }
+
+                var model = NormalizeModelName(ExtractModelName(cells[columns.Model]));
+                if (string.IsNullOrWhiteSpace(model) ||
+                    model.Equals("Model", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!TryGetMoney(cells, columns.Input, out var input))
+                {
+                    warnings.Add($"Skipped '{model}': could not parse input price.");
+                    continue;
+                }
+
+                var cacheWrite = TryGetMoney(cells, columns.CacheWrite, out var cw) ? cw : input;
+                if (!TryGetMoney(cells, columns.CacheRead, out var cacheRead))
+                {
+                    warnings.Add($"Skipped '{model}': could not parse cache-read price.");
+                    continue;
+                }
+
+                if (!TryGetMoney(cells, columns.Output, out var output))
+                {
+                    warnings.Add($"Skipped '{model}': could not parse output price.");
+                    continue;
+                }
+
+                rates.Add(new CursorModelTokenRate
+                {
+                    Model = model,
+                    InputPerMillion = input,
+                    CacheWritePerMillion = cacheWrite,
+                    CacheReadPerMillion = cacheRead,
+                    OutputPerMillion = output
+                });
+            }
+        }
+
+        return rates;
+    }
+
+    private static bool TryMapPricingColumns(IReadOnlyList<string> cells, out PricingColumns columns)
+    {
+        columns = default;
+        if (cells.Count < 4)
+        {
+            return false;
+        }
+
+        var model = IndexOfColumn(cells, "Model");
+        var input = IndexOfColumn(cells, "Input");
+        var output = IndexOfColumn(cells, "Output");
+        var cacheRead = IndexOfColumn(cells, "Cache read");
+        var cacheWrite = IndexOfColumn(cells, "Cache write");
+        if (model < 0 || input < 0 || output < 0 || cacheRead < 0)
+        {
+            return false;
+        }
+
+        columns = new PricingColumns(model, input, output, cacheRead, cacheWrite);
+        return true;
+    }
+
+    private static int IndexOfColumn(IReadOnlyList<string> cells, string name)
+    {
+        for (var i = 0; i < cells.Count; i++)
+        {
+            if (cells[i].Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool TryGetMoney(IReadOnlyList<string> cells, int index, out decimal value)
+    {
+        value = 0m;
+        if (index < 0 || index >= cells.Count)
+        {
+            return false;
+        }
+
+        return TryParseMoney(cells[index], out value);
+    }
+
+    private static bool IsMarkdownSeparatorRow(string row)
+    {
+        var cells = SplitRow(row);
+        return cells.Count > 0 &&
+               cells.All(cell => cell.Length == 0 || cell.All(ch => ch is '-' or ':' or ' '));
+    }
+
+    private readonly record struct PricingColumns(
+        int Model,
+        int Input,
+        int Output,
+        int CacheRead,
+        int CacheWrite);
 
     private static string ExtractSection(string markdown, string startHeading, string nextHeadingPrefix)
     {

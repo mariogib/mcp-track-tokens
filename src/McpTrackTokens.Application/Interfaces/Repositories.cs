@@ -415,6 +415,10 @@ public interface IUsageAttributionRepository
         IReadOnlyCollection<Guid> activityEventIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Lists attributions whose linked usage <c>TimestampUtc</c> falls in the range
+    /// (usage event time), optionally scoped to a project.
+    /// </summary>
     Task<IReadOnlyList<UsageAttribution>> ListAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,

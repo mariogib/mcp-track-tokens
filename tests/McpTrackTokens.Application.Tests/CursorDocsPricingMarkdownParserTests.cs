@@ -83,6 +83,44 @@ public sealed class CursorDocsPricingMarkdownParserTests
     }
 
     [Fact]
+    public void ParseWithWarnings_reads_cursor_models_table_before_other_models()
+    {
+        const string markdown = """
+            # Models & Pricing
+
+            ## Cursor Models
+
+            | Model | Provider | Input | Cache write | Cache read | Output | Notes |
+            | ----- | -------- | ----- | ----------- | ---------- | ------ | ----- |
+            | Grok 4.6 | Cursor | $2 | - | $0.5 | $6 | Jointly trained |
+            | [Composer 2.5](https://cursor.com/blog/composer-2-5) | Cursor | $0.5 | - | $0.2 | $2.5 | - |
+
+            ## Other Models
+
+            ### Model pricing
+
+            | Model | Provider | Input | Cache write | Cache read | Output | Notes |
+            | ----- | -------- | ----- | ----------- | ---------- | ------ | ----- |
+            | [Claude 4.6 Sonnet](https://www.anthropic.com/claude/sonnet) | Anthropic | $3 | $3.75 | $0.3 | $15 | Hidden |
+
+            ## Auto modes
+
+            ### Auto Cost
+
+            Auto Cost pricing is set per million tokens, regardless of which model is used.
+            """;
+
+        var (rates, warnings) = CursorDocsPricingMarkdownParser.ParseWithWarnings(markdown);
+
+        warnings.Should().ContainSingle(w => w.Contains("Auto pricing was not listed"));
+        rates.Should().Contain(r => r.Model == "Grok 4.6" && r.InputPerMillion == 2m && r.CacheReadPerMillion == 0.5m);
+        rates.Should().Contain(r => r.Model == "Composer 2.5" && r.InputPerMillion == 0.5m);
+        rates.Should().Contain(r => r.Model == "Claude 4.6 Sonnet" && r.OutputPerMillion == 15m);
+        rates.Should().Contain(r => r.Model == "Auto" && r.InputPerMillion == 1.25m);
+        rates.Should().Contain(r => r.Model == "*");
+    }
+
+    [Fact]
     public void ParseWithWarnings_maps_auto_cost_row_from_current_docs()
     {
         var (rates, warnings) = CursorDocsPricingMarkdownParser.ParseWithWarnings(CurrentDocsMarkdown);
@@ -101,6 +139,42 @@ public sealed class CursorDocsPricingMarkdownParserTests
         var fallback = rates.Single(r => r.Model == "*");
         fallback.InputPerMillion.Should().Be(auto.InputPerMillion);
         fallback.OutputPerMillion.Should().Be(auto.OutputPerMillion);
+    }
+
+    [Fact]
+    public void ParseWithWarnings_includes_cursor_models_from_live_docs_fixture()
+    {
+        var markdown = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "Fixtures", "models-and-pricing.md"));
+
+        var (rates, _) = CursorDocsPricingMarkdownParser.ParseWithWarnings(markdown);
+
+        rates.Should().Contain(r => r.Model == "Grok 4.6" && r.InputPerMillion == 2m && r.OutputPerMillion == 6m);
+        rates.Should().Contain(r => r.Model == "Grok 4.6 (Fast)" && r.InputPerMillion == 4m);
+        rates.Should().Contain(r => r.Model == "Grok 4.5" && r.CacheReadPerMillion == 0.5m);
+        rates.Should().Contain(r => r.Model == "Grok 4.5 (Fast)" && r.OutputPerMillion == 12m);
+        rates.Should().Contain(r => r.Model == "Composer 2.5" && r.InputPerMillion == 0.5m && r.OutputPerMillion == 2.5m);
+        rates.Should().Contain(r => r.Model == "Composer 2.5 (Fast)" && r.InputPerMillion == 3m && r.OutputPerMillion == 15m);
+        CursorDocsPricingMarkdownParser.HasCursorPoolRates(rates).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ParseWithWarnings_reports_no_cursor_pool_when_only_other_models_exist()
+    {
+        const string markdown = """
+            # Models & Pricing
+
+            ### Model pricing
+
+            | Model | Provider | Input | Cache write | Cache read | Output | Notes |
+            | ----- | -------- | ----- | ----------- | ---------- | ------ | ----- |
+            | [Claude 4.6 Sonnet](https://www.anthropic.com/claude/sonnet) | Anthropic | $3 | $3.75 | $0.3 | $15 | Hidden |
+            """;
+
+        var (rates, _) = CursorDocsPricingMarkdownParser.ParseWithWarnings(markdown);
+
+        rates.Should().Contain(r => r.Model == "Claude 4.6 Sonnet");
+        CursorDocsPricingMarkdownParser.HasCursorPoolRates(rates).Should().BeFalse();
     }
 
     [Fact]

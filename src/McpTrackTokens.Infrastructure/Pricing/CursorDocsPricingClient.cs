@@ -24,6 +24,7 @@ public sealed class CursorDocsPricingClient : ICursorDocsPricingClient
     {
         _http = http;
         _logger = logger;
+        _http.DefaultRequestHeaders.Accept.Clear();
     }
 
     /// <inheritdoc />
@@ -89,6 +90,12 @@ public sealed class CursorDocsPricingClient : ICursorDocsPricingClient
             throw new InvalidOperationException("Parsed Cursor pricing docs but found no model rates.");
         }
 
+        if (!CursorDocsPricingMarkdownParser.HasCursorPoolRates(rates))
+        {
+            throw new InvalidOperationException(
+                "Parsed Cursor pricing docs but the Cursor Models table was missing or empty (Grok/Composer rates are required).");
+        }
+
         _logger.LogInformation(
             "Fetched {Count} Cursor token rates from docs ({Warnings} warnings).",
             rates.Count,
@@ -111,6 +118,7 @@ public sealed class CursorDocsPricingClient : ICursorDocsPricingClient
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.UserAgent.Clear();
+        request.Headers.Accept.Clear();
         if (useBrowserUserAgent)
         {
             request.Headers.TryAddWithoutValidation(
@@ -122,9 +130,9 @@ public sealed class CursorDocsPricingClient : ICursorDocsPricingClient
             request.Headers.UserAgent.Add(new ProductInfoHeaderValue("mcp-track-tokens", "1.0"));
         }
 
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/markdown"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/plain"));
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        // Cursor's docs CDN 404s .md URLs when Accept includes text/markdown or text/plain,
+        // even if */* is also listed. Request */* only.
+        request.Headers.TryAddWithoutValidation("Accept", "*/*");
 
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -139,5 +147,7 @@ public sealed class CursorDocsPricingClient : ICursorDocsPricingClient
 
     private static bool LooksLikePricingDocs(string? markdown) =>
         !string.IsNullOrWhiteSpace(markdown) &&
-        markdown.Contains("Model pricing", StringComparison.OrdinalIgnoreCase);
+        (markdown.Contains("Model pricing", StringComparison.OrdinalIgnoreCase) ||
+         markdown.Contains("Cursor Models", StringComparison.OrdinalIgnoreCase) ||
+         markdown.Contains("| Model |", StringComparison.OrdinalIgnoreCase));
 }

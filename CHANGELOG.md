@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.35] — 2026-08-13
+
+### Fixed
+- Settings → Get Rates no longer fails with 502 when Cursor's docs CDN 404s `.md` downloads that send `Accept: text/markdown`. The client now requests `*/*`.
+- Rate fetch requires the Cursor Models table (Grok/Composer) in addition to Other Models; Get Rates fails if those first-party rows are missing.
+- When Auto Cost is no longer listed as a priced row, Get Rates keeps the built-in Auto/* fallback rates instead of dropping them.
+- Project details Usage and Costs period filters use usage event time (`TimestampUtc`) instead of attribution import time (`CreatedAtUtc`), so past months and custom ranges match the When column.
+
 ## [1.0.34] — 2026-08-04
 
 ### Added

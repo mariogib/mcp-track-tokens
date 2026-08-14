@@ -83,26 +83,38 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Period filters use the linked usage record's <c>TimestampUtc</c>
+    /// (when the usage occurred), not the attribution row's <c>CreatedAtUtc</c>
+    /// (when the attribution was written during import/reconcile).
+    /// </remarks>
     public async Task<IReadOnlyList<UsageAttribution>> ListAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var from = fromUtc.ToUniversalTime();
-        var to = toUtc.ToUniversalTime();
+        var fromBound = fromUtc.ToUniversalTime();
+        var toBound = toUtc.ToUniversalTime();
 
         if (!SqliteDateTimeQuery.IsSqlite(_db))
         {
-            var query = _db.UsageAttributions.AsNoTracking().AsQueryable();
+            var query = _db.UsageAttributions.AsNoTracking()
+                .Join(
+                    _db.ExternalUsageRecords.AsNoTracking(),
+                    attribution => attribution.ExternalUsageRecordId,
+                    usage => usage.Id,
+                    (attribution, usage) => new { Attribution = attribution, usage.TimestampUtc })
+                .Where(row => row.TimestampUtc >= fromBound && row.TimestampUtc <= toBound);
+
             if (projectId is Guid pid)
             {
-                query = query.Where(a => a.ProjectId == pid);
+                query = query.Where(row => row.Attribution.ProjectId == pid);
             }
 
             return await query
-                .Where(a => a.CreatedAtUtc >= from && a.CreatedAtUtc <= to)
-                .OrderByDescending(a => a.CreatedAtUtc)
+                .OrderByDescending(row => row.TimestampUtc)
+                .Select(row => row.Attribution)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -111,12 +123,22 @@ public sealed class UsageAttributionRepository : IUsageAttributionRepository
         var args = new List<object>();
         if (projectId is Guid project)
         {
-            where.Append(CultureInfo.InvariantCulture, $" AND ProjectId = {{{args.Count}}}");
+            where.Append(CultureInfo.InvariantCulture, $" AND a.\"ProjectId\" = {{{args.Count}}}");
             args.Add(project);
         }
 
-        SqliteDateTimePaging.AppendTextRange(where, args, "CreatedAtUtc", from, to);
-        var sql = "SELECT * FROM UsageAttributions " + where + " ORDER BY CreatedAtUtc DESC";
+        SqliteDateTimePaging.AppendTextRange(
+            where,
+            args,
+            "TimestampUtc",
+            fromBound,
+            toBound,
+            tableAlias: "u");
+        var sql =
+            "SELECT a.* FROM \"UsageAttributions\" AS a " +
+            "INNER JOIN \"ExternalUsageRecords\" AS u ON a.\"ExternalUsageRecordId\" = u.\"Id\" " +
+            where +
+            " ORDER BY u.\"TimestampUtc\" DESC";
         return await SqliteDateTimeQuery
             .FromSqlAsync(_db.UsageAttributions, sql, args, cancellationToken)
             .ConfigureAwait(false);

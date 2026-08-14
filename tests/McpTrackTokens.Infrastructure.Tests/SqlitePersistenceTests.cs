@@ -268,6 +268,54 @@ public sealed class SqlitePersistenceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ListAttributions_FiltersByUsageTimestamp_NotAttributionCreatedAt()
+    {
+        using var scope = _services.CreateScope();
+        var detection = scope.ServiceProvider.GetRequiredService<IProjectDetectionService>();
+        var usageRepo = scope.ServiceProvider.GetRequiredService<IExternalUsageRepository>();
+        var attributions = scope.ServiceProvider.GetRequiredService<IUsageAttributionRepository>();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        var project = await detection.RegisterAsync(new CreateProjectRequest { Name = "Usage Period Filter" });
+        var usageAt = DateTimeOffset.Parse("2026-07-01T12:00:00Z");
+        var attributedAt = DateTimeOffset.Parse("2026-08-13T12:00:00Z");
+        var usage = ExternalUsageRecord.Create(
+            UsageSource.CursorCsv,
+            usageAt,
+            externalRecordId: $"period-{Guid.NewGuid():N}",
+            model: "composer-2.5",
+            totalTokens: 1000,
+            reportedCost: 1.5m,
+            createdAtUtc: attributedAt);
+        await usageRepo.AddAsync(usage);
+        await unitOfWork.SaveChangesAsync();
+
+        await attributions.AddAsync(UsageAttribution.Create(
+            usage.Id,
+            AttributionMethod.ClosestPromptMatch,
+            AttributionConfidence.High,
+            100m,
+            allocatedCost: 1.5m,
+            allocatedTotalTokens: 1000,
+            projectId: project.Id,
+            reason: "Period filter test",
+            createdAtUtc: attributedAt));
+        await unitOfWork.SaveChangesAsync();
+
+        var july = await attributions.ListAsync(
+            DateTimeOffset.Parse("2026-07-01T00:00:00Z"),
+            DateTimeOffset.Parse("2026-07-31T23:59:59Z"),
+            project.Id);
+        var august = await attributions.ListAsync(
+            DateTimeOffset.Parse("2026-08-01T00:00:00Z"),
+            DateTimeOffset.Parse("2026-08-31T23:59:59Z"),
+            project.Id);
+
+        july.Should().ContainSingle(a => a.ExternalUsageRecordId == usage.Id);
+        august.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ListUnallocated_IncludesRowsWithOnlyUnallocatedPlaceholder()
     {
         using var scope = _services.CreateScope();
